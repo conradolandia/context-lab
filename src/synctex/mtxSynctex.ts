@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import * as path from 'node:path';
 import type { Toolchain } from '../toolchain/discover';
 
 export interface ForwardSyncResult {
@@ -22,6 +23,88 @@ export class SynctexError extends Error {
   }
 }
 
+export interface SynctexRunSpec {
+  args: string[];
+  cwd: string;
+  synctexPath: string;
+}
+
+/**
+ * Prefer a path relative to the job directory so --file= matches Input: entries
+ * embedded in ConTeXt synctex logs (often project-relative).
+ */
+export function synctexSourceArg(sourceFile: string, jobDir: string): string {
+  const abs = path.resolve(sourceFile);
+  const root = path.resolve(jobDir);
+  const rel = path.relative(root, abs);
+  if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) {
+    // ConTeXt Input paths typically use forward slashes
+    return rel.split(path.sep).join('/');
+  }
+  return abs;
+}
+
+/** Build argv for forward SyncTeX (`--find --direct`). */
+export function buildFindArgs(
+  synctexPath: string,
+  sourceFile: string,
+  line: number,
+  jobDir: string,
+): SynctexRunSpec {
+  const fileArg = synctexSourceArg(sourceFile, jobDir);
+  const absSynctex = path.resolve(synctexPath);
+  return {
+    cwd: path.resolve(jobDir),
+    synctexPath: absSynctex,
+    args: [
+      '--script',
+      'synctex',
+      '--find',
+      '--direct',
+      `--file=${fileArg}`,
+      `--line=${line}`,
+      absSynctex,
+    ],
+  };
+}
+
+/**
+ * Build argv for backward SyncTeX.
+ *
+ * Use `--goto --direct` without `--editor`. Plain `--report` hardcodes editor
+ * "console", which calls editfile on the matched .tex and yields
+ * "invalid synctex log file '<tex path>'" or empty stdout instead of
+ * filename=/linenumber= output.
+ */
+export function buildReportArgs(
+  synctexPath: string,
+  page: number,
+  x: number,
+  y: number,
+  jobDir: string,
+  tolerance = 50,
+): SynctexRunSpec {
+  const absSynctex = path.resolve(synctexPath);
+  // Round to avoid float noise; mtxrun expects PDF user-space points (bp).
+  const xr = Number(x.toFixed(3));
+  const yr = Number(y.toFixed(3));
+  return {
+    cwd: path.resolve(jobDir),
+    synctexPath: absSynctex,
+    args: [
+      '--script',
+      'synctex',
+      '--goto',
+      '--direct',
+      `--page=${page}`,
+      `--x=${xr}`,
+      `--y=${yr}`,
+      `--tolerance=${tolerance}`,
+      absSynctex,
+    ],
+  };
+}
+
 /** Parse mtxrun --script synctex --find [--direct] output. */
 export function parseFindOutput(text: string): ForwardSyncResult | undefined {
   // page=1 llx=72.0 lly=680.5 urx=300.2 ury=700.1
@@ -40,7 +123,7 @@ export function parseFindOutput(text: string): ForwardSyncResult | undefined {
   };
 }
 
-/** Parse mtxrun --script synctex --report [--direct] output. */
+/** Parse mtxrun --script synctex --goto/--report [--direct] output. */
 export function parseReportOutput(text: string): BackwardSyncResult | undefined {
   // filename=foo.tex linenumber=42 tolerance=0
   const re =
@@ -54,6 +137,11 @@ export function parseReportOutput(text: string): BackwardSyncResult | undefined 
     linenumber: Number(m[2]),
     tolerance: Number(m[3]),
   };
+}
+
+/** True when mtxrun reported a ConTeXt synctex open/parse failure. */
+export function isInvalidSynctexLogMessage(text: string): boolean {
+  return /invalid synctex log file/i.test(text);
 }
 
 function runMtx(
@@ -82,66 +170,61 @@ function runMtx(
   });
 }
 
+export interface SynctexInvokeResult<T> {
+  result: T;
+  argv: string[];
+  cwd: string;
+  stdout: string;
+  stderr: string;
+}
+
 /**
- * Forward SyncTeX: source file+line → PDF page and box, using a frozen synctex snapshot.
+ * Forward SyncTeX: source file+line → PDF page and box.
+ * Always runs with cwd = job/project directory.
  */
 export async function forwardSync(
   toolchain: Toolchain,
-  synctexSnapshot: string,
+  synctexPath: string,
   sourceFile: string,
   line: number,
-  cwd?: string,
-): Promise<ForwardSyncResult> {
-  const args = [
-    '--script',
-    'synctex',
-    '--find',
-    '--direct',
-    `--file=${sourceFile}`,
-    `--line=${line}`,
-    synctexSnapshot,
-  ];
-  const { stdout, stderr, exitCode } = await runMtx(toolchain, args, cwd);
+  jobDir: string,
+): Promise<SynctexInvokeResult<ForwardSyncResult>> {
+  const spec = buildFindArgs(synctexPath, sourceFile, line, jobDir);
+  const { stdout, stderr, exitCode } = await runMtx(toolchain, spec.args, spec.cwd);
   const combined = `${stdout}\n${stderr}`;
   const parsed = parseFindOutput(combined);
   if (!parsed) {
     throw new SynctexError(
-      `Forward SyncTeX produced no match (exit ${exitCode}): ${combined.trim() || '(empty output)'}`,
+      `Forward SyncTeX produced no match (exit ${exitCode}) cwd=${spec.cwd} argv=${JSON.stringify(spec.args)}: ${combined.trim() || '(empty output)'}`,
     );
   }
-  return parsed;
+  return { result: parsed, argv: spec.args, cwd: spec.cwd, stdout, stderr };
 }
 
 /**
- * Backward SyncTeX: PDF page+coords → source file+line, using a frozen synctex snapshot.
+ * Backward SyncTeX: PDF page+coords → source file+line.
+ * Always runs with cwd = job/project directory; uses --goto --direct (not --report).
  */
 export async function backwardSync(
   toolchain: Toolchain,
-  synctexSnapshot: string,
+  synctexPath: string,
   page: number,
   x: number,
   y: number,
-  cwd?: string,
-  tolerance = 10,
-): Promise<BackwardSyncResult> {
-  const args = [
-    '--script',
-    'synctex',
-    '--report',
-    '--direct',
-    `--page=${page}`,
-    `--x=${x}`,
-    `--y=${y}`,
-    `--tolerance=${tolerance}`,
-    synctexSnapshot,
-  ];
-  const { stdout, stderr, exitCode } = await runMtx(toolchain, args, cwd);
+  jobDir: string,
+  tolerance = 50,
+): Promise<SynctexInvokeResult<BackwardSyncResult>> {
+  const spec = buildReportArgs(synctexPath, page, x, y, jobDir, tolerance);
+  const { stdout, stderr, exitCode } = await runMtx(toolchain, spec.args, spec.cwd);
   const combined = `${stdout}\n${stderr}`;
   const parsed = parseReportOutput(combined);
   if (!parsed) {
+    const hint = isInvalidSynctexLogMessage(combined)
+      ? ' (mtx-synctex rejected the log path — check cwd and synctex argv)'
+      : '';
     throw new SynctexError(
-      `Backward SyncTeX produced no match (exit ${exitCode}): ${combined.trim() || '(empty output)'}`,
+      `Backward SyncTeX produced no match (exit ${exitCode}) cwd=${spec.cwd} argv=${JSON.stringify(spec.args)}${hint}: ${combined.trim() || '(empty output)'}`,
     );
   }
-  return parsed;
+  return { result: parsed, argv: spec.args, cwd: spec.cwd, stdout, stderr };
 }

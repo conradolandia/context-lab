@@ -1,13 +1,19 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseFindOutput, parseReportOutput } from '../synctex/mtxSynctex';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import {
+  parseFindOutput,
+  parseReportOutput,
+  buildFindArgs,
+  buildReportArgs,
+  synctexSourceArg,
+  isInvalidSynctexLogMessage,
+} from '../synctex/mtxSynctex';
 
 const fixturesDir = path.join(__dirname, 'fixtures');
 
 function readFixture(name: string): string {
-  // Prefer source fixtures (copied next to tests) or repo fixtures via relative path
   const candidates = [
     path.join(fixturesDir, name),
     path.join(__dirname, '..', '..', 'src', 'test', 'fixtures', name),
@@ -67,5 +73,59 @@ describe('mtxSynctex parseReportOutput', () => {
 
   it('returns undefined when no match line is present', () => {
     assert.equal(parseReportOutput('invalid synctex log file'), undefined);
+  });
+
+  it('detects ConTeXt invalid synctex log errors (including mistaken .tex paths)', () => {
+    const text = readFixture('report-invalid-tex-path.txt');
+    assert.equal(parseReportOutput(text), undefined);
+    assert.equal(isInvalidSynctexLogMessage(text), true);
+  });
+});
+
+describe('mtxSynctex argv construction', () => {
+  const jobDir = '/home/andi/doc';
+  const synctex = '/home/andi/.cache/view-1.synctex';
+
+  it('buildFindArgs uses jobDir cwd, relative --file, absolute synctex last', () => {
+    const spec = buildFindArgs(
+      synctex,
+      '/home/andi/doc/include/contenido/00-1-dedicatoria.tex',
+      12,
+      jobDir,
+    );
+    assert.equal(spec.cwd, jobDir);
+    assert.equal(spec.synctexPath, path.resolve(synctex));
+    assert.deepEqual(spec.args, [
+      '--script',
+      'synctex',
+      '--find',
+      '--direct',
+      '--file=include/contenido/00-1-dedicatoria.tex',
+      '--line=12',
+      path.resolve(synctex),
+    ]);
+    // Synctex path is last positional — never a .tex Input path
+    assert.match(spec.args[spec.args.length - 1], /\.synctex$/);
+  });
+
+  it('buildReportArgs uses --goto --direct (not --report) and jobDir cwd', () => {
+    const spec = buildReportArgs(synctex, 7, 247.75, 347.3024535679999, jobDir, 50);
+    assert.equal(spec.cwd, jobDir);
+    assert.ok(spec.args.includes('--goto'));
+    assert.ok(!spec.args.includes('--report'));
+    assert.ok(spec.args.includes('--direct'));
+    assert.ok(!spec.args.some((a) => a.startsWith('--editor')));
+    assert.ok(spec.args.includes('--page=7'));
+    assert.ok(spec.args.includes('--x=247.75'));
+    assert.ok(spec.args.includes('--y=347.302'));
+    assert.ok(spec.args.includes('--tolerance=50'));
+    assert.equal(spec.args[spec.args.length - 1], path.resolve(synctex));
+  });
+
+  it('synctexSourceArg keeps paths outside jobDir absolute', () => {
+    assert.equal(
+      synctexSourceArg('/other/place/foo.tex', jobDir),
+      '/other/place/foo.tex',
+    );
   });
 });

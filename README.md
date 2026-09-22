@@ -30,7 +30,7 @@ npm test
 | Forward SyncTeX (source → PDF) | **ConTeXt: Forward SyncTeX** — `Ctrl+Alt+J` (macOS: `Cmd+Alt+J`) |
 | Backward SyncTeX (PDF → source) | **Ctrl+click** (macOS: **Cmd+click**) in the PDF webview |
 
-Forward/backward call `mtxrun --script synctex --find` / `--report` against a **frozen** `.synctex` snapshot paired with the shown PDF.
+Forward uses `mtxrun --script synctex --find --direct`. Backward uses `--goto --direct` (not `--report`, which hardcodes an editor path and can print `invalid synctex log file '<tex>'` or empty output). Both run with **cwd = job directory** and an absolute path to a frozen `.synctex` snapshot. Output channel logs the exact argv.
 
 ## Toolchain settings
 
@@ -66,21 +66,25 @@ ConTeXt often rewrites the job PDF for several seconds. Loading that file mid-wr
 
 - Keeps the **last good** cached view while a build runs (status: Building…)
 - Does **not** `fs.watch` the live job PDF into the viewer
-- After exit code 0, runs a **stability gate** (non-zero size settle, `%PDF-` header) then copies PDF + synctex into an extension cache
-- Points PDF.js only at that **cache snapshot**
-- On webview load failure, restores the **previous** snapshot when available
+- After exit code 0, runs a **stability gate** (non-zero size settle, `%PDF-` header)
+- Copies the gated PDF into an extension-local **`webview-cache/`** directory (next to the extension root; gitignored) and loads it with `asWebviewUri` — fast for multi‑MB docs and avoids `globalStorage` / `vscode-cdn.net` **401** errors
+- Freezes a matching `.synctex` under globalStorage bookkeeping cache; SyncTeX always uses **cwd = jobDir**
+- If URI load still 401s, falls back once to posting PDF bytes (`getDocument({ data })`) for that session
+- On other load failures, restores the previous snapshot when available
 - Never mixes a new PDF with an old synctex (or the reverse)
 
 Build uses: `context --synctex=repeat` plus `context.build.args`.
 
 ## Local LMTX verification (e2e SyncTeX)
 
-Cloud / CI covers scaffolding, compile, and unit tests for gate + SyncTeX CLI parsing. End-to-end click ↔ source accuracy needs a real LMTX install:
+Cloud / CI covers scaffolding, compile, and unit tests for gate + SyncTeX CLI parsing/argv. End-to-end click ↔ source accuracy needs a real LMTX install:
 
 1. Set `"context.root": "/home/andi/Apps/lmtx"` (or ensure `context` / `mtxrun` are on PATH).
-2. F5 → open a ConTeXt job → **Build and Preview**.
-3. Confirm forward (`Ctrl+Alt+J`) scrolls/highlights the PDF and Ctrl+click jumps to the source line.
-4. Confirm a long compile keeps the previous PDF visible and a failed build does not replace it.
+2. F5 → open a multi-file ConTeXt job → **Build and Preview** (PDF should open quickly from `webview-cache/`).
+3. Confirm forward (`Ctrl+Alt+J`) scrolls/highlights the PDF.
+4. **Ctrl+click** a paragraph that comes from an included file (e.g. under `include/…`) and confirm the matching source opens.
+5. Check the ConTeXt output channel for `cwd=` / `argv=` lines on SyncTeX.
+6. Confirm a long compile keeps the previous PDF visible and a failed build does not replace it.
 
 Candidate host when that path is available: connected machine `furiosa`.
 
@@ -94,6 +98,7 @@ src/build/artifactGate.ts
 src/synctex/mtxSynctex.ts
 src/viewer/pdfPanel.ts
 media/viewer/          # PDF.js page + assets
+webview-cache/         # gated current.pdf for the webview (runtime, gitignored)
 ```
 
 Phase 2 (not in this MVP): Digestif LSP, tree-sitter-context.

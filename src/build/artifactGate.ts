@@ -121,56 +121,100 @@ export function findSynctexSibling(pdfPath: string): string | undefined {
 }
 
 export interface CacheSnapshot {
+  /** Viewer PDF under the extension webview-cache (not the live job PDF). */
   pdfPath: string;
+  /**
+   * Frozen synctex used for SyncTeX lookups. Prefer the job-dir sibling after
+   * a gated success; also keep a cache copy path when available.
+   */
   synctexPath?: string;
+  /** Absolute job PDF that was gated (for diagnostics). */
+  jobPdfPath: string;
+  /** Directory where the job was built — mtxrun SyncTeX cwd. */
+  jobDir: string;
   generation: number;
 }
 
+export interface PublishOptions extends ArtifactGateOptions {
+  /**
+   * Directory under the extension (in localResourceRoots) used for the PDF
+   * the webview loads via asWebviewUri — avoids globalStorage vscode-cdn 401
+   * and avoids shipping multi‑MB PDFs through postMessage.
+   */
+  webviewCacheDir: string;
+  /** Optional secondary cache (e.g. globalStorage) for bookkeeping copies. */
+  bookkeepingCacheDir?: string;
+}
+
 /**
- * Copy a gated PDF (+ matching synctex) into an extension cache directory.
- * Returns paths to the frozen snapshot pair.
+ * Gate the job PDF, then copy it into the extension webview-cache for viewing.
+ * Records the job-dir synctex path (absolute) for SyncTeX with cwd = jobDir.
+ * Also freezes a synctex copy under bookkeepingCacheDir when provided.
  */
 export async function publishToCache(
   jobPdfPath: string,
-  cacheDir: string,
   generation: number,
-  options: ArtifactGateOptions = {},
+  options: PublishOptions,
 ): Promise<CacheSnapshot> {
-  await fsp.mkdir(cacheDir, { recursive: true });
   const size = await waitForStablePdf(jobPdfPath, options);
+  void size;
 
-  const cachedPdf = path.join(cacheDir, `view-${generation}.pdf`);
-  await fsp.copyFile(jobPdfPath, cachedPdf);
-
-  let cachedSynctex: string | undefined;
-  const synctex = findSynctexSibling(jobPdfPath);
-  if (synctex) {
-    const ext = synctex.endsWith('.gz') ? '.synctex.gz' : '.synctex';
-    cachedSynctex = path.join(cacheDir, `view-${generation}${ext}`);
-    await fsp.copyFile(synctex, cachedSynctex);
+  await fsp.mkdir(options.webviewCacheDir, { recursive: true });
+  if (options.bookkeepingCacheDir) {
+    await fsp.mkdir(options.bookkeepingCacheDir, { recursive: true });
   }
 
-  // Re-validate header on the copy
-  if (!(await hasPdfHeader(cachedPdf))) {
-    throw new ArtifactGateError('Cached PDF copy failed header check');
+  const viewPdf = path.join(options.webviewCacheDir, `view-${generation}.pdf`);
+  // Stable alias for asWebviewUri (overwrite in place after gate)
+  const currentPdf = path.join(options.webviewCacheDir, 'current.pdf');
+  await fsp.copyFile(jobPdfPath, viewPdf);
+  await fsp.copyFile(jobPdfPath, currentPdf);
+
+  const jobDir = path.dirname(path.resolve(jobPdfPath));
+  const jobSynctex = findSynctexSibling(jobPdfPath);
+
+  let synctexPath: string | undefined = jobSynctex
+    ? path.resolve(jobSynctex)
+    : undefined;
+
+  // Freeze a cache copy so a later rebuild cannot race SyncTeX mid-pair.
+  if (jobSynctex && options.bookkeepingCacheDir) {
+    const ext = jobSynctex.endsWith('.gz') ? '.synctex.gz' : '.synctex';
+    const frozen = path.join(
+      options.bookkeepingCacheDir,
+      `view-${generation}${ext}`,
+    );
+    await fsp.copyFile(jobSynctex, frozen);
+    // Prefer frozen absolute path for lookups; cwd remains jobDir.
+    synctexPath = frozen;
+  }
+
+  if (!(await hasPdfHeader(currentPdf))) {
+    throw new ArtifactGateError('Webview-cache PDF copy failed header check');
   }
 
   return {
-    pdfPath: cachedPdf,
-    synctexPath: cachedSynctex,
+    pdfPath: currentPdf,
+    synctexPath,
+    jobPdfPath: path.resolve(jobPdfPath),
+    jobDir,
     generation,
-    // expose size for tests via unused param path
   };
 }
 
 /** Exported for unit tests that need gate result metadata. */
 export async function gateAndCopy(
   jobPdfPath: string,
-  cacheDir: string,
+  webviewCacheDir: string,
   generation: number,
-  options?: ArtifactGateOptions,
+  options?: ArtifactGateOptions & { bookkeepingCacheDir?: string },
 ): Promise<GateResult & CacheSnapshot> {
-  const snap = await publishToCache(jobPdfPath, cacheDir, generation, options);
+  const snap = await publishToCache(jobPdfPath, generation, {
+    webviewCacheDir,
+    bookkeepingCacheDir: options?.bookkeepingCacheDir,
+    settleMs: options?.settleMs,
+    settleSamples: options?.settleSamples,
+  });
   const size = (await fsp.stat(snap.pdfPath)).size;
   return { ...snap, size };
 }

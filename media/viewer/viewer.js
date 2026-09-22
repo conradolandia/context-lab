@@ -87,7 +87,7 @@ async function renderAllPages(pdf) {
   }
 }
 
-async function openDocument(url) {
+async function openDocumentFromUrl(url) {
   setStatus('Loading PDF…');
   try {
     const pdfjs = await loadPdfJs();
@@ -100,6 +100,39 @@ async function openDocument(url) {
       pdfDoc = null;
     }
     const loadingTask = pdfjs.getDocument({ url, withCredentials: false });
+    pdfDoc = await loadingTask.promise;
+    await renderAllPages(pdfDoc);
+    setStatus('Ready');
+    vscode.postMessage({ type: 'loaded', pages: pdfDoc.numPages });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    setStatus(`Load error: ${message}`);
+    vscode.postMessage({ type: 'loadError', message });
+  }
+}
+
+/**
+ * Fallback when asWebviewUri fetch 401s: host posts PDF bytes.
+ */
+async function openDocumentFromData(data) {
+  setStatus('Loading PDF…');
+  try {
+    const pdfjs = await loadPdfJs();
+    if (pdfDoc) {
+      try {
+        await pdfDoc.destroy();
+      } catch {
+        // ignore
+      }
+      pdfDoc = null;
+    }
+    const payload =
+      data instanceof ArrayBuffer
+        ? data
+        : data?.buffer
+          ? data
+          : new Uint8Array(data);
+    const loadingTask = pdfjs.getDocument({ data: payload });
     pdfDoc = await loadingTask.promise;
     await renderAllPages(pdfDoc);
     setStatus('Ready');
@@ -149,7 +182,17 @@ window.addEventListener('message', (event) => {
   }
   switch (msg.type) {
     case 'loadPdf':
-      openDocument(msg.url);
+      if (msg.data != null) {
+        openDocumentFromData(msg.data);
+      } else if (msg.url) {
+        openDocumentFromUrl(msg.url);
+      } else {
+        setStatus('Load error: missing PDF url/data');
+        vscode.postMessage({
+          type: 'loadError',
+          message: 'Host did not send PDF url or bytes',
+        });
+      }
       break;
     case 'building':
       setStatus(msg.message || 'Building…', true);

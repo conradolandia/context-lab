@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
+import * as fsp from 'node:fs/promises';
 
 export type ViewerMessage =
   | { type: 'ready' }
@@ -17,7 +18,13 @@ export interface ForwardSyncPayload {
 }
 
 /**
- * PDF.js webview panel. Loads only extension-cache PDF snapshots — never the live job PDF.
+ * PDF.js webview panel. Loads only gated cache snapshots — never the live job PDF.
+ *
+ * Fast path: asWebviewUri to a PDF under the extension `webview-cache/` directory
+ * (in localResourceRoots). That avoids globalStorage vscode-cdn.net 401s and
+ * avoids shipping multi‑MB PDFs through postMessage.
+ *
+ * Fallback: if the URI fetch 401s/fails, post PDF bytes once via getDocument({ data }).
  */
 export class PdfPanel {
   public static readonly viewType = 'context.pdfPreview';
@@ -26,10 +33,12 @@ export class PdfPanel {
   private currentSnapshot: string | undefined;
   private previousSnapshot: string | undefined;
   private building = false;
+  private recovering = false;
+  private preferBytesFallback = false;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
-    private readonly cacheUri: vscode.Uri,
+    private readonly webviewCacheUri: vscode.Uri,
     private readonly onClick: (page: number, x: number, y: number) => void,
   ) {}
 
@@ -48,7 +57,7 @@ export class PdfPanel {
         retainContextWhenHidden: true,
         localResourceRoots: [
           vscode.Uri.joinPath(this.extensionUri, 'media', 'viewer'),
-          this.cacheUri,
+          this.webviewCacheUri,
         ],
       },
     );
@@ -100,12 +109,7 @@ export class PdfPanel {
       this.previousSnapshot = this.currentSnapshot;
     }
     this.currentSnapshot = snapshotPdfPath;
-
-    const uri = this.panel!.webview.asWebviewUri(vscode.Uri.file(snapshotPdfPath));
-    await this.panel!.webview.postMessage({
-      type: 'loadPdf',
-      url: uri.toString(),
-    });
+    await this.loadSnapshot(snapshotPdfPath);
   }
 
   public async forwardSync(payload: ForwardSyncPayload): Promise<void> {
@@ -128,15 +132,70 @@ export class PdfPanel {
     return this.currentSnapshot;
   }
 
+  private async loadSnapshot(snapshotPdfPath: string): Promise<void> {
+    if (this.preferBytesFallback) {
+      await this.postSnapshotBytes(snapshotPdfPath);
+      return;
+    }
+    const uri = this.panel!.webview.asWebviewUri(vscode.Uri.file(snapshotPdfPath));
+    await this.panel!.webview.postMessage({
+      type: 'loadPdf',
+      url: uri.toString(),
+    });
+  }
+
+  /** Slow fallback — used only when asWebviewUri fetch 401s / fails. */
+  private async postSnapshotBytes(snapshotPdfPath: string): Promise<void> {
+    try {
+      const buf = await fsp.readFile(snapshotPdfPath);
+      const data = new Uint8Array(buf);
+      await this.panel!.webview.postMessage({
+        type: 'loadPdf',
+        data,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      void this.panel?.webview.postMessage({
+        type: 'error',
+        message: `Failed to read snapshot: ${message}`,
+      });
+    }
+  }
+
   private async recoverFromLoadError(message: string): Promise<void> {
+    const is401 = /401|Unexpected server response/i.test(message);
+
+    // First failure on URI path: retry same snapshot via bytes once.
+    if (is401 && !this.preferBytesFallback && this.currentSnapshot) {
+      this.preferBytesFallback = true;
+      void vscode.window.showWarningMessage(
+        'PDF URI load failed (401). Falling back to in-memory bytes for this session.',
+      );
+      await this.postSnapshotBytes(this.currentSnapshot);
+      return;
+    }
+
+    if (this.recovering) {
+      void vscode.window.showErrorMessage(`PDF load failed: ${message}`);
+      void this.panel?.webview.postMessage({
+        type: 'error',
+        message: `Load failed: ${message}`,
+      });
+      return;
+    }
+
     const fallback = this.previousSnapshot;
     if (fallback && fallback !== this.currentSnapshot && fs.existsSync(fallback)) {
+      this.recovering = true;
       void vscode.window.showWarningMessage(
         `PDF load failed (${message}). Restoring previous snapshot.`,
       );
       this.currentSnapshot = fallback;
-      const uri = this.panel!.webview.asWebviewUri(vscode.Uri.file(fallback));
-      await this.panel!.webview.postMessage({ type: 'loadPdf', url: uri.toString() });
+      try {
+        await this.loadSnapshot(fallback);
+      } finally {
+        this.recovering = false;
+      }
       return;
     }
     void vscode.window.showErrorMessage(`PDF load failed: ${message}`);

@@ -9,7 +9,10 @@ import { PdfPanel } from './viewer/pdfPanel';
 
 let output: vscode.OutputChannel;
 let pdfPanel: PdfPanel;
-let cacheDir: string;
+/** Extension-local dir for asWebviewUri PDF (fast, avoids globalStorage 401). */
+let webviewCacheDir: string;
+/** Optional bookkeeping / frozen synctex copies. */
+let bookkeepingCacheDir: string;
 let snapshot: CacheSnapshot | undefined;
 let generation = 0;
 let building = false;
@@ -72,7 +75,9 @@ async function buildAndPreview(): Promise<void> {
 
     generation += 1;
     try {
-      snapshot = await gateAndCopy(result.pdfPath, cacheDir, generation);
+      snapshot = await gateAndCopy(result.pdfPath, webviewCacheDir, generation, {
+        bookkeepingCacheDir,
+      });
     } catch (gateErr) {
       const msg = gateErr instanceof Error ? gateErr.message : String(gateErr);
       output.appendLine(`[artifact gate] ${msg}`);
@@ -82,7 +87,8 @@ async function buildAndPreview(): Promise<void> {
 
     output.appendLine(
       `[cache] PDF → ${snapshot.pdfPath}` +
-        (snapshot.synctexPath ? `; synctex → ${snapshot.synctexPath}` : ''),
+        (snapshot.synctexPath ? `; synctex → ${snapshot.synctexPath}` : '') +
+        `; jobDir=${snapshot.jobDir}`,
     );
     await pdfPanel.showSnapshot(snapshot.pdfPath);
   } catch (err) {
@@ -116,7 +122,9 @@ async function showPdf(): Promise<void> {
   );
   generation += 1;
   try {
-    snapshot = await gateAndCopy(pdfPath, cacheDir, generation);
+    snapshot = await gateAndCopy(pdfPath, webviewCacheDir, generation, {
+      bookkeepingCacheDir,
+    });
     await pdfPanel.showSnapshot(snapshot.pdfPath);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -137,14 +145,13 @@ async function doForwardSync(): Promise<void> {
     return;
   }
 
-  if (!snapshot?.synctexPath || !snapshot.pdfPath) {
+  if (!snapshot?.synctexPath || !snapshot.pdfPath || !snapshot.jobDir) {
     void vscode.window.showErrorMessage(
       'No frozen SyncTeX snapshot. Run ConTeXt: Build and Preview first.',
     );
     return;
   }
 
-  // During build, keep using the previous published snapshot pair (already frozen).
   let toolchain: Toolchain;
   try {
     toolchain = getToolchain();
@@ -155,16 +162,19 @@ async function doForwardSync(): Promise<void> {
 
   const file = editor.document.uri.fsPath;
   const line = editor.selection.active.line + 1;
-  output.appendLine(`[synctex find] file=${file} line=${line} snap=${snapshot.synctexPath}`);
+  output.appendLine(
+    `[synctex find] file=${file} line=${line} snap=${snapshot.synctexPath} jobDir=${snapshot.jobDir}`,
+  );
 
   try {
-    const hit = await forwardSync(
+    const { result: hit, argv, cwd } = await forwardSync(
       toolchain,
       snapshot.synctexPath,
       file,
       line,
-      path.dirname(snapshot.synctexPath),
+      snapshot.jobDir,
     );
+    output.appendLine(`[synctex find] cwd=${cwd} argv=${JSON.stringify(argv)}`);
     output.appendLine(
       `[synctex find] page=${hit.page} llx=${hit.llx} lly=${hit.lly} urx=${hit.urx} ury=${hit.ury}`,
     );
@@ -182,7 +192,7 @@ async function handlePdfClick(page: number, x: number, y: number): Promise<void>
   if (!cfg.get<boolean>('synctex.enabled', true)) {
     return;
   }
-  if (!snapshot?.synctexPath) {
+  if (!snapshot?.synctexPath || !snapshot.jobDir) {
     void vscode.window.showWarningMessage('No SyncTeX snapshot for backward search.');
     return;
   }
@@ -196,26 +206,26 @@ async function handlePdfClick(page: number, x: number, y: number): Promise<void>
   }
 
   output.appendLine(
-    `[synctex report] page=${page} x=${x} y=${y} snap=${snapshot.synctexPath}`,
+    `[synctex report] page=${page} x=${x} y=${y} snap=${snapshot.synctexPath} jobDir=${snapshot.jobDir}`,
   );
 
   try {
-    const hit = await backwardSync(
+    const { result: hit, argv, cwd } = await backwardSync(
       toolchain,
       snapshot.synctexPath,
       page,
       x,
       y,
-      path.dirname(snapshot.synctexPath),
+      snapshot.jobDir,
     );
+    output.appendLine(`[synctex report] cwd=${cwd} argv=${JSON.stringify(argv)}`);
     output.appendLine(
       `[synctex report] file=${hit.filename} line=${hit.linenumber} tol=${hit.tolerance}`,
     );
 
     let targetPath = hit.filename;
     if (!path.isAbsolute(targetPath)) {
-      const base = lastSourcePath ? path.dirname(lastSourcePath) : path.dirname(snapshot.synctexPath);
-      targetPath = path.resolve(base, targetPath);
+      targetPath = path.resolve(snapshot.jobDir, targetPath);
     }
     const uri = vscode.Uri.file(targetPath);
     const doc = await vscode.workspace.openTextDocument(uri);
@@ -233,10 +243,13 @@ async function handlePdfClick(page: number, x: number, y: number): Promise<void>
 
 export function activate(context: vscode.ExtensionContext): void {
   output = vscode.window.createOutputChannel('ConTeXt');
-  cacheDir = path.join(context.globalStorageUri.fsPath, 'pdf-cache');
-  fs.mkdirSync(cacheDir, { recursive: true });
+  webviewCacheDir = path.join(context.extensionPath, 'webview-cache');
+  bookkeepingCacheDir = path.join(context.globalStorageUri.fsPath, 'pdf-cache');
+  fs.mkdirSync(webviewCacheDir, { recursive: true });
+  fs.mkdirSync(bookkeepingCacheDir, { recursive: true });
 
-  pdfPanel = new PdfPanel(context.extensionUri, context.globalStorageUri, (page, x, y) => {
+  const webviewCacheUri = vscode.Uri.file(webviewCacheDir);
+  pdfPanel = new PdfPanel(context.extensionUri, webviewCacheUri, (page, x, y) => {
     void handlePdfClick(page, x, y);
   });
 
@@ -254,6 +267,7 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   output.appendLine('ConTeXt SyncTeX extension activated.');
+  output.appendLine(`webview-cache: ${webviewCacheDir}`);
 }
 
 export function deactivate(): void {
