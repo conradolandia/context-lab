@@ -1,0 +1,1 @@
+mtx-synctex     | filename=/home/andi/doc/main.tex linenumber=17 tolerance=3

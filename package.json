@@ -1,0 +1,94 @@
+{
+  "name": "context-synctex",
+  "displayName": "ConTeXt SyncTeX",
+  "description": "ConTeXt build, PDF.js viewer, and SyncTeX forward/backward navigation",
+  "version": "0.1.0",
+  "publisher": "context-lab",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:context",
+    "onLanguage:tex",
+    "onCommand:context.buildAndPreview",
+    "onCommand:context.forwardSyncTeX",
+    "onCommand:context.showPdf"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "context.buildAndPreview",
+        "title": "ConTeXt: Build and Preview"
+      },
+      {
+        "command": "context.forwardSyncTeX",
+        "title": "ConTeXt: Forward SyncTeX"
+      },
+      {
+        "command": "context.showPdf",
+        "title": "ConTeXt: Show PDF"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "context.forwardSyncTeX",
+        "key": "ctrl+alt+j",
+        "mac": "cmd+alt+j",
+        "when": "editorTextFocus"
+      }
+    ],
+    "configuration": {
+      "title": "ConTeXt SyncTeX",
+      "properties": {
+        "context.root": {
+          "type": "string",
+          "default": "",
+          "description": "ConTeXt / LMTX installation root. Empty by default; leave empty to use PATH. Example: /home/andi/Apps/lmtx"
+        },
+        "context.contextPath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to the context executable. Overrides root/PATH when set."
+        },
+        "context.mtxrunPath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to the mtxrun executable. Overrides root/PATH when set."
+        },
+        "context.synctex.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable SyncTeX forward and backward navigation."
+        },
+        "context.build.args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Extra arguments appended after --synctex=repeat when building."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "test": "npm run compile && node --test dist/test/**/*.test.js",
+    "lint": "tsc -p . --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "pdfjs-dist": "^4.10.38"
+  }
+}

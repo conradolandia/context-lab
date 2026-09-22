@@ -1,0 +1,7 @@
+node_modules/
+dist/
+media/viewer/pdfjs/
+*.vsix
+.DS_Store
+*.log
+.vscode-test/
