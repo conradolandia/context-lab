@@ -1,0 +1,1 @@
+mtx-synctex     | page=2 llx=100 lly=500.0 urx=220.5 ury=520.25

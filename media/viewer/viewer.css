@@ -1,0 +1,82 @@
+:root {
+  color-scheme: light dark;
+  --bg: #1e1e1e;
+  --fg: #d4d4d4;
+  --bar: #252526;
+  --accent: #0e639c;
+  --highlight: rgba(255, 200, 0, 0.35);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, sans-serif;
+  overflow: hidden;
+}
+
+#statusBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  background: var(--bar);
+  font-size: 12px;
+  border-bottom: 1px solid #333;
+}
+
+#viewer {
+  height: calc(100% - 28px);
+  overflow: auto;
+  padding: 12px;
+  outline: none;
+}
+
+.page {
+  position: relative;
+  margin: 0 auto 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  background: #fff;
+  width: fit-content;
+}
+
+.page canvas {
+  display: block;
+}
+
+.highlight {
+  position: absolute;
+  background: var(--highlight);
+  border: 1px solid rgba(255, 180, 0, 0.8);
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+}
+
+.building #statusText::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
