@@ -8,7 +8,7 @@ import { forwardSync, backwardSync, SynctexError } from './synctex/mtxSynctex';
 import { PdfPanel } from './viewer/pdfPanel';
 
 /** Bump when shipping a SyncTeX/viewer behavior change Sir must verify in Output. */
-export const BUILD_ID = 'viewer-toolbar-v1';
+export const BUILD_ID = 'viewer-virtual-v1';
 
 let output: vscode.OutputChannel;
 let pdfPanel: PdfPanel;
@@ -165,7 +165,6 @@ async function doForwardSync(): Promise<void> {
     output.appendLine(
       `[synctex find] page=${hit.page} llx=${hit.llx} lly=${hit.lly} urx=${hit.urx} ury=${hit.ury}`,
     );
-    await pdfPanel.showJobPdf(snapshot.pdfPath, snapshot.jobDir);
     await pdfPanel.forwardSync(hit);
   } catch (err) {
     const msg = err instanceof SynctexError || err instanceof Error ? err.message : String(err);
@@ -174,7 +173,13 @@ async function doForwardSync(): Promise<void> {
   }
 }
 
+let backwardInFlight = false;
+
 async function handlePdfClick(page: number, x: number, y: number): Promise<void> {
+  if (backwardInFlight) {
+    output.appendLine('[synctex report] ignored duplicate click (in flight)');
+    return;
+  }
   const cfg = vscode.workspace.getConfiguration('context');
   if (!cfg.get<boolean>('synctex.enabled', true)) {
     return;
@@ -192,6 +197,7 @@ async function handlePdfClick(page: number, x: number, y: number): Promise<void>
     return;
   }
 
+  backwardInFlight = true;
   output.appendLine(
     `[synctex report] page=${page} x=${x} y=${y} synctex=${snapshot.synctexPath} jobDir=${snapshot.jobDir}`,
   );
@@ -225,6 +231,8 @@ async function handlePdfClick(page: number, x: number, y: number): Promise<void>
     const msg = err instanceof Error ? err.message : String(err);
     output.appendLine(`[synctex report] ${msg}`);
     void vscode.window.showWarningMessage(msg);
+  } finally {
+    backwardInFlight = false;
   }
 }
 
@@ -243,6 +251,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     output,
+    { dispose: () => pdfPanel.dispose() },
     vscode.commands.registerCommand('context.buildAndPreview', () => {
       void buildAndPreview();
     }),
@@ -270,5 +279,5 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {
-  // nothing
+  pdfPanel?.dispose();
 }

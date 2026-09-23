@@ -26,6 +26,7 @@ const testOptions = {
   entryPoints: [
     join(__dirname, 'src/test/artifactGate.test.ts'),
     join(__dirname, 'src/test/mtxSynctex.test.ts'),
+    join(__dirname, 'src/test/pdfServer.test.ts'),
   ],
   bundle: true,
   outdir: join(__dirname, 'dist/test'),

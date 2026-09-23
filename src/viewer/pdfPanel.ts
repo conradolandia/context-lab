@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
+import { PdfRangeServer } from './pdfServer';
 
 export type ViewerMessage =
   | { type: 'ready' }
@@ -12,6 +13,7 @@ export type ViewerMessage =
       firstPageMs?: number;
       renderMs?: number;
       reused?: boolean;
+      virtual?: boolean;
     }
   | { type: 'loadError'; message: string }
   | { type: 'click'; page: number; x: number; y: number }
@@ -40,9 +42,9 @@ export interface ForwardSyncPayload {
 /**
  * PDF.js webview panel.
  *
- * Happy path: load the real gated job PDF via asWebviewUri with the job
- * directory (and workspace folders) in localResourceRoots.
- * Skips reload when path+mtime unchanged. Bytes only if URI fetch 401s.
+ * Happy path: serve the gated job PDF from a loopback range server so PDF.js
+ * can fetch the first page without downloading the whole file via vscode-cdn.
+ * Falls back to asWebviewUri, then bytes on 401.
  */
 export class PdfPanel {
   public static readonly viewType = 'context.pdfPreview';
@@ -55,24 +57,38 @@ export class PdfPanel {
   private building = false;
   private recovering = false;
   private preferBytesFallback = false;
+  private preferWebviewUri = false;
   private loadStartedAt = 0;
+  /** cacheKey currently shown / confirmed by the webview */
+  private loadedCacheKey: string | undefined;
+  /** cacheKey of an in-flight loadPdf — blocks duplicates */
+  private loadInFlightKey: string | undefined;
+  private readonly rangeServer = new PdfRangeServer();
+  private messageSub: vscode.Disposable | undefined;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly onClick: (page: number, x: number, y: number) => void,
     private readonly onLog?: (message: string) => void,
-  ) {}
+  ) {
+    this.jobDirRoots = (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri);
+  }
 
-  /** Ensure jobDir (and workspace folders) are allowed for asWebviewUri. */
+  public dispose(): void {
+    this.messageSub?.dispose();
+    this.panel?.dispose();
+    this.rangeServer.dispose();
+  }
+
   public setJobDir(jobDir: string): void {
     const jobUri = vscode.Uri.file(path.resolve(jobDir));
-    const workspaceRoots = (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri);
-    const next = [jobUri, ...workspaceRoots];
-    const same =
-      next.length === this.jobDirRoots.length &&
-      next.every((u, i) => u.fsPath === this.jobDirRoots[i]?.fsPath);
-    this.jobDirRoots = next;
-    if (this.panel && !same) {
+    if (this.jobDirRoots.some((u) => u.fsPath === jobUri.fsPath)) {
+      return;
+    }
+    this.jobDirRoots = [jobUri, ...this.jobDirRoots];
+    // Avoid tearing down the panel (causes duplicate ready→loadPdf). Roots are
+    // only needed for asWebviewUri fallback; happy path uses the range server.
+    if (this.panel && this.preferWebviewUri) {
       const col = this.panel.viewColumn;
       this.panel.dispose();
       this.panel = undefined;
@@ -105,11 +121,14 @@ export class PdfPanel {
     );
 
     this.panel.webview.html = this.getHtml(this.panel.webview);
-    this.panel.webview.onDidReceiveMessage((msg: ViewerMessage) => {
+    this.messageSub?.dispose();
+    this.messageSub = this.panel.webview.onDidReceiveMessage((msg: ViewerMessage) => {
       this.handleMessage(msg);
     });
     this.panel.onDidDispose(() => {
       this.panel = undefined;
+      this.loadedCacheKey = undefined;
+      this.loadInFlightKey = undefined;
     });
 
     return this.panel;
@@ -133,10 +152,6 @@ export class PdfPanel {
     }
   }
 
-  /**
-   * Load the gated job PDF. Call only after exit 0 + stability gate.
-   * Skips network/render work when the same path+mtime is already shown.
-   */
   public async showJobPdf(jobPdfPath: string, jobDir: string): Promise<void> {
     this.setJobDir(jobDir);
     this.revealOrCreate();
@@ -149,12 +164,19 @@ export class PdfPanel {
     }
 
     const mtimeMs = fs.statSync(jobPdfPath).mtimeMs;
+    const cacheKey = `${jobPdfPath}:${mtimeMs}`;
     if (
       this.panel &&
       this.currentPdfPath === jobPdfPath &&
-      this.currentMtimeMs === mtimeMs
+      this.currentMtimeMs === mtimeMs &&
+      this.loadedCacheKey === cacheKey
     ) {
-      this.onLog?.(`[viewer] skip reload (unchanged mtime) ${jobPdfPath}`);
+      this.onLog?.(`[viewer] skip reload (unchanged) ${jobPdfPath}`);
+      return;
+    }
+
+    if (this.loadInFlightKey === cacheKey) {
+      this.onLog?.(`[viewer] skip reload (in flight) ${cacheKey}`);
       return;
     }
 
@@ -163,7 +185,7 @@ export class PdfPanel {
     }
     this.currentPdfPath = jobPdfPath;
     this.currentMtimeMs = mtimeMs;
-    await this.loadPdf(jobPdfPath);
+    await this.loadPdf(jobPdfPath, cacheKey);
   }
 
   public async forwardSync(payload: ForwardSyncPayload): Promise<void> {
@@ -186,22 +208,54 @@ export class PdfPanel {
     return this.currentPdfPath;
   }
 
-  private async loadPdf(pdfPath: string): Promise<void> {
-    this.loadStartedAt = Date.now();
-    if (this.preferBytesFallback) {
-      await this.postPdfBytes(pdfPath);
+  private async loadPdf(pdfPath: string, cacheKey: string): Promise<void> {
+    if (this.loadInFlightKey === cacheKey) {
       return;
     }
-    const uri = this.panel!.webview.asWebviewUri(vscode.Uri.file(pdfPath));
-    this.onLog?.(`[viewer] loadPdf url=${uri.toString()}`);
-    await this.panel!.webview.postMessage({
-      type: 'loadPdf',
-      url: uri.toString(),
-      cacheKey: `${pdfPath}:${this.currentMtimeMs ?? 0}`,
-    });
+    this.loadInFlightKey = cacheKey;
+    this.loadStartedAt = Date.now();
+
+    try {
+      if (this.preferBytesFallback) {
+        await this.postPdfBytes(pdfPath, cacheKey);
+        return;
+      }
+
+      if (!this.preferWebviewUri) {
+        const rangeUrl = await this.rangeServer.serve(pdfPath);
+        if (rangeUrl) {
+          this.onLog?.(`[viewer] loadPdf rangeServer=${rangeUrl}`);
+          await this.panel!.webview.postMessage({
+            type: 'loadPdf',
+            url: rangeUrl,
+            cacheKey,
+            useRange: true,
+          });
+          return;
+        }
+        this.onLog?.('[viewer] range server unavailable; falling back to asWebviewUri');
+        this.preferWebviewUri = true;
+      }
+
+      const uri = this.panel!.webview.asWebviewUri(vscode.Uri.file(pdfPath));
+      this.onLog?.(`[viewer] loadPdf url=${uri.toString()}`);
+      await this.panel!.webview.postMessage({
+        type: 'loadPdf',
+        url: uri.toString(),
+        cacheKey,
+        useRange: false,
+      });
+    } catch (err) {
+      this.loadInFlightKey = undefined;
+      const message = err instanceof Error ? err.message : String(err);
+      void this.panel?.webview.postMessage({
+        type: 'error',
+        message: `Failed to start PDF load: ${message}`,
+      });
+    }
   }
 
-  private async postPdfBytes(pdfPath: string): Promise<void> {
+  private async postPdfBytes(pdfPath: string, cacheKey: string): Promise<void> {
     try {
       const t0 = Date.now();
       const buf = await fsp.readFile(pdfPath);
@@ -212,9 +266,10 @@ export class PdfPanel {
       await this.panel!.webview.postMessage({
         type: 'loadPdf',
         data,
-        cacheKey: `${pdfPath}:${this.currentMtimeMs ?? 0}`,
+        cacheKey,
       });
     } catch (err) {
+      this.loadInFlightKey = undefined;
       const message = err instanceof Error ? err.message : String(err);
       void this.panel?.webview.postMessage({
         type: 'error',
@@ -224,14 +279,31 @@ export class PdfPanel {
   }
 
   private async recoverFromLoadError(message: string): Promise<void> {
+    this.loadInFlightKey = undefined;
     const is401 = /401|Unexpected server response/i.test(message);
+    const isFetch =
+      /Failed to fetch|NetworkError|ERR_|Load failed/i.test(message);
+
+    if (
+      !this.preferWebviewUri &&
+      !this.preferBytesFallback &&
+      this.currentPdfPath &&
+      (is401 || isFetch)
+    ) {
+      this.preferWebviewUri = true;
+      this.onLog?.(`[viewer] range URL failed (${message}); trying asWebviewUri`);
+      const key = `${this.currentPdfPath}:${this.currentMtimeMs ?? 0}`;
+      await this.loadPdf(this.currentPdfPath, key);
+      return;
+    }
 
     if (is401 && !this.preferBytesFallback && this.currentPdfPath) {
       this.preferBytesFallback = true;
       void vscode.window.showWarningMessage(
         'PDF URI load failed (401). Falling back to in-memory bytes for this session.',
       );
-      await this.postPdfBytes(this.currentPdfPath);
+      const key = `${this.currentPdfPath}:${this.currentMtimeMs ?? 0}`;
+      await this.postPdfBytes(this.currentPdfPath, key);
       return;
     }
 
@@ -253,7 +325,8 @@ export class PdfPanel {
       this.currentPdfPath = fallback;
       try {
         this.currentMtimeMs = fs.statSync(fallback).mtimeMs;
-        await this.loadPdf(fallback);
+        const key = `${fallback}:${this.currentMtimeMs}`;
+        await this.loadPdf(fallback, key);
       } finally {
         this.recovering = false;
       }
@@ -268,23 +341,36 @@ export class PdfPanel {
 
   private handleMessage(msg: ViewerMessage): void {
     switch (msg.type) {
-      case 'ready':
-        if (this.currentPdfPath) {
-          void this.loadPdf(this.currentPdfPath);
+      case 'ready': {
+        // Only (re)load if the webview has no document for the current key.
+        if (!this.currentPdfPath || this.currentMtimeMs == null) {
+          break;
         }
+        const key = `${this.currentPdfPath}:${this.currentMtimeMs}`;
+        if (this.loadedCacheKey === key || this.loadInFlightKey === key) {
+          this.onLog?.(`[viewer] ready ignored (already loaded/in-flight)`);
+          break;
+        }
+        void this.loadPdf(this.currentPdfPath, key);
         if (this.building) {
           this.setBuilding(true);
         }
         break;
+      }
       case 'loaded': {
+        this.loadInFlightKey = undefined;
+        if (this.currentPdfPath && this.currentMtimeMs != null) {
+          this.loadedCacheKey = `${this.currentPdfPath}:${this.currentMtimeMs}`;
+        }
         const hostMs = this.loadStartedAt ? Date.now() - this.loadStartedAt : undefined;
         this.onLog?.(
           `[viewer] loaded pages=${msg.pages}` +
             (msg.loadMs != null ? ` getDocumentMs=${msg.loadMs}` : '') +
             (msg.firstPageMs != null ? ` firstPageMs=${msg.firstPageMs}` : '') +
-            (msg.renderMs != null ? ` allPagesMs=${msg.renderMs}` : '') +
+            (msg.renderMs != null ? ` renderMs=${msg.renderMs}` : '') +
             (hostMs != null ? ` hostRoundtripMs=${hostMs}` : '') +
-            (msg.reused ? ' reused=1' : ''),
+            (msg.reused ? ' reused=1' : '') +
+            (msg.virtual ? ' virtual=1' : ''),
         );
         break;
       }
@@ -330,7 +416,8 @@ export class PdfPanel {
       `worker-src ${webview.cspSource} blob:`,
       `img-src ${webview.cspSource} data: blob:`,
       `font-src ${webview.cspSource}`,
-      `connect-src ${webview.cspSource}`,
+      // Range server + vscode-resource fallback
+      `connect-src ${webview.cspSource} http://127.0.0.1:* http://localhost:*`,
     ].join('; ');
 
     if (!html.includes('Content-Security-Policy')) {

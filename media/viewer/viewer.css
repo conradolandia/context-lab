@@ -95,6 +95,12 @@ body {
   width: fit-content;
 }
 
+.page.placeholder {
+  background: #2a2a2a;
+  box-shadow: none;
+  border: 1px solid #333;
+}
+
 .page canvas {
   display: block;
 }
