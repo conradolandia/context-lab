@@ -9,12 +9,6 @@ export interface ArtifactGateOptions {
   settleSamples?: number;
 }
 
-export interface GateResult {
-  pdfPath: string;
-  synctexPath?: string;
-  size: number;
-}
-
 export class ArtifactGateError extends Error {
   constructor(message: string) {
     super(message);
@@ -60,7 +54,6 @@ export async function hasEofMarker(filePath: string): Promise<boolean> {
 
 /**
  * Wait until the PDF exists, has non-zero stable size, and a %PDF- header.
- * Optionally checks for %%EOF near the end.
  */
 export async function waitForStablePdf(
   pdfPath: string,
@@ -93,7 +86,6 @@ export async function waitForStablePdf(
             `File does not look like a PDF (missing %PDF- header): ${pdfPath}`,
           );
         }
-        // Optional EOF check — warn but do not hard-fail if absent (incremental writers).
         await hasEofMarker(pdfPath);
         return stat.size;
       }
@@ -120,101 +112,40 @@ export function findSynctexSibling(pdfPath: string): string | undefined {
   return undefined;
 }
 
-export interface CacheSnapshot {
-  /** Viewer PDF under the extension webview-cache (not the live job PDF). */
+/**
+ * Gated job artifacts. Happy path uses the real project PDF + synctex
+ * (no globalStorage copy). Viewer refreshes only after the gate passes.
+ */
+export interface JobSnapshot {
+  /** Absolute path to the job PDF under the project (viewer loads this). */
   pdfPath: string;
-  /**
-   * Frozen synctex used for SyncTeX lookups. Prefer the job-dir sibling after
-   * a gated success; also keep a cache copy path when available.
-   */
+  /** Absolute path to the job .synctex / .synctex.gz (SyncTeX lookups). */
   synctexPath?: string;
-  /** Absolute job PDF that was gated (for diagnostics). */
-  jobPdfPath: string;
   /** Directory where the job was built — mtxrun SyncTeX cwd. */
   jobDir: string;
   generation: number;
-}
-
-export interface PublishOptions extends ArtifactGateOptions {
-  /**
-   * Directory under the extension (in localResourceRoots) used for the PDF
-   * the webview loads via asWebviewUri — avoids globalStorage vscode-cdn 401
-   * and avoids shipping multi‑MB PDFs through postMessage.
-   */
-  webviewCacheDir: string;
-  /** Optional secondary cache (e.g. globalStorage) for bookkeeping copies. */
-  bookkeepingCacheDir?: string;
+  size: number;
 }
 
 /**
- * Gate the job PDF, then copy it into the extension webview-cache for viewing.
- * Records the job-dir synctex path (absolute) for SyncTeX with cwd = jobDir.
- * Also freezes a synctex copy under bookkeepingCacheDir when provided.
+ * After exit 0: wait for the job PDF to settle, then record paths to the
+ * real project PDF and sibling synctex. Does not copy into globalStorage.
  */
-export async function publishToCache(
+export async function gateJobArtifacts(
   jobPdfPath: string,
   generation: number,
-  options: PublishOptions,
-): Promise<CacheSnapshot> {
-  const size = await waitForStablePdf(jobPdfPath, options);
-  void size;
-
-  await fsp.mkdir(options.webviewCacheDir, { recursive: true });
-  if (options.bookkeepingCacheDir) {
-    await fsp.mkdir(options.bookkeepingCacheDir, { recursive: true });
-  }
-
-  const viewPdf = path.join(options.webviewCacheDir, `view-${generation}.pdf`);
-  // Stable alias for asWebviewUri (overwrite in place after gate)
-  const currentPdf = path.join(options.webviewCacheDir, 'current.pdf');
-  await fsp.copyFile(jobPdfPath, viewPdf);
-  await fsp.copyFile(jobPdfPath, currentPdf);
-
-  const jobDir = path.dirname(path.resolve(jobPdfPath));
-  const jobSynctex = findSynctexSibling(jobPdfPath);
-
-  let synctexPath: string | undefined = jobSynctex
-    ? path.resolve(jobSynctex)
-    : undefined;
-
-  // Freeze a cache copy so a later rebuild cannot race SyncTeX mid-pair.
-  if (jobSynctex && options.bookkeepingCacheDir) {
-    const ext = jobSynctex.endsWith('.gz') ? '.synctex.gz' : '.synctex';
-    const frozen = path.join(
-      options.bookkeepingCacheDir,
-      `view-${generation}${ext}`,
-    );
-    await fsp.copyFile(jobSynctex, frozen);
-    // Prefer frozen absolute path for lookups; cwd remains jobDir.
-    synctexPath = frozen;
-  }
-
-  if (!(await hasPdfHeader(currentPdf))) {
-    throw new ArtifactGateError('Webview-cache PDF copy failed header check');
-  }
+  options: ArtifactGateOptions = {},
+): Promise<JobSnapshot> {
+  const absPdf = path.resolve(jobPdfPath);
+  const size = await waitForStablePdf(absPdf, options);
+  const jobDir = path.dirname(absPdf);
+  const syn = findSynctexSibling(absPdf);
 
   return {
-    pdfPath: currentPdf,
-    synctexPath,
-    jobPdfPath: path.resolve(jobPdfPath),
+    pdfPath: absPdf,
+    synctexPath: syn ? path.resolve(syn) : undefined,
     jobDir,
     generation,
+    size,
   };
-}
-
-/** Exported for unit tests that need gate result metadata. */
-export async function gateAndCopy(
-  jobPdfPath: string,
-  webviewCacheDir: string,
-  generation: number,
-  options?: ArtifactGateOptions & { bookkeepingCacheDir?: string },
-): Promise<GateResult & CacheSnapshot> {
-  const snap = await publishToCache(jobPdfPath, generation, {
-    webviewCacheDir,
-    bookkeepingCacheDir: options?.bookkeepingCacheDir,
-    settleMs: options?.settleMs,
-    settleSamples: options?.settleSamples,
-  });
-  const size = (await fsp.stat(snap.pdfPath)).size;
-  return { ...snap, size };
 }

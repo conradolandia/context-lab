@@ -38,10 +38,21 @@ export function synctexSourceArg(sourceFile: string, jobDir: string): string {
   const root = path.resolve(jobDir);
   const rel = path.relative(root, abs);
   if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) {
-    // ConTeXt Input paths typically use forward slashes
     return rel.split(path.sep).join('/');
   }
   return abs;
+}
+
+/** Strip optional single/double quotes from mtxrun --direct field values. */
+export function unquoteSynctexValue(raw: string): string {
+  const s = raw.trim();
+  if (
+    (s.startsWith("'") && s.endsWith("'") && s.length >= 2) ||
+    (s.startsWith('"') && s.endsWith('"') && s.length >= 2)
+  ) {
+    return s.slice(1, -1);
+  }
+  return s;
 }
 
 /** Build argv for forward SyncTeX (`--find --direct`). */
@@ -69,12 +80,11 @@ export function buildFindArgs(
 }
 
 /**
- * Build argv for backward SyncTeX.
+ * Build argv for backward SyncTeX per mtx-synctex --help:
+ * `--report --direct --console --page=.. --x=.. --y=.. [--tolerance=..] <synctexfile>`
  *
- * Use `--goto --direct` without `--editor`. Plain `--report` hardcodes editor
- * "console", which calls editfile on the matched .tex and yields
- * "invalid synctex log file '<tex path>'" or empty stdout instead of
- * filename=/linenumber= output.
+ * Do not use `--goto` with `--direct`, and do not pass `--editor`
+ * (the extension opens the file itself).
  */
 export function buildReportArgs(
   synctexPath: string,
@@ -85,7 +95,6 @@ export function buildReportArgs(
   tolerance = 50,
 ): SynctexRunSpec {
   const absSynctex = path.resolve(synctexPath);
-  // Round to avoid float noise; mtxrun expects PDF user-space points (bp).
   const xr = Number(x.toFixed(3));
   const yr = Number(y.toFixed(3));
   return {
@@ -94,8 +103,9 @@ export function buildReportArgs(
     args: [
       '--script',
       'synctex',
-      '--goto',
+      '--report',
       '--direct',
+      '--console',
       `--page=${page}`,
       `--x=${xr}`,
       `--y=${yr}`,
@@ -107,9 +117,9 @@ export function buildReportArgs(
 
 /** Parse mtxrun --script synctex --find [--direct] output. */
 export function parseFindOutput(text: string): ForwardSyncResult | undefined {
-  // page=1 llx=72.0 lly=680.5 urx=300.2 ury=700.1
+  // page=1 llx=72.0 …  or page='1' llx='72.0' …
   const re =
-    /page\s*=\s*(\d+)\s+llx\s*=\s*([-\d.]+)\s+lly\s*=\s*([-\d.]+)\s+urx\s*=\s*([-\d.]+)\s+ury\s*=\s*([-\d.]+)/i;
+    /page\s*=\s*['"]?([-\d.]+)['"]?\s+llx\s*=\s*['"]?([-\d.]+)['"]?\s+lly\s*=\s*['"]?([-\d.]+)['"]?\s+urx\s*=\s*['"]?([-\d.]+)['"]?\s+ury\s*=\s*['"]?([-\d.]+)['"]?/i;
   const m = text.match(re);
   if (!m) {
     return undefined;
@@ -123,17 +133,20 @@ export function parseFindOutput(text: string): ForwardSyncResult | undefined {
   };
 }
 
-/** Parse mtxrun --script synctex --goto/--report [--direct] output. */
+/**
+ * Parse mtxrun --script synctex --report --direct [--console] output.
+ * ConTeXt may emit bare or quoted values, e.g.:
+ *   filename='include/contenido/00-1-dedicatoria.tex' linenumber='2' tolerance=0
+ */
 export function parseReportOutput(text: string): BackwardSyncResult | undefined {
-  // filename=foo.tex linenumber=42 tolerance=0
   const re =
-    /filename\s*=\s*(\S+)\s+linenumber\s*=\s*(\d+)\s+tolerance\s*=\s*(\d+)/i;
+    /filename\s*=\s*(\S+)\s+linenumber\s*=\s*['"]?(\d+)['"]?\s+tolerance\s*=\s*['"]?(\d+)['"]?/i;
   const m = text.match(re);
   if (!m) {
     return undefined;
   }
   return {
-    filename: m[1],
+    filename: unquoteSynctexValue(m[1]),
     linenumber: Number(m[2]),
     tolerance: Number(m[3]),
   };
@@ -180,7 +193,7 @@ export interface SynctexInvokeResult<T> {
 
 /**
  * Forward SyncTeX: source file+line → PDF page and box.
- * Always runs with cwd = job/project directory.
+ * Always runs with cwd = job/project directory against the project synctex file.
  */
 export async function forwardSync(
   toolchain: Toolchain,
@@ -203,7 +216,7 @@ export async function forwardSync(
 
 /**
  * Backward SyncTeX: PDF page+coords → source file+line.
- * Always runs with cwd = job/project directory; uses --goto --direct (not --report).
+ * Uses `--report --direct --console` with cwd = jobDir and the project synctex path.
  */
 export async function backwardSync(
   toolchain: Toolchain,

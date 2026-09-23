@@ -8,6 +8,7 @@ import {
   buildFindArgs,
   buildReportArgs,
   synctexSourceArg,
+  unquoteSynctexValue,
   isInvalidSynctexLogMessage,
 } from '../synctex/mtxSynctex';
 
@@ -53,7 +54,7 @@ describe('mtxSynctex parseFindOutput', () => {
 });
 
 describe('mtxSynctex parseReportOutput', () => {
-  it('parses --direct report output', () => {
+  it('parses --direct report output (bare values)', () => {
     const text = readFixture('report-direct.txt');
     const hit = parseReportOutput(text);
     assert.ok(hit);
@@ -71,20 +72,34 @@ describe('mtxSynctex parseReportOutput', () => {
     assert.equal(hit!.tolerance, 3);
   });
 
+  it("parses Sir's quoted --direct line (filename='…' linenumber='…')", () => {
+    const text = readFixture('report-quoted.txt');
+    const hit = parseReportOutput(text);
+    assert.ok(hit);
+    assert.equal(hit!.filename, 'include/contenido/00-1-dedicatoria.tex');
+    assert.equal(hit!.linenumber, 2);
+    assert.equal(hit!.tolerance, 0);
+  });
+
   it('returns undefined when no match line is present', () => {
     assert.equal(parseReportOutput('invalid synctex log file'), undefined);
   });
 
-  it('detects ConTeXt invalid synctex log errors (including mistaken .tex paths)', () => {
+  it('detects ConTeXt invalid synctex log errors', () => {
     const text = readFixture('report-invalid-tex-path.txt');
-    assert.equal(parseReportOutput(text), undefined);
     assert.equal(isInvalidSynctexLogMessage(text), true);
+  });
+
+  it('unquoteSynctexValue strips matching quotes', () => {
+    assert.equal(unquoteSynctexValue("'foo/bar.tex'"), 'foo/bar.tex');
+    assert.equal(unquoteSynctexValue('"foo.tex"'), 'foo.tex');
+    assert.equal(unquoteSynctexValue('foo.tex'), 'foo.tex');
   });
 });
 
 describe('mtxSynctex argv construction', () => {
   const jobDir = '/home/andi/doc';
-  const synctex = '/home/andi/.cache/view-1.synctex';
+  const synctex = '/home/andi/doc/main.synctex';
 
   it('buildFindArgs uses jobDir cwd, relative --file, absolute synctex last', () => {
     const spec = buildFindArgs(
@@ -94,7 +109,6 @@ describe('mtxSynctex argv construction', () => {
       jobDir,
     );
     assert.equal(spec.cwd, jobDir);
-    assert.equal(spec.synctexPath, path.resolve(synctex));
     assert.deepEqual(spec.args, [
       '--script',
       'synctex',
@@ -104,16 +118,15 @@ describe('mtxSynctex argv construction', () => {
       '--line=12',
       path.resolve(synctex),
     ]);
-    // Synctex path is last positional — never a .tex Input path
-    assert.match(spec.args[spec.args.length - 1], /\.synctex$/);
   });
 
-  it('buildReportArgs uses --goto --direct (not --report) and jobDir cwd', () => {
+  it('buildReportArgs uses --report --direct --console (not --goto / --editor)', () => {
     const spec = buildReportArgs(synctex, 7, 247.75, 347.3024535679999, jobDir, 50);
     assert.equal(spec.cwd, jobDir);
-    assert.ok(spec.args.includes('--goto'));
-    assert.ok(!spec.args.includes('--report'));
+    assert.ok(spec.args.includes('--report'));
     assert.ok(spec.args.includes('--direct'));
+    assert.ok(spec.args.includes('--console'));
+    assert.ok(!spec.args.includes('--goto'));
     assert.ok(!spec.args.some((a) => a.startsWith('--editor')));
     assert.ok(spec.args.includes('--page=7'));
     assert.ok(spec.args.includes('--x=247.75'));

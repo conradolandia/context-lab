@@ -3,17 +3,13 @@ import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { resolveToolchain, ToolchainError, type Toolchain } from './toolchain/discover';
 import { runContextBuild } from './build/compiler';
-import { gateAndCopy, type CacheSnapshot } from './build/artifactGate';
+import { gateJobArtifacts, type JobSnapshot } from './build/artifactGate';
 import { forwardSync, backwardSync, SynctexError } from './synctex/mtxSynctex';
 import { PdfPanel } from './viewer/pdfPanel';
 
 let output: vscode.OutputChannel;
 let pdfPanel: PdfPanel;
-/** Extension-local dir for asWebviewUri PDF (fast, avoids globalStorage 401). */
-let webviewCacheDir: string;
-/** Optional bookkeeping / frozen synctex copies. */
-let bookkeepingCacheDir: string;
-let snapshot: CacheSnapshot | undefined;
+let snapshot: JobSnapshot | undefined;
 let generation = 0;
 let building = false;
 let lastSourcePath: string | undefined;
@@ -27,11 +23,7 @@ function activeTexPath(): string | undefined {
   if (!ed) {
     return undefined;
   }
-  const fsPath = ed.document.uri.fsPath;
-  if (!/\.(tex|ctx|mkiv|mkxl)$/i.test(fsPath) && ed.document.languageId !== 'context') {
-    // Still allow if user explicitly builds from any file with ConTeXt commands
-  }
-  return fsPath;
+  return ed.document.uri.fsPath;
 }
 
 async function buildAndPreview(): Promise<void> {
@@ -58,6 +50,7 @@ async function buildAndPreview(): Promise<void> {
   }
 
   building = true;
+  // Keep last good view; do not tear down or reload mid-compile.
   pdfPanel.setBuilding(true, 'Building…');
   output.clear();
   output.show(true);
@@ -69,15 +62,12 @@ async function buildAndPreview(): Promise<void> {
       void vscode.window.showErrorMessage(
         `ConTeXt build failed (exit ${result.exitCode}). See ConTeXt output.`,
       );
-      // Keep last good view — do not refresh viewer
       return;
     }
 
     generation += 1;
     try {
-      snapshot = await gateAndCopy(result.pdfPath, webviewCacheDir, generation, {
-        bookkeepingCacheDir,
-      });
+      snapshot = await gateJobArtifacts(result.pdfPath, generation);
     } catch (gateErr) {
       const msg = gateErr instanceof Error ? gateErr.message : String(gateErr);
       output.appendLine(`[artifact gate] ${msg}`);
@@ -86,11 +76,11 @@ async function buildAndPreview(): Promise<void> {
     }
 
     output.appendLine(
-      `[cache] PDF → ${snapshot.pdfPath}` +
+      `[gate] PDF → ${snapshot.pdfPath}` +
         (snapshot.synctexPath ? `; synctex → ${snapshot.synctexPath}` : '') +
         `; jobDir=${snapshot.jobDir}`,
     );
-    await pdfPanel.showSnapshot(snapshot.pdfPath);
+    await pdfPanel.showJobPdf(snapshot.pdfPath, snapshot.jobDir);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     output.appendLine(msg);
@@ -103,13 +93,12 @@ async function buildAndPreview(): Promise<void> {
 
 async function showPdf(): Promise<void> {
   if (snapshot?.pdfPath && fs.existsSync(snapshot.pdfPath)) {
-    await pdfPanel.showSnapshot(snapshot.pdfPath);
+    await pdfPanel.showJobPdf(snapshot.pdfPath, snapshot.jobDir);
     return;
   }
-  // Fall back to sibling PDF of last/active source without rebuilding
   const sourcePath = activeTexPath() ?? lastSourcePath;
   if (!sourcePath) {
-    void vscode.window.showErrorMessage('No PDF snapshot yet. Run ConTeXt: Build and Preview.');
+    void vscode.window.showErrorMessage('No PDF yet. Run ConTeXt: Build and Preview.');
     return;
   }
   const pdfPath = sourcePath.replace(/\.[^.]+$/, '.pdf');
@@ -117,15 +106,10 @@ async function showPdf(): Promise<void> {
     void vscode.window.showErrorMessage(`No PDF found at ${pdfPath}. Build first.`);
     return;
   }
-  void vscode.window.showWarningMessage(
-    'Showing job PDF without a gated cache snapshot. Prefer Build and Preview for SyncTeX safety.',
-  );
   generation += 1;
   try {
-    snapshot = await gateAndCopy(pdfPath, webviewCacheDir, generation, {
-      bookkeepingCacheDir,
-    });
-    await pdfPanel.showSnapshot(snapshot.pdfPath);
+    snapshot = await gateJobArtifacts(pdfPath, generation);
+    await pdfPanel.showJobPdf(snapshot.pdfPath, snapshot.jobDir);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     void vscode.window.showErrorMessage(msg);
@@ -147,7 +131,7 @@ async function doForwardSync(): Promise<void> {
 
   if (!snapshot?.synctexPath || !snapshot.pdfPath || !snapshot.jobDir) {
     void vscode.window.showErrorMessage(
-      'No frozen SyncTeX snapshot. Run ConTeXt: Build and Preview first.',
+      'No SyncTeX data yet. Run ConTeXt: Build and Preview first.',
     );
     return;
   }
@@ -163,7 +147,7 @@ async function doForwardSync(): Promise<void> {
   const file = editor.document.uri.fsPath;
   const line = editor.selection.active.line + 1;
   output.appendLine(
-    `[synctex find] file=${file} line=${line} snap=${snapshot.synctexPath} jobDir=${snapshot.jobDir}`,
+    `[synctex find] file=${file} line=${line} synctex=${snapshot.synctexPath} jobDir=${snapshot.jobDir}`,
   );
 
   try {
@@ -178,7 +162,7 @@ async function doForwardSync(): Promise<void> {
     output.appendLine(
       `[synctex find] page=${hit.page} llx=${hit.llx} lly=${hit.lly} urx=${hit.urx} ury=${hit.ury}`,
     );
-    await pdfPanel.showSnapshot(snapshot.pdfPath);
+    await pdfPanel.showJobPdf(snapshot.pdfPath, snapshot.jobDir);
     await pdfPanel.forwardSync(hit);
   } catch (err) {
     const msg = err instanceof SynctexError || err instanceof Error ? err.message : String(err);
@@ -193,7 +177,7 @@ async function handlePdfClick(page: number, x: number, y: number): Promise<void>
     return;
   }
   if (!snapshot?.synctexPath || !snapshot.jobDir) {
-    void vscode.window.showWarningMessage('No SyncTeX snapshot for backward search.');
+    void vscode.window.showWarningMessage('No SyncTeX data for backward search.');
     return;
   }
 
@@ -206,7 +190,7 @@ async function handlePdfClick(page: number, x: number, y: number): Promise<void>
   }
 
   output.appendLine(
-    `[synctex report] page=${page} x=${x} y=${y} snap=${snapshot.synctexPath} jobDir=${snapshot.jobDir}`,
+    `[synctex report] page=${page} x=${x} y=${y} synctex=${snapshot.synctexPath} jobDir=${snapshot.jobDir}`,
   );
 
   try {
@@ -243,13 +227,8 @@ async function handlePdfClick(page: number, x: number, y: number): Promise<void>
 
 export function activate(context: vscode.ExtensionContext): void {
   output = vscode.window.createOutputChannel('ConTeXt');
-  webviewCacheDir = path.join(context.extensionPath, 'webview-cache');
-  bookkeepingCacheDir = path.join(context.globalStorageUri.fsPath, 'pdf-cache');
-  fs.mkdirSync(webviewCacheDir, { recursive: true });
-  fs.mkdirSync(bookkeepingCacheDir, { recursive: true });
 
-  const webviewCacheUri = vscode.Uri.file(webviewCacheDir);
-  pdfPanel = new PdfPanel(context.extensionUri, webviewCacheUri, (page, x, y) => {
+  pdfPanel = new PdfPanel(context.extensionUri, (page, x, y) => {
     void handlePdfClick(page, x, y);
   });
 
@@ -267,7 +246,6 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   output.appendLine('ConTeXt SyncTeX extension activated.');
-  output.appendLine(`webview-cache: ${webviewCacheDir}`);
 }
 
 export function deactivate(): void {
