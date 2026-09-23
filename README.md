@@ -19,12 +19,13 @@ Then open this folder in VS Code / Cursor and press **F5** (launch config **Run 
 After the Extension Development Host starts, open the **ConTeXt** output channel. You should see:
 
 ```text
-ConTeXt SyncTeX activated  version=0.1.8  BUILD_ID=digestif-lsp-v2
+ConTeXt SyncTeX activated  version=0.1.9  BUILD_ID=digestif-lsp-v3
 [digestif] root=/home/andi/Apps/lmtx  context=…/tex/texmf-linux-64/bin/context  mtxrun=…  digestif=…
 [digestif] xml=/home/andi/Apps/lmtx/tex/texmf-context/tex/context/interface/mkiv/context-en.xml  DIGESTIF_TEXMF=…
+[digestif] language client started
 ```
 
-If Digestif is not installed, you get a warning instead; build and SyncTeX still work. If you still see an older `BUILD_ID`, close all Extension Development Host windows, rebuild, and F5 again.
+If Digestif is not installed or exits on startup, you get a warning with stderr/exit detail instead; build and SyncTeX still work. Running Extensions should show **0 uncaught errors**. If you still see an older `BUILD_ID`, close all Extension Development Host windows, rebuild, and F5 again.
 
 Unit tests (no ConTeXt required):
 
@@ -115,16 +116,21 @@ If `context.root` (or PATH inference) accidentally points at a `bin/` directory,
 1. Install Digestif so `which digestif` works (or set `context.digestifPath`).
 2. Set `context.root` to `/home/andi/Apps/lmtx` (install root, parent of `tex/`).
 3. F5 → open a ConTeXt buffer with language mode **context** (or `tex`).
-4. ConTeXt Output should log `BUILD_ID=digestif-lsp-v2`, `root=…/lmtx`, `xml=…/tex/texmf-context/…/context-en.xml`, and `language client started`.
+4. ConTeXt Output should log `BUILD_ID=digestif-lsp-v3`, `root=…/lmtx`, `xml=…/tex/texmf-context/…/context-en.xml`, and `language client started` (or a clear Digestif exit/stderr reason — not uncaught Extension Host errors).
 5. Type `\start` or `\setup` and confirm completion; hover a known command.
+
+**Marketplace Digestif conflict**
+
+If the Marketplace extension **Digestif** (`phil.red` / similar) is also installed in the Extension Development Host, disable it while testing this one. Both may spawn the same `digestif` binary and fight over TeX buffers. Our client id is `contextSyncTeX.digestif` / name **ConTeXt SyncTeX Digestif** (distinct from the Marketplace client).
 
 **Troubleshooting: interface XML not found**
 
 - Confirm XML exists at `{context.root}/tex/texmf-context/tex/context/interface/mkiv/context-en.xml`.
 - Do **not** set `context.root` to `…/tex/texmf-linux-64/bin` (or any `bin/`). Use the install root.
-- If Output shows an XML path containing `/bin/tex/texmf-context/`, root resolution is wrong — update to this build (`digestif-lsp-v2`) and check `context.root`.
+- If Output shows an XML path containing `/bin/tex/texmf-context/`, root resolution is wrong — use `digestif-lsp-v2+` and check `context.root`.
 - Empty `context.root` with no inferable toolchain root → set `context.root`.
 - Missing Digestif binary → warning only; build/SyncTeX unchanged. Set `context.digestif.enabled` to `false` to silence.
+- Digestif exits immediately / “connection got disposed”: check Output for `[digestif stderr]` and `process exited code=…`. The wrapper needs `texlua` on PATH; this extension shims `texlua` → `luametatex` under LMTX when needed. Also confirm `DIGESTIF_TEXMF` points at `…/tex/texmf-context`.
 
 Digestif maps LSP language id `context` to ConTeXt and `tex` to LaTeX. Prefer the **context** language mode for ConTeXt sources when a grammar extension provides it.
 
