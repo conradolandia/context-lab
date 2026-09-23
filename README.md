@@ -19,10 +19,10 @@ Then open this folder in VS Code / Cursor and press **F5** (launch config **Run 
 After the Extension Development Host starts, open the **ConTeXt** output channel. You should see:
 
 ```text
-ConTeXt SyncTeX activated  version=0.1.2  BUILD_ID=synctex-report-v3
+ConTeXt SyncTeX activated  version=0.1.3  BUILD_ID=viewer-toolbar-v1
 ```
 
-If you still see `[cache] PDF →`, argv with `--goto`, or `BUILD_ID=synctex-report-v2`, the host is on an old build — close all Extension Development Host windows, re-run the commands above, and F5 again.
+If you still see `[cache] PDF →`, argv with `--goto`, or an older `BUILD_ID`, the host is on an old build — close all Extension Development Host windows, re-run the commands above, and F5 again.
 
 Unit tests (no ConTeXt required):
 
@@ -92,7 +92,9 @@ Build uses: `context --synctex=repeat` plus `context.build.args`.
 2. F5 → open a multi-file job → **Build and Preview**.
 3. **Ctrl+click** the dedicatory / include region → should open `include/contenido/00-1-dedicatoria.tex` at line 2.
 4. Confirm Output shows `file=include/contenido/00-1-dedicatoria.tex line=2` (not “no match”), plus `--report --direct --console`.
-5. Confirm viewer timing lines (`firstPageMs=…`) and that a long/failed build does not replace the last good view.
+5. **Ctrl+Alt+J** forward SyncTeX → highlight scrolls into view; Output shows `[viewer] highlight page=… viewportLeft=…`.
+6. Use toolbar: zoom ±, Fit, Prev/Next, page input. Ctrl+click still works after zoom.
+7. Confirm a long/failed build does not replace the last good view.
 
 ## Layout
 

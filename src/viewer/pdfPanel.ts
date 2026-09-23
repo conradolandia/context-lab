@@ -14,7 +14,20 @@ export type ViewerMessage =
       reused?: boolean;
     }
   | { type: 'loadError'; message: string }
-  | { type: 'click'; page: number; x: number; y: number };
+  | { type: 'click'; page: number; x: number; y: number }
+  | {
+      type: 'highlight';
+      page: number;
+      viewportLeft: number;
+      top: number;
+      w: number;
+      h: number;
+      scale: number;
+      llx?: number;
+      lly?: number;
+      urx?: number;
+      ury?: number;
+    };
 
 export interface ForwardSyncPayload {
   page: number;
@@ -275,6 +288,18 @@ export class PdfPanel {
         );
         break;
       }
+      case 'highlight':
+        this.onLog?.(
+          `[viewer] highlight page=${msg.page}` +
+            ` viewportLeft=${msg.viewportLeft.toFixed(1)}` +
+            ` top=${msg.top.toFixed(1)}` +
+            ` w=${msg.w.toFixed(1)} h=${msg.h.toFixed(1)}` +
+            ` scale=${msg.scale.toFixed(3)}` +
+            (msg.llx != null
+              ? ` llx=${msg.llx} lly=${msg.lly} urx=${msg.urx} ury=${msg.ury}`
+              : ''),
+        );
+        break;
       case 'loadError':
         void this.recoverFromLoadError(msg.message);
         break;

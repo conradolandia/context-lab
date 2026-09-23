@@ -8,7 +8,7 @@ import { forwardSync, backwardSync, SynctexError } from './synctex/mtxSynctex';
 import { PdfPanel } from './viewer/pdfPanel';
 
 /** Bump when shipping a SyncTeX/viewer behavior change Sir must verify in Output. */
-export const BUILD_ID = 'synctex-report-v3';
+export const BUILD_ID = 'viewer-toolbar-v1';
 
 let output: vscode.OutputChannel;
 let pdfPanel: PdfPanel;

@@ -7,9 +7,22 @@
   <link rel="stylesheet" href="viewer.css" />
 </head>
 <body>
-  <header id="statusBar">
-    <span id="statusText">No PDF</span>
-    <span id="pageInfo"></span>
+  <header id="toolbar">
+    <div class="toolbar-group" id="navGroup">
+      <button type="button" id="btnPrev" title="Previous page" aria-label="Previous page">Prev</button>
+      <input type="number" id="pageInput" min="1" value="1" title="Page" aria-label="Page number" />
+      <span id="pageTotal">/ 0</span>
+      <button type="button" id="btnNext" title="Next page" aria-label="Next page">Next</button>
+    </div>
+    <div class="toolbar-group" id="zoomGroup">
+      <button type="button" id="btnZoomOut" title="Zoom out" aria-label="Zoom out">-</button>
+      <button type="button" id="btnZoomIn" title="Zoom in" aria-label="Zoom in">+</button>
+      <button type="button" id="btnFitWidth" title="Fit width" aria-label="Fit width">Fit</button>
+      <span id="zoomLabel">125%</span>
+    </div>
+    <div class="toolbar-group" id="statusGroup">
+      <span id="statusText">No PDF</span>
+    </div>
   </header>
   <main id="viewer" tabindex="0"></main>
   <script type="module" src="viewer.js"></script>
