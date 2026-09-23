@@ -19,8 +19,9 @@ Then open this folder in VS Code / Cursor and press **F5** (launch config **Run 
 After the Extension Development Host starts, open the **ConTeXt** output channel. You should see:
 
 ```text
-ConTeXt SyncTeX activated  version=0.1.7  BUILD_ID=digestif-lsp-v1
-[digestif] path=…  xml=…/tex/texmf-context/tex/context/interface/mkiv/context-en.xml  DIGESTIF_TEXMF=…
+ConTeXt SyncTeX activated  version=0.1.8  BUILD_ID=digestif-lsp-v2
+[digestif] root=/home/andi/Apps/lmtx  context=…/tex/texmf-linux-64/bin/context  mtxrun=…  digestif=…
+[digestif] xml=/home/andi/Apps/lmtx/tex/texmf-context/tex/context/interface/mkiv/context-en.xml  DIGESTIF_TEXMF=…
 ```
 
 If Digestif is not installed, you get a warning instead; build and SyncTeX still work. If you still see an older `BUILD_ID`, close all Extension Development Host windows, rebuild, and F5 again.
@@ -49,17 +50,28 @@ The extension opens the resolved source itself (no `--editor`). Output channel l
 
 ## Toolchain settings
 
+`context.root` is the **LMTX / ConTeXt Standalone install root**: the directory that contains `tex/`, **not** the `bin` folder. See [wiki Structure](https://wiki.contextgarden.net/ConTeXt_Standalone/Structure).
+
+Sir’s layout:
+
+```text
+/home/andi/Apps/lmtx/                          ← set context.root here
+  tex/
+    texmf-linux-64/bin/context, mtxrun         ← binaries only
+    texmf-context/tex/context/interface/mkiv/context-en.xml
+```
+
 Resolution order:
 
 1. `context.contextPath` / `context.mtxrunPath` (absolute overrides, each independent)
-2. Binaries under `context.root` (LMTX-style `bin` / `tex/texmf-*/bin` layout)
-3. `context` and `mtxrun` on `PATH`
+2. Binaries under `context.root` → `{root}/tex/texmf-*/bin/{context,mtxrun}` (and older `bin/` layouts)
+3. `context` and `mtxrun` on `PATH` (install root inferred by walking parents until `tex/texmf-context` exists)
 
-`context.root` defaults to **empty** (no hardcoded path). PATH installs need no config.
+`context.root` defaults to **empty** (no hardcoded path). PATH installs need no config when the binary realpath sits under a normal LMTX tree.
 
 | Setting | Default | Notes |
 | --- | --- | --- |
-| `context.root` | `""` | LMTX root, e.g. `/home/andi/Apps/lmtx` |
+| `context.root` | `""` | Install root (parent of `tex/`), e.g. `/home/andi/Apps/lmtx` — never `…/bin` |
 | `context.contextPath` | `""` | Absolute `context` binary |
 | `context.mtxrunPath` | `""` | Absolute `mtxrun` binary |
 | `context.synctex.enabled` | `true` | Toggle SyncTeX |
@@ -82,7 +94,7 @@ This extension starts [Digestif](https://github.com/astoff/digestif) over stdio 
 
 **LMTX / interface XML**
 
-Digestif loads ConTeXt macros from the LMTX interface XML at runtime. With Sir’s tree:
+Digestif loads ConTeXt macros from the LMTX interface XML at runtime:
 
 ```json
 {
@@ -90,25 +102,28 @@ Digestif loads ConTeXt macros from the LMTX interface XML at runtime. With Sir�
 }
 ```
 
-the extension looks for:
+Derived paths (never under `bin/`):
 
-`/home/andi/Apps/lmtx/tex/texmf-context/tex/context/interface/mkiv/context-en.xml`
+- XML: `/home/andi/Apps/lmtx/tex/texmf-context/tex/context/interface/mkiv/context-en.xml`
+- `DIGESTIF_TEXMF`: `/home/andi/Apps/lmtx/tex/texmf-context` (plus sibling content `texmf-*` trees; not `texmf-linux-64`)
+- PATH for the Digestif child: prepends `{root}/tex/texmf-*/bin`
 
-and sets `DIGESTIF_TEXMF` to the matching `texmf-*` roots (and prepends LMTX bin dirs to `PATH` for the Digestif child).
+If `context.root` (or PATH inference) accidentally points at a `bin/` directory, the extension walks parents until it finds `tex/texmf-context`.
 
 **Verify completion / hover**
 
 1. Install Digestif so `which digestif` works (or set `context.digestifPath`).
-2. Set `context.root` to `/home/andi/Apps/lmtx`.
+2. Set `context.root` to `/home/andi/Apps/lmtx` (install root, parent of `tex/`).
 3. F5 → open a ConTeXt buffer with language mode **context** (or `tex`).
-4. ConTeXt Output should log `[digestif] path=… xml=…/context-en.xml …` and `language client started`.
+4. ConTeXt Output should log `BUILD_ID=digestif-lsp-v2`, `root=…/lmtx`, `xml=…/tex/texmf-context/…/context-en.xml`, and `language client started`.
 5. Type `\start` or `\setup` and confirm completion; hover a known command.
 
 **Troubleshooting: interface XML not found**
 
-- Confirm the file exists under `context.root` (path above).
-- If your tree layout differs, check Output for the exact expected path.
-- Empty `context.root` with no inferable toolchain root → Digestif cannot find XML; set `context.root`.
+- Confirm XML exists at `{context.root}/tex/texmf-context/tex/context/interface/mkiv/context-en.xml`.
+- Do **not** set `context.root` to `…/tex/texmf-linux-64/bin` (or any `bin/`). Use the install root.
+- If Output shows an XML path containing `/bin/tex/texmf-context/`, root resolution is wrong — update to this build (`digestif-lsp-v2`) and check `context.root`.
+- Empty `context.root` with no inferable toolchain root → set `context.root`.
 - Missing Digestif binary → warning only; build/SyncTeX unchanged. Set `context.digestif.enabled` to `false` to silence.
 
 Digestif maps LSP language id `context` to ConTeXt and `tex` to LaTeX. Prefer the **context** language mode for ConTeXt sources when a grammar extension provides it.

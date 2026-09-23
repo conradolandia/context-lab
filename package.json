@@ -2,7 +2,7 @@
   "name": "context-synctex",
   "displayName": "ConTeXt SyncTeX",
   "description": "ConTeXt build, PDF.js viewer, and SyncTeX forward/backward navigation",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "publisher": "context-lab",
   "engines": {
     "vscode": "^1.85.0"
@@ -48,7 +48,7 @@
         "context.root": {
           "type": "string",
           "default": "",
-          "description": "ConTeXt / LMTX installation root. Empty by default; leave empty to use PATH. Example: /home/andi/Apps/lmtx"
+          "description": "LMTX / ConTeXt Standalone install root (the directory that contains tex/, e.g. /home/andi/Apps/lmtx). Not the bin folder. Empty = use PATH and infer the install root."
         },
         "context.contextPath": {
           "type": "string",

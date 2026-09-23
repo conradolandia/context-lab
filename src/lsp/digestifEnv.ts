@@ -1,18 +1,14 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { candidateBinDirs } from '../toolchain/paths';
+import {
+  candidateBinDirs,
+  CONTEXT_INTERFACE_REL,
+  resolveInstallRoot,
+  TEXMF_CONTEXT_REL,
+} from '../toolchain/paths';
 
-/** Relative path to the core ConTeXt interface XML under a typical LMTX tree. */
-export const CONTEXT_INTERFACE_REL = path.join(
-  'tex',
-  'texmf-context',
-  'tex',
-  'context',
-  'interface',
-  'mkiv',
-  'context-en.xml',
-);
+export { CONTEXT_INTERFACE_REL, TEXMF_CONTEXT_REL } from '../toolchain/paths';
 
 export type DigestifEnvOk = {
   ok: true;
@@ -22,7 +18,8 @@ export type DigestifEnvOk = {
   texmfDirs: string[];
   /** Merged process env for the Digestif child. */
   env: NodeJS.ProcessEnv;
-  root?: string;
+  /** Normalized LMTX install root (parent of tex/). */
+  root: string;
 };
 
 export type DigestifEnvFail = {
@@ -34,7 +31,10 @@ export type DigestifEnvFail = {
 export type DigestifEnvResult = DigestifEnvOk | DigestifEnvFail;
 
 export interface BuildDigestifEnvOptions {
-  /** Resolved LMTX / ConTeXt root (from context.root or inferred). */
+  /**
+   * Candidate LMTX install root (from context.root or inferred).
+   * May be a bin/texmf path; will be walked up to the install root.
+   */
   root?: string;
   /** Absolute override for the Digestif executable (context.digestifPath). */
   digestifPath?: string;
@@ -82,7 +82,7 @@ export function resolveDigestifExecutable(
 }
 
 /**
- * Locate context-en.xml under an LMTX-style root.
+ * Locate context-en.xml under an LMTX-style install root.
  * Prefers the canonical mkiv path; falls back to a shallow search under tex/.
  */
 export function findContextInterfaceXml(root: string): string | undefined {
@@ -152,24 +152,38 @@ function walkForInterfaceXml(dir: string, depth: number): string | undefined {
 
 /**
  * Collect texmf roots Digestif should scan (DIGESTIF_TEXMF).
- * Includes texmf-context and sibling tex/texmf-* trees when present.
+ * Prefers texmf-context and sibling content trees under {root}/tex.
+ * Never includes a bare bin/ directory.
  */
 export function collectTexmfDirs(root: string, interfaceXmlPath?: string): string[] {
   const dirs: string[] = [];
   const push = (p: string) => {
-    if (p && fs.existsSync(p) && fs.statSync(p).isDirectory() && !dirs.includes(p)) {
+    if (!p || !fs.existsSync(p) || !fs.statSync(p).isDirectory()) {
+      return;
+    }
+    if (path.basename(p) === 'bin') {
+      return;
+    }
+    if (!dirs.includes(p)) {
       dirs.push(p);
     }
   };
 
   const texDir = path.join(root, 'tex');
   if (fs.existsSync(texDir)) {
+    // Prefer content tree first
     push(path.join(texDir, 'texmf-context'));
     try {
       for (const name of fs.readdirSync(texDir)) {
-        if (name.startsWith('texmf-')) {
-          push(path.join(texDir, name));
+        if (!name.startsWith('texmf-')) {
+          continue;
         }
+        // Skip platform binary-only trees (texmf-linux-64, etc.) which hold bin/
+        // but not ConTeXt interface XML. Digestif only needs content texmf trees.
+        if (/^texmf-(linux|osx|mswin|windows)/i.test(name)) {
+          continue;
+        }
+        push(path.join(texDir, name));
       }
     } catch {
       // ignore
@@ -178,7 +192,6 @@ export function collectTexmfDirs(root: string, interfaceXmlPath?: string): strin
 
   push(path.join(root, 'texmf-context'));
 
-  // Ensure the texmf that contains the interface XML is included
   if (interfaceXmlPath) {
     const texmf = texmfRootFromInterfaceXml(interfaceXmlPath);
     if (texmf) {
@@ -234,14 +247,26 @@ export function buildDigestifEnv(options: BuildDigestifEnvOptions): DigestifEnvR
     };
   }
 
-  const root = options.root?.trim() || undefined;
+  const candidate = options.root?.trim() || undefined;
+  if (!candidate) {
+    return {
+      ok: false,
+      kind: 'xml-missing',
+      message:
+        'ConTeXt interface XML not found: set context.root to your LMTX install root ' +
+        '(the directory that contains tex/, example: /home/andi/Apps/lmtx) so Digestif can load context-en.xml.',
+    };
+  }
+
+  const root = resolveInstallRoot(candidate);
   if (!root) {
     return {
       ok: false,
       kind: 'xml-missing',
       message:
-        'ConTeXt interface XML not found: set context.root to your LMTX install ' +
-        '(example: /home/andi/Apps/lmtx) so Digestif can load context-en.xml.',
+        `Could not resolve an LMTX install root from ${candidate}. ` +
+        `Set context.root to the parent of tex/ (example: /home/andi/Apps/lmtx), not the bin folder. ` +
+        `Expected ${path.join('…', CONTEXT_INTERFACE_REL)}.`,
     };
   }
 
@@ -251,9 +276,20 @@ export function buildDigestifEnv(options: BuildDigestifEnvOptions): DigestifEnvR
       ok: false,
       kind: 'xml-missing',
       message:
-        `ConTeXt interface XML (context-en.xml) not found under ${root}. ` +
-        `Expected something like ${path.join(root, CONTEXT_INTERFACE_REL)}. ` +
-        `Check context.root points at the LMTX tree.`,
+        `ConTeXt interface XML (context-en.xml) not found under install root ${root}. ` +
+        `Expected ${path.join(root, CONTEXT_INTERFACE_REL)}. ` +
+        `Check context.root points at the LMTX install root (parent of tex/), not …/tex/texmf-*/bin.`,
+    };
+  }
+
+  // Guard: never accept an XML path that lives under a bin/ segment
+  if (interfaceXmlPath.split(path.sep).includes('bin')) {
+    return {
+      ok: false,
+      kind: 'xml-missing',
+      message:
+        `Refusing interface XML path under a bin/ directory: ${interfaceXmlPath}. ` +
+        `Set context.root to the LMTX install root (e.g. /home/andi/Apps/lmtx).`,
     };
   }
 

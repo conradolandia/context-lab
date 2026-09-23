@@ -1,14 +1,25 @@
 import * as fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import * as vscode from 'vscode';
-import { findBinaryUnderRoot, inferRootFromBinary } from './paths';
+import {
+  findBinaryUnderRoot,
+  inferRootFromBinary,
+  resolveInstallRoot,
+} from './paths';
 
-export { candidateBinDirs, findBinaryUnderRoot, inferRootFromBinary } from './paths';
+export {
+  candidateBinDirs,
+  findBinaryUnderRoot,
+  inferRootFromBinary,
+  isInstallRoot,
+  resolveInstallRoot,
+  walkToInstallRoot,
+} from './paths';
 
 export interface Toolchain {
   contextPath: string;
   mtxrunPath: string;
-  /** Effective ConTeXt root when known (from setting or inferred from PATH). */
+  /** Effective LMTX install root (parent of tex/), from setting or inferred. */
   root?: string;
 }
 
@@ -82,12 +93,13 @@ export function resolveToolchain(
   }
 
   if (rootSetting) {
-    root = rootSetting;
+    // Normalize: context.root must be the install root (parent of tex/), not bin/
+    root = resolveInstallRoot(rootSetting) ?? rootSetting;
     if (!contextPath) {
-      contextPath = findBinaryUnderRoot(rootSetting, 'context');
+      contextPath = findBinaryUnderRoot(root, 'context');
     }
     if (!mtxrunPath) {
-      mtxrunPath = findBinaryUnderRoot(rootSetting, 'mtxrun');
+      mtxrunPath = findBinaryUnderRoot(root, 'mtxrun');
     }
   }
 
@@ -103,6 +115,9 @@ export function resolveToolchain(
       inferRootFromBinary(contextPath ?? '') ??
       inferRootFromBinary(mtxrunPath ?? '') ??
       undefined;
+  } else {
+    // Re-normalize in case setting pointed at bin/texmf-linux-64
+    root = resolveInstallRoot(root) ?? root;
   }
 
   if (!contextPath || !mtxrunPath) {
@@ -113,9 +128,9 @@ export function resolveToolchain(
       .filter(Boolean)
       .join(' and ');
     throw new ToolchainError(
-      `Could not find ${missing}. Set context.root to your LMTX install ` +
-        `(example: /home/andi/Apps/lmtx), set context.contextPath / context.mtxrunPath, ` +
-        `or ensure both binaries are on PATH.`,
+      `Could not find ${missing}. Set context.root to your LMTX install root ` +
+        `(the directory that contains tex/, example: /home/andi/Apps/lmtx), ` +
+        `set context.contextPath / context.mtxrunPath, or ensure both binaries are on PATH.`,
     );
   }
 

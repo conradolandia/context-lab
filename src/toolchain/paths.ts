@@ -1,7 +1,91 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-/** Candidate bin dirs under an LMTX / ConTeXt root. Pure (no vscode). */
+/** Relative path to the core ConTeXt interface XML under a typical LMTX tree. */
+export const CONTEXT_INTERFACE_REL = path.join(
+  'tex',
+  'texmf-context',
+  'tex',
+  'context',
+  'interface',
+  'mkiv',
+  'context-en.xml',
+);
+
+/** Relative path to the texmf-context tree under the install root. */
+export const TEXMF_CONTEXT_REL = path.join('tex', 'texmf-context');
+
+/**
+ * True if `dir` looks like an LMTX / ConTeXt Standalone install root
+ * (the directory that contains `tex/`, never a `bin/` folder).
+ */
+export function isInstallRoot(dir: string): boolean {
+  if (!dir) {
+    return false;
+  }
+  const base = path.basename(dir);
+  if (base === 'bin') {
+    return false;
+  }
+  const xml = path.join(dir, CONTEXT_INTERFACE_REL);
+  if (fs.existsSync(xml) && fs.statSync(xml).isFile()) {
+    return true;
+  }
+  const texmfContext = path.join(dir, TEXMF_CONTEXT_REL);
+  return fs.existsSync(texmfContext) && fs.statSync(texmfContext).isDirectory();
+}
+
+/**
+ * Walk from `start` (file or directory) up toward filesystem root until an
+ * install root is found (contains `tex/texmf-context/…/context-en.xml` or
+ * at least `tex/texmf-context`). Returns undefined if none found.
+ */
+export function walkToInstallRoot(start: string): string | undefined {
+  if (!start) {
+    return undefined;
+  }
+  let dir: string;
+  try {
+    const resolved = fs.realpathSync(start);
+    dir = fs.existsSync(resolved) && fs.statSync(resolved).isFile()
+      ? path.dirname(resolved)
+      : resolved;
+  } catch {
+    dir = fs.existsSync(start) && fs.statSync(start).isFile()
+      ? path.dirname(start)
+      : start;
+  }
+
+  for (let i = 0; i < 12; i++) {
+    if (isInstallRoot(dir)) {
+      return dir;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) {
+      break;
+    }
+    dir = parent;
+  }
+  return undefined;
+}
+
+/**
+ * Normalize a candidate path to the LMTX install root.
+ * - If already an install root, return it.
+ * - Otherwise walk parents (handles bin dirs, texmf-linux-64, mistaken settings).
+ */
+export function resolveInstallRoot(candidate: string): string | undefined {
+  const trimmed = candidate?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  if (isInstallRoot(trimmed)) {
+    return path.resolve(trimmed);
+  }
+  return walkToInstallRoot(trimmed);
+}
+
+/** Candidate bin dirs under an LMTX / ConTeXt install root. Pure (no vscode). */
 export function candidateBinDirs(root: string): string[] {
   const platformHints = [
     process.platform === 'darwin'
@@ -27,10 +111,14 @@ export function candidateBinDirs(root: string): string[] {
     }
   };
 
+  // Standalone / LMTX: {root}/tex/texmf-<platform>/bin
+  for (const hint of platformHints) {
+    push(path.join(root, 'tex', `texmf-${hint}`, 'bin'));
+  }
+  // Older / alternate layouts
   push(path.join(root, 'bin'));
   for (const hint of platformHints) {
     push(path.join(root, 'bin', hint));
-    push(path.join(root, 'tex', `texmf-${hint}`, 'bin'));
   }
   // Flat installs sometimes put binaries directly under root
   push(root);
@@ -57,29 +145,14 @@ export function findBinaryUnderRoot(root: string, name: string): string | undefi
   return undefined;
 }
 
-/** Infer LMTX-like root from a binary realpath (e.g. tex/texmf-OS/bin/context). */
+/**
+ * Infer LMTX install root from a binary realpath.
+ * Walks parents until `tex/texmf-context/…/context-en.xml` (or texmf-context) exists.
+ * Never returns a `bin/` directory.
+ */
 export function inferRootFromBinary(binaryPath: string): string | undefined {
-  try {
-    const resolved = fs.realpathSync(binaryPath);
-    const parts = resolved.split(path.sep);
-    const binIdx = parts.lastIndexOf('bin');
-    if (binIdx > 0) {
-      const parent = parts[binIdx - 1];
-      if (parent.startsWith('texmf-')) {
-        // …/tex/texmf-linux-64/bin/context → root is two levels above texmf-*
-        const texIdx = binIdx - 2;
-        if (texIdx >= 0 && parts[texIdx] === 'tex') {
-          return parts.slice(0, texIdx).join(path.sep) || path.sep;
-        }
-        return parts.slice(0, binIdx - 1).join(path.sep) || path.sep;
-      }
-      // …/bin/<platform>/context or …/bin/context
-      if (binIdx >= 1) {
-        return parts.slice(0, binIdx).join(path.sep) || path.sep;
-      }
-    }
-  } catch {
-    // ignore
+  if (!binaryPath) {
+    return undefined;
   }
-  return undefined;
+  return walkToInstallRoot(binaryPath);
 }

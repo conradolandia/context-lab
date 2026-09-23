@@ -99,8 +99,21 @@ export function createDigestifClient(options: {
       }
 
       lastOk = resolved;
+      let contextBin = '';
+      let mtxrunBin = '';
+      try {
+        const toolchain = resolveToolchain();
+        contextBin = toolchain.contextPath;
+        mtxrunBin = toolchain.mtxrunPath;
+      } catch {
+        // bins optional for the log line
+      }
       output.appendLine(
-        `[digestif] path=${resolved.digestifPath}  xml=${resolved.interfaceXmlPath}  ` +
+        `[digestif] root=${resolved.root}  context=${contextBin || '(n/a)'}  ` +
+          `mtxrun=${mtxrunBin || '(n/a)'}  digestif=${resolved.digestifPath}`,
+      );
+      output.appendLine(
+        `[digestif] xml=${resolved.interfaceXmlPath}  ` +
           `DIGESTIF_TEXMF=${resolved.texmfDirs.join(process.platform === 'win32' ? ';' : ':')}`,
       );
 
