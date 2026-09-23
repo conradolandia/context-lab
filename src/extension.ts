@@ -10,7 +10,7 @@ import { resolveRootFile, type RootResolution } from './project/rootFile';
 import { createDigestifClient, type DigestifClientHandle } from './lsp/digestifClient';
 
 /** Bump when shipping a SyncTeX/viewer/LSP behavior change Sir must verify in Output. */
-export const BUILD_ID = 'digestif-lsp-v5';
+export const BUILD_ID = 'digestif-lsp-v6';
 
 let output: vscode.OutputChannel;
 let pdfPanel: PdfPanel;
@@ -365,7 +365,7 @@ export function activate(context: vscode.ExtensionContext): void {
     },
   );
 
-  digestif = createDigestifClient({ output });
+  digestif = createDigestifClient({ output, extensionPath: context.extensionPath });
 
   context.subscriptions.push(
     output,

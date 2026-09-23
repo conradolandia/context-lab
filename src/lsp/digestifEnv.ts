@@ -47,6 +47,11 @@ export interface BuildDigestifEnvOptions {
   baseEnv?: NodeJS.ProcessEnv;
   /** Injected which() for tests. */
   whichDigestif?: () => string | undefined;
+  /**
+   * Absolute path to resources/digestif-lmtx-bootstrap.lua.
+   * Passed into the texlua shim so wrapper launches use the path searcher.
+   */
+  bootstrapPath?: string;
 }
 
 function isExecutable(filePath: string): boolean {
@@ -323,7 +328,11 @@ export function buildDigestifEnv(options: BuildDigestifEnvOptions): DigestifEnvR
   const pathPrefix = [...binDirs];
   let texluaShimDir: string | undefined;
   if (!realTexlua && luametatex) {
-    const shim = writeTexluaLuaonlyShim(luametatex);
+    const shim = writeTexluaLuaonlyShim(
+      luametatex,
+      undefined,
+      options.bootstrapPath,
+    );
     if (shim) {
       texluaShimDir = shim.shimDir;
       pathPrefix.unshift(shim.shimDir);

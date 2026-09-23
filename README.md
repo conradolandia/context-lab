@@ -19,14 +19,15 @@ Then open this folder in VS Code / Cursor and press **F5** (launch config **Run 
 After the Extension Development Host starts, open the **ConTeXt** output channel. You should see:
 
 ```text
-ConTeXt SyncTeX activated  version=0.1.11  BUILD_ID=digestif-lsp-v5
+ConTeXt SyncTeX activated  version=0.1.12  BUILD_ID=digestif-lsp-v6
+[digestif] bootstrap=…/resources/digestif-lmtx-bootstrap.lua
 [digestif] root=/home/andi/Apps/lmtx  …
-[digestif] launch method=luametatex-luaonly — self-install wrapper → luametatex --luaonly …/.digestif/bin/digestif
-[digestif] spawned pid=… (stdio LSP — silence until initialize is normal)
+[digestif] launch method=luametatex-bootstrap — … luametatex --luaonly …/digestif-lmtx-bootstrap.lua
+[digestif] spawn argv: ["…/luametatex","--luaonly","…/digestif-lmtx-bootstrap.lua","--verbose"]
 [digestif] language client started
 ```
 
-DigestiF is an LSP server on stdio: running `luametatex --luaonly ~/.digestif/bin/digestif` by hand prints nothing and waits — that is **normal** (it waits for LSP `initialize` on stdin). Do not treat silence as a hang. If startup fails, look for **`[digestif] --- last stderr ---`**. Build and SyncTeX still work. Running Extensions should show **0 uncaught errors**.
+**Do not** expect bare `luametatex --luaonly ~/.digestif/bin/digestif` to work. LuaMetaTeX’s stock `package.searchers` do not load DigestiF from `package.path` (VM: module not found; some LMTX builds hang until killed). This extension ships `resources/digestif-lmtx-bootstrap.lua`, which installs a normal path searcher and then starts DigestiF. DigestiF is an LSP server on stdio: silence until `initialize` is normal. If startup fails, look for **`[digestif] --- last stderr ---`**. Build and SyncTeX still work.
 
 Unit tests (no ConTeXt required):
 
@@ -88,13 +89,14 @@ This extension starts [Digestif](https://github.com/astoff/digestif) over stdio 
 
 **Install DigestiF** (pick one):
 
-1. **Self-install wrapper** (expects a LuaTeX-compatible `texlua`):
+1. **Self-install wrapper + LMTX (recommended for ConTeXt Standalone)**:
    - Download [digestif](https://raw.githubusercontent.com/astoff/digestif/master/scripts/digestif) into `~/.local/bin`, `chmod +x`.
    - First run clones into `~/.digestif`.
-   - Under **LMTX**, TeX Live `texlua` is usually missing. This extension launches DigestiF as:
-     `luametatex --luaonly ~/.digestif/bin/digestif`
-     (and installs a `texlua` shim that runs `luametatex --luaonly`, not a bare symlink).
-2. **LuaRocks** (often easier with a system Lua): `luarocks install --local digestif`, put `~/.luarocks/bin` on `PATH`, or set `context.digestifPath` to that script.
+   - DigestiF needs `lpeg`/`lfs`. LMTX’s `luametatex` provides them; plain system `lua5.4` does not unless you install the C modules.
+   - This extension launches DigestiF as:
+     `luametatex --luaonly <extension>/resources/digestif-lmtx-bootstrap.lua`
+     (not bare `--luaonly ~/.digestif/bin/digestif` — that never loads DigestiF modules under LMTX).
+2. **LuaRocks + system Lua** (alternative): `luarocks install --local digestif` (pulls `lpeg`/`luafilesystem`), put `~/.luarocks/bin` on `PATH`, or set `context.digestifPath`. Use when you prefer not to run DigestiF under LuaMetaTeX.
 
 **LMTX / interface XML**
 
@@ -108,16 +110,27 @@ Derived paths (never under `bin/`):
 
 - XML: `/home/andi/Apps/lmtx/tex/texmf-context/tex/context/interface/mkiv/context-en.xml`
 - `DIGESTIF_TEXMF`: `/home/andi/Apps/lmtx/tex/texmf-context`
-- Launch (typical): `…/tex/texmf-linux-64/bin/luametatex --luaonly ~/.digestif/bin/digestif`
+- Launch (LMTX): `…/luametatex --luaonly …/resources/digestif-lmtx-bootstrap.lua`
+
+**Handshake outside VS Code** (expect DigestiF `serverInfo` JSON, not hang/`exit=124`):
+
+```bash
+DIGESTIF_HOME="$HOME/.digestif" DIGESTIF_TEXMF="/home/andi/Apps/lmtx/tex/texmf-context" \
+  printf 'Content-Length: 92\r\n\r\n{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":null,"capabilities":{}}}' \
+  | timeout 10 /home/andi/Apps/lmtx/tex/texmf-linux-64/bin/luametatex --luaonly \
+      /path/to/ConTeXt-lab/resources/digestif-lmtx-bootstrap.lua --verbose
+```
+
+Or from this repo after compile: `LMTX_ROOT=/home/andi/Apps/lmtx npm run handshake`.
 
 **Verify completion / hover**
 
 1. Install DigestiF (wrapper or luarocks).
 2. Set `context.root` to `/home/andi/Apps/lmtx`.
 3. Disable Marketplace **DigestiF** in the Extension Development Host while testing.
-4. F5 → Output: `BUILD_ID=digestif-lsp-v5`, `launch method=luametatex-luaonly` (or `direct` for luarocks), then **`[digestif] language client started`**.
+4. F5 → Output: `BUILD_ID=digestif-lsp-v6`, `launch method=luametatex-bootstrap`, then **`[digestif] language client started`**.
 5. Open a ConTeXt buffer → try completion (`\setup` + Ctrl+Space) and hover on `\starttext`.
-6. If it fails: find **`[digestif] --- last stderr ---`**. Silence when DigestiF is run by hand is normal (LSP waits on stdin). A 30s initialize timeout means DigestiF never answered LSP — check stderr, Marketplace DigestiF conflict, or `DIGESTIF_TEXMF`.
+6. If it fails: find **`[digestif] --- last stderr ---`**. Bare `luametatex --luaonly ~/.digestif/bin/digestif` hanging (`timeout` → exit 124) or exiting with `module 'digestif.langserver' not found` is expected — use the bootstrap launch.
 
 **Marketplace DigestiF conflict**
 
@@ -127,10 +140,11 @@ Disable Marketplace **DigestiF** (`phil.red` / similar) while testing. Our clien
 
 | Symptom | What to check |
 | --- | --- |
-| Hand-run DigestiF prints nothing and waits | **Normal** — it is an LSP server waiting for stdin |
+| Bare `luametatex --luaonly ~/.digestif/bin/digestif` hangs or module not found | Expected under LMTX; use bootstrap launch (`luametatex-bootstrap` in Output) |
+| Hand-run DigestiF prints nothing and waits | **Normal** if bootstrap is used — LSP waiting for stdin |
 | `process exited code=1` + stream destroyed | Scroll to `[digestif] --- last stderr ---` |
-| Initialize timed out after 30s | DigestiF never completed LSP handshake; check stderr / Marketplace conflict / XML env |
-| Wrapper without `luametatex-luaonly` in Output | Update to v4+; bare texlua→luametatex symlink is wrong |
+| Initialize timed out after 30s | DigestiF never completed LSP handshake; confirm `launch method=luametatex-bootstrap` and spawn argv |
+| System `lua5.4` → `module 'lpeg' not found` | DigestiF needs lpeg/lfs; use LMTX bootstrap or luarocks DigestiF |
 | `could not find data files` | DigestiF home incomplete; re-run wrapper once, or set `DIGESTIF_DATA` |
 | XML under `/bin/tex/` | Wrong root; set install root (parent of `tex/`) |
 | Two DigestiF servers fighting | Disable Marketplace DigestiF |
@@ -193,6 +207,9 @@ src/extension.ts
 src/toolchain/discover.ts
 src/lsp/digestifEnv.ts
 src/lsp/digestifClient.ts
+src/lsp/digestifLaunch.ts
+resources/digestif-lmtx-bootstrap.lua
+scripts/digestif-handshake.mjs
 src/build/compiler.ts
 src/build/artifactGate.ts
 src/synctex/mtxSynctex.ts

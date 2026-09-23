@@ -6,6 +6,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   isSelfInstallWrapper,
+  resolveBootstrapPath,
   resolveDigestifHome,
   resolveDigestifLaunch,
   writeTexluaLuaonlyShim,
@@ -42,7 +43,7 @@ describe('digestifLaunch helpers', () => {
     );
   });
 
-  it('prefers luametatex --luaonly for self-install wrapper', async () => {
+  it('prefers luametatex-bootstrap for self-install wrapper', async () => {
     const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'digestif-launch-'));
     const home = path.join(tmp, '.digestif');
     const main = path.join(home, 'bin', 'digestif');
@@ -54,32 +55,47 @@ describe('digestifLaunch helpers', () => {
     const luametatex = path.join(tmp, 'luametatex');
     fs.writeFileSync(luametatex, '#!/bin/sh\n');
     fs.chmodSync(luametatex, 0o755);
+    const bootstrap = path.join(tmp, 'digestif-lmtx-bootstrap.lua');
+    fs.writeFileSync(bootstrap, '-- bootstrap\n');
 
     const launch = resolveDigestifLaunch({
       digestifPath: wrapper,
       luametatex,
       digestifHome: home,
       homedir: tmp,
+      bootstrapPath: bootstrap,
     });
-    assert.equal(launch.method, 'luametatex-luaonly');
+    assert.equal(launch.method, 'luametatex-bootstrap');
     assert.equal(launch.command, luametatex);
-    assert.deepEqual(launch.args, ['--luaonly', main]);
+    assert.deepEqual(launch.args, ['--luaonly', bootstrap]);
     assert.ok(launch.envOverrides.LUA_PATH?.includes(home));
+    assert.equal(launch.envOverrides.DIGESTIF_HOME, home);
+    assert.equal(launch.bootstrapPath, bootstrap);
   });
 
-  it('writeTexluaLuaonlyShim writes --luaonly script (not bare symlink)', async () => {
+  it('writeTexluaLuaonlyShim prefers bootstrap when set', async () => {
     const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'texlua-shim-'));
     const luametatex = path.join(tmp, 'luametatex');
     fs.writeFileSync(luametatex, '#!/bin/sh\n');
     fs.chmodSync(luametatex, 0o755);
+    const bootstrap = path.join(tmp, 'boot.lua');
+    fs.writeFileSync(bootstrap, '-- boot\n');
     const shimDir = path.join(tmp, 'shim');
-    const result = writeTexluaLuaonlyShim(luametatex, shimDir);
+    const result = writeTexluaLuaonlyShim(luametatex, shimDir, bootstrap);
     assert.ok(result);
     const body = fs.readFileSync(result!.shimPath, 'utf8');
     assert.match(body, /--luaonly/);
-    assert.match(body, /luametatex/);
-    // Must not be a symlink to luametatex
+    assert.match(body, /CONTEXT_SYNCTEX_DIGESTIF_BOOTSTRAP|boot\.lua/);
     assert.equal(fs.lstatSync(result!.shimPath).isSymbolicLink(), false);
+  });
+
+  it('resolveBootstrapPath finds resources/', async () => {
+    const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'ext-root-'));
+    const res = path.join(tmp, 'resources');
+    fs.mkdirSync(res, { recursive: true });
+    const boot = path.join(res, 'digestif-lmtx-bootstrap.lua');
+    fs.writeFileSync(boot, '-- x\n');
+    assert.equal(resolveBootstrapPath(tmp), boot);
   });
 });
 

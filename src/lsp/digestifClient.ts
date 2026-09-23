@@ -11,7 +11,7 @@ import {
 } from 'vscode-languageclient/node';
 import { resolveToolchain, ToolchainError } from '../toolchain/discover';
 import { buildDigestifEnv, type DigestifEnvOk } from './digestifEnv';
-import { resolveDigestifLaunch } from './digestifLaunch';
+import { resolveBootstrapPath, resolveDigestifLaunch } from './digestifLaunch';
 import {
   DIGESTIF_START_TIMEOUT_MS,
   preferDigestifError,
@@ -71,11 +71,15 @@ class SafeLanguageClient extends LanguageClient {
  *
  * DigestiF is an LSP server on stdio: it prints nothing until initialize.
  * Do not preflight with `--version` (that hangs under `luametatex --luaonly`).
+ * Under LMTX, launch via `luametatex --luaonly` + path-searcher bootstrap
+ * (bare `--luaonly ~/.digestif/bin/digestif` never loads DigestiF modules).
  */
 export function createDigestifClient(options: {
   output: vscode.OutputChannel;
+  /** Extension install root (for resources/digestif-lmtx-bootstrap.lua). */
+  extensionPath: string;
 }): DigestifClientHandle {
-  const { output } = options;
+  const { output, extensionPath } = options;
   const log = (line: string) => {
     output.appendLine(line);
   };
@@ -137,9 +141,19 @@ export function createDigestifClient(options: {
       }
 
       const digestifPathSetting = (cfg.get<string>('digestifPath', '') ?? '').trim();
+      const bootstrapPath = resolveBootstrapPath(extensionPath);
+      if (bootstrapPath) {
+        log(`[digestif] bootstrap=${bootstrapPath}`);
+      } else {
+        log(
+          '[digestif] WARNING: resources/digestif-lmtx-bootstrap.lua not found; ' +
+            'LMTX DigestiF may fail to load modules',
+        );
+      }
       const resolved = buildDigestifEnv({
         root,
         digestifPath: digestifPathSetting || undefined,
+        bootstrapPath,
       });
 
       if (!resolved.ok) {
@@ -175,8 +189,12 @@ export function createDigestifClient(options: {
         root: resolved.root,
         luametatex: resolved.luametatex,
         texlua: resolved.texlua,
+        bootstrapPath,
       });
       log(`[digestif] launch method=${launch.method} — ${launch.detail}`);
+      log(
+        `[digestif] spawn argv: ${JSON.stringify([launch.command, ...launch.args, '--verbose'])}`,
+      );
 
       await stopClient();
 
