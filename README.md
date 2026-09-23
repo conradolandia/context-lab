@@ -19,7 +19,7 @@ Then open this folder in VS Code / Cursor and press **F5** (launch config **Run 
 After the Extension Development Host starts, open the **ConTeXt** output channel. You should see:
 
 ```text
-ConTeXt SyncTeX activated  version=0.1.4  BUILD_ID=viewer-virtual-v1
+ConTeXt SyncTeX activated  version=0.1.5  BUILD_ID=synctex-yflip-v1
 ```
 
 If you still see an older `BUILD_ID`, close all Extension Development Host windows, rebuild, and F5 again.
@@ -63,6 +63,22 @@ Resolution order:
 | `context.mtxrunPath` | `""` | Absolute `mtxrun` binary |
 | `context.synctex.enabled` | `true` | Toggle SyncTeX |
 | `context.build.args` | `[]` | Extra args after `--synctex=repeat` |
+| `context.rootFile` | `""` | Main file to compile (workspace-relative or absolute). Empty = auto-detect |
+
+### Main (root) file resolution
+
+Order (first match wins):
+
+1. Setting `context.rootFile`
+2. Magic comment in the first ~20 lines of the active file: `% !TEX root = <path>` (relative to that file)
+3. ConTeXt structure: if the active file is a `\startcomponent`, find `\product <name>` and resolve `<name>.tex` nearby / in the workspace (compile the product even if it has `\project`)
+4. Fallback: the active file
+
+The status bar shows `ConTeXt: <rootname>`; click it to set or clear `context.rootFile` for the workspace. Build / Show PDF use the resolved root’s PDF and synctex; Forward SyncTeX still passes the **active** file+line to `--file`.
+
+## SyncTeX coordinates
+
+mtxrun `--script synctex` exchanges **y top-down** (origin at the page top). The viewer converts PDF.js bottom-up click y with `pageHeight - pdfY` before `--report`, and maps forward `lly`/`ury` as top-down when highlighting.
 
 Example (Sir’s machine):
 
@@ -92,9 +108,9 @@ Build uses: `context --synctex=repeat` plus `context.build.args`.
 2. F5 → open a multi-file job → **Build and Preview**.
 3. **Ctrl+click** the dedicatory / include region → should open `include/contenido/00-1-dedicatoria.tex` at line 2.
 4. Confirm Output shows `file=include/contenido/00-1-dedicatoria.tex line=2` (not “no match”), plus `--report --direct --console`.
-5. **Ctrl+Alt+J** forward SyncTeX → highlight scrolls into view; Output shows `[viewer] highlight page=…`.
-6. On a large PDF: first page should appear in a few seconds (`getDocumentMs` via `rangeServer=http://127.0.0.1:…`); zoom/scroll must **not** re-log full `pages=360` paints — only `virtual=1` / visible pages.
-7. Ctrl+click once → one `[synctex report]` line.
+5. **Ctrl+Alt+J** / Ctrl+click on a long page (e.g. prologue page 12) — highlight and jumps should track the correct vertical position (`BUILD_ID=synctex-yflip-v1`).
+6. Status bar shows the main file; click to change `context.rootFile`.
+7. On a large PDF: first page in a few seconds via `rangeServer=http://127.0.0.1:…`; one Ctrl+click → one `[synctex report]`.
 8. Confirm a long/failed build does not replace the last good view.
 
 ## Layout

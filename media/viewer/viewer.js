@@ -88,6 +88,20 @@ function pdfBoxToViewport(pageViewport, llx, lly, urx, ury) {
   };
 }
 
+/**
+ * mtx-synctex --find returns y top-down (y=0 at page top). Convert to PDF
+ * bottom-up using the page view box, then to CSS via PDF.js.
+ */
+function mtxBoxToViewport(page, pageViewport, llx, lly, urx, ury) {
+  const view = page.view; // [xMin, yMin, xMax, yMax]
+  const yMax = view[3];
+  const topFromTop = Math.min(lly, ury);
+  const bottomFromTop = Math.max(lly, ury);
+  const pdfTop = yMax - topFromTop;
+  const pdfBottom = yMax - bottomFromTop;
+  return pdfBoxToViewport(pageViewport, llx, pdfBottom, urx, pdfTop);
+}
+
 function normalizeHighlight(msg) {
   const llx = msg.llx ?? msg.x ?? 0;
   const lly = msg.lly ?? msg.y ?? 0;
@@ -185,8 +199,9 @@ async function renderPageCanvas(pageNum) {
     canvas.width = viewport.width;
     canvas.height = viewport.height;
     pageDiv.appendChild(canvas);
-    // Store viewport on the element for delegated click conversion.
+    // Store viewport + page.view for delegated click conversion (mtx y is top-down).
     pageDiv._viewport = viewport;
+    pageDiv._pageView = page.view; // [xMin, yMin, xMax, yMax]
 
     await page.render({ canvasContext: ctx, viewport }).promise;
     renderedPages.add(pageNum);
@@ -295,7 +310,7 @@ function paintHighlight() {
       return;
     }
     const viewport = page.getViewport({ scale: currentScale });
-    const box = pdfBoxToViewport(viewport, msg.llx, msg.lly, msg.urx, msg.ury);
+    const box = mtxBoxToViewport(page, viewport, msg.llx, msg.lly, msg.urx, msg.ury);
     const hl = document.createElement('div');
     hl.className = 'highlight';
     hl.style.left = `${box.left}px`;
@@ -556,11 +571,19 @@ viewer.addEventListener('click', (ev) => {
   const cssX = ev.clientX - rect.left;
   const cssY = ev.clientY - rect.top;
   const [pdfX, pdfY] = viewport.convertToPdfPoint(cssX, cssY);
+  // mtx-synctex --y is top-down; PDF.js pdfY is bottom-up.
+  const view = pageDiv._pageView || viewport.viewBox || [0, 0, 612, 792];
+  const yMax = view[3];
+  const yMin = view[1];
+  const pageHeight = yMax - yMin;
+  const mtxY = yMax - pdfY;
   vscode.postMessage({
     type: 'click',
     page: pageNum,
     x: pdfX,
-    y: pdfY,
+    y: mtxY,
+    pdfY,
+    pageHeight,
   });
 });
 

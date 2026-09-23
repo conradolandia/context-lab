@@ -16,7 +16,7 @@ export type ViewerMessage =
       virtual?: boolean;
     }
   | { type: 'loadError'; message: string }
-  | { type: 'click'; page: number; x: number; y: number }
+  | { type: 'click'; page: number; x: number; y: number; pdfY?: number; pageHeight?: number }
   | {
       type: 'highlight';
       page: number;
@@ -68,7 +68,12 @@ export class PdfPanel {
 
   constructor(
     private readonly extensionUri: vscode.Uri,
-    private readonly onClick: (page: number, x: number, y: number) => void,
+    private readonly onClick: (
+      page: number,
+      x: number,
+      y: number,
+      meta?: { pdfY?: number; pageHeight?: number },
+    ) => void,
     private readonly onLog?: (message: string) => void,
   ) {
     this.jobDirRoots = (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri);
@@ -390,7 +395,10 @@ export class PdfPanel {
         void this.recoverFromLoadError(msg.message);
         break;
       case 'click':
-        this.onClick(msg.page, msg.x, msg.y);
+        this.onClick(msg.page, msg.x, msg.y, {
+          pdfY: msg.pdfY,
+          pageHeight: msg.pageHeight,
+        });
         break;
       default:
         break;

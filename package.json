@@ -2,7 +2,7 @@
   "name": "context-synctex",
   "displayName": "ConTeXt SyncTeX",
   "description": "ConTeXt build, PDF.js viewer, and SyncTeX forward/backward navigation",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "publisher": "context-lab",
   "engines": {
     "vscode": "^1.85.0"
@@ -28,6 +28,10 @@
       {
         "command": "context.showPdf",
         "title": "ConTeXt: Show PDF"
+      },
+      {
+        "command": "context.pickRootFile",
+        "title": "ConTeXt: Set Main (Root) File"
       }
     ],
     "keybindings": [
@@ -68,6 +72,11 @@
           },
           "default": [],
           "description": "Extra arguments appended after --synctex=repeat when building."
+        },
+        "context.rootFile": {
+          "type": "string",
+          "default": "",
+          "description": "Main ConTeXt file to compile (workspace-relative or absolute). Empty = auto-detect via % !TEX root, \\startcomponent→\\product, or the active file."
         }
       }
     }
