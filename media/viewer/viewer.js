@@ -41,6 +41,10 @@ let scrollRaf = null;
 let activeHighlight = null;
 let pendingHighlight = null;
 let pdfjsPromise = null;
+/** @type {Worker|null} dedicated PDF.js worker (blob URL; same-origin) */
+let pdfWorker = null;
+/** @type {'real'|'fake'|'unknown'} */
+let workerMode = 'unknown';
 let loadedCacheKey = null;
 /** Prevent overlapping openDocument for the same key */
 let openInFlightKey = null;
@@ -64,15 +68,70 @@ function updateToolbar() {
   btnFitWidth.disabled = !pdfDoc;
 }
 
+/**
+ * VS Code webviews serve extension resources via a service worker that
+ * dedicated Workers cannot reach. Setting workerSrc to a vscode-cdn /
+ * asWebviewUri URL stalls, and PDF.js silently falls back to a "fake
+ * worker" (main-thread parse of the whole PDF — ~30s for 70 MB).
+ *
+ * Same approach as vscode-pdf-next: fetch the self-contained worker
+ * bundle as text in the page context, build a blob: module Worker, and
+ * hand it to PDF.js via GlobalWorkerOptions.workerPort.
+ */
+async function createBlobPdfWorker() {
+  if (typeof Worker !== 'function') {
+    return null;
+  }
+  const workerUrl = new URL(
+    './pdfjs/pdf.worker.min.mjs',
+    import.meta.url,
+  ).toString();
+  const resp = await fetch(workerUrl);
+  if (!resp.ok) {
+    throw new Error(`worker fetch ${resp.status} ${resp.statusText}`);
+  }
+  const text = await resp.text();
+  const blobUrl = URL.createObjectURL(
+    new Blob([text], { type: 'text/javascript' }),
+  );
+  return new Worker(blobUrl, { type: 'module', name: 'pdfjs-worker' });
+}
+
+function detectWorkerMode(loadingTask) {
+  const port = loadingTask?._worker?.port;
+  if (typeof Worker !== 'undefined' && port instanceof Worker) {
+    return 'real';
+  }
+  return 'fake';
+}
+
 function loadPdfJs() {
   if (!pdfjsPromise) {
-    pdfjsPromise = import('./pdfjs/pdf.min.mjs').then((mod) => {
-      mod.GlobalWorkerOptions.workerSrc = new URL(
-        './pdfjs/pdf.worker.min.mjs',
-        import.meta.url,
-      ).toString();
+    pdfjsPromise = (async () => {
+      const mod = await import('./pdfjs/pdf.min.mjs');
+      try {
+        if (!pdfWorker) {
+          pdfWorker = await createBlobPdfWorker();
+        }
+        if (pdfWorker) {
+          mod.GlobalWorkerOptions.workerPort = pdfWorker;
+          workerMode = 'real';
+        } else {
+          throw new Error('Worker API unavailable');
+        }
+      } catch (err) {
+        console.warn(
+          'PDF.js blob worker failed; falling back to workerSrc (likely fake worker)',
+          err,
+        );
+        workerMode = 'unknown';
+        mod.GlobalWorkerOptions.workerSrc = new URL(
+          './pdfjs/pdf.worker.min.mjs',
+          import.meta.url,
+        ).toString();
+      }
       return mod;
-    });
+    })();
   }
   return pdfjsPromise;
 }
@@ -422,6 +481,7 @@ async function openDocument(source, cacheKey, useRange) {
 
   setStatus('Loading PDF…');
   const tStart = performance.now();
+  let bytesFetched = 0;
   try {
     const pdfjs = await loadPdfJs();
     if (pdfDoc) {
@@ -441,21 +501,30 @@ async function openDocument(source, cacheKey, useRange) {
           : source.data?.buffer
             ? source.data
             : new Uint8Array(source.data);
+      bytesFetched = payload.byteLength ?? payload.length ?? 0;
       loadingTask = pdfjs.getDocument({ data: payload });
     } else {
       const opts = {
         url: source.url,
         withCredentials: false,
         disableAutoFetch: true,
+        disableStream: false,
+        disableRange: !useRange,
       };
       if (useRange) {
-        opts.rangeChunkSize = 65536;
-        opts.disableStream = false;
+        // 1 MiB chunks — fewer round-trips on loopback than the 64 KiB default
+        opts.rangeChunkSize = 65536 * 16;
       }
       loadingTask = pdfjs.getDocument(opts);
+      loadingTask.onProgress = (p) => {
+        if (p && typeof p.loaded === 'number') {
+          bytesFetched = p.loaded;
+        }
+      };
     }
 
     pdfDoc = await loadingTask.promise;
+    workerMode = detectWorkerMode(loadingTask);
     const loadMs = Math.round(performance.now() - tStart);
     loadedCacheKey = cacheKey || null;
     currentPage = 1;
@@ -476,7 +545,10 @@ async function openDocument(source, cacheKey, useRange) {
       loadMs,
       firstPageMs,
       renderMs,
+      bytesFetched,
+      worker: workerMode,
       virtual: true,
+      useRange: !!useRange,
     });
 
     if (activeHighlight) {

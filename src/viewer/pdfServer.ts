@@ -2,6 +2,13 @@ import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 
+export interface PdfRangeServerStats {
+  requests: number;
+  rangeRequests: number;
+  fullRequests: number;
+  bytesServed: number;
+}
+
 /**
  * Tiny loopback HTTP server that serves one gated PDF with Accept-Ranges.
  * Lets PDF.js fetch page-1 chunks without downloading the whole file via
@@ -12,6 +19,12 @@ export class PdfRangeServer {
   private port: number | undefined;
   private filePath: string | undefined;
   private generation = 0;
+  private stats: PdfRangeServerStats = {
+    requests: 0,
+    rangeRequests: 0,
+    fullRequests: 0,
+    bytesServed: 0,
+  };
 
   /** Absolute path currently served (after gate only). */
   public get servedPath(): string | undefined {
@@ -22,6 +35,20 @@ export class PdfRangeServer {
     return this.port != null ? `http://127.0.0.1:${this.port}` : undefined;
   }
 
+  /** Snapshot of request/byte counters since the last reset. */
+  public getStats(): PdfRangeServerStats {
+    return { ...this.stats };
+  }
+
+  public resetStats(): void {
+    this.stats = {
+      requests: 0,
+      rangeRequests: 0,
+      fullRequests: 0,
+      bytesServed: 0,
+    };
+  }
+
   /**
    * Ensure the server is listening and points at `filePath`.
    * Returns the PDF URL or undefined if bind failed.
@@ -29,6 +56,7 @@ export class PdfRangeServer {
   public async serve(filePath: string): Promise<string | undefined> {
     this.filePath = filePath;
     this.generation += 1;
+    this.resetStats();
     if (!this.server) {
       try {
         await this.listen();
@@ -70,15 +98,23 @@ export class PdfRangeServer {
     });
   }
 
+  private setCors(res: http.ServerResponse): void {
+    // Webview origin is opaque/cross-origin relative to 127.0.0.1; PDF.js
+    // needs these so Range responses are readable from the worker/fetch path.
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Range');
+    res.setHeader(
+      'Access-Control-Expose-Headers',
+      'Accept-Ranges, Content-Range, Content-Length',
+    );
+  }
+
   private async handle(
     req: http.IncomingMessage,
     res: http.ServerResponse,
   ): Promise<void> {
-    // CORS for webview fetch / PDF.js
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Range');
-    res.setHeader('Access-Control-Expose-Headers', 'Accept-Ranges, Content-Range, Content-Length');
+    this.setCors(res);
 
     if (req.method === 'OPTIONS') {
       res.writeHead(204);
@@ -115,6 +151,7 @@ export class PdfRangeServer {
     res.setHeader('Cache-Control', 'no-store');
 
     if (req.method === 'HEAD') {
+      this.stats.requests += 1;
       res.setHeader('Content-Length', String(size));
       res.writeHead(200);
       res.end();
@@ -137,6 +174,9 @@ export class PdfRangeServer {
         return;
       }
       const chunk = end - start + 1;
+      this.stats.requests += 1;
+      this.stats.rangeRequests += 1;
+      this.stats.bytesServed += chunk;
       res.writeHead(206, {
         'Content-Range': `bytes ${start}-${end}/${size}`,
         'Content-Length': String(chunk),
@@ -145,6 +185,9 @@ export class PdfRangeServer {
       return;
     }
 
+    this.stats.requests += 1;
+    this.stats.fullRequests += 1;
+    this.stats.bytesServed += size;
     res.setHeader('Content-Length', String(size));
     res.writeHead(200);
     fs.createReadStream(filePath).pipe(res);

@@ -9,7 +9,7 @@ import { PdfPanel } from './viewer/pdfPanel';
 import { resolveRootFile, type RootResolution } from './project/rootFile';
 
 /** Bump when shipping a SyncTeX/viewer behavior change Sir must verify in Output. */
-export const BUILD_ID = 'synctex-yflip-v1';
+export const BUILD_ID = 'viewer-worker-v1';
 
 let output: vscode.OutputChannel;
 let pdfPanel: PdfPanel;

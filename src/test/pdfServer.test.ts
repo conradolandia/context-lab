@@ -7,7 +7,7 @@ import * as path from 'node:path';
 import { PdfRangeServer } from '../viewer/pdfServer';
 
 describe('PdfRangeServer', () => {
-  it('serves Accept-Ranges and 206 partial content', async () => {
+  it('serves Accept-Ranges, CORS, and 206 partial content', async () => {
     const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'pdf-range-'));
     const pdfPath = path.join(dir, 't.pdf');
     const body = Buffer.from('%PDF-1.4\n' + 'x'.repeat(2000) + '\n%%EOF\n');
@@ -21,14 +21,29 @@ describe('PdfRangeServer', () => {
     const head = await fetch(url!, { method: 'HEAD' });
     assert.equal(head.status, 200);
     assert.equal(head.headers.get('accept-ranges'), 'bytes');
+    assert.equal(head.headers.get('access-control-allow-origin'), '*');
+    assert.match(
+      head.headers.get('access-control-expose-headers') ?? '',
+      /Accept-Ranges/i,
+    );
+    assert.match(
+      head.headers.get('access-control-expose-headers') ?? '',
+      /Content-Range/i,
+    );
 
     const partial = await fetch(url!, {
       headers: { Range: 'bytes=0-99' },
     });
     assert.equal(partial.status, 206);
+    assert.equal(partial.headers.get('access-control-allow-origin'), '*');
     const buf = Buffer.from(await partial.arrayBuffer());
     assert.equal(buf.length, 100);
     assert.equal(buf.subarray(0, 5).toString('utf8'), '%PDF-');
+
+    const stats = server.getStats();
+    assert.ok(stats.requests >= 2);
+    assert.equal(stats.rangeRequests, 1);
+    assert.equal(stats.bytesServed, 100);
 
     server.dispose();
     fs.rmSync(dir, { recursive: true, force: true });

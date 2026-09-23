@@ -12,6 +12,9 @@ export type ViewerMessage =
       loadMs?: number;
       firstPageMs?: number;
       renderMs?: number;
+      bytesFetched?: number;
+      worker?: 'real' | 'fake' | 'unknown';
+      useRange?: boolean;
       reused?: boolean;
       virtual?: boolean;
     }
@@ -368,12 +371,22 @@ export class PdfPanel {
           this.loadedCacheKey = `${this.currentPdfPath}:${this.currentMtimeMs}`;
         }
         const hostMs = this.loadStartedAt ? Date.now() - this.loadStartedAt : undefined;
+        const rangeStats = this.rangeServer.getStats();
         this.onLog?.(
           `[viewer] loaded pages=${msg.pages}` +
+            (msg.worker != null ? ` worker=${msg.worker}` : '') +
             (msg.loadMs != null ? ` getDocumentMs=${msg.loadMs}` : '') +
             (msg.firstPageMs != null ? ` firstPageMs=${msg.firstPageMs}` : '') +
             (msg.renderMs != null ? ` renderMs=${msg.renderMs}` : '') +
+            (msg.bytesFetched != null
+              ? ` bytesFetched=${msg.bytesFetched}`
+              : '') +
             (hostMs != null ? ` hostRoundtripMs=${hostMs}` : '') +
+            (msg.useRange
+              ? ` rangeReqs=${rangeStats.rangeRequests}` +
+                ` fullReqs=${rangeStats.fullRequests}` +
+                ` rangeBytes=${rangeStats.bytesServed}`
+              : '') +
             (msg.reused ? ' reused=1' : '') +
             (msg.virtual ? ' virtual=1' : ''),
         );
@@ -417,10 +430,14 @@ export class PdfPanel {
       .replace('href="viewer.css"', `href="${asWeb('viewer.css')}"`)
       .replace('src="viewer.js"', `src="${asWeb('viewer.js')}"`);
 
+    // worker-src blob: is required for the PDF.js dedicated worker created
+    // from a blob URL (vscode-cdn workerSrc is cross-origin and falls back
+    // to a fake/main-thread worker). script-src blob: covers module workers
+    // on older Electron CSP implementations.
     const csp = [
       `default-src 'none'`,
       `style-src ${webview.cspSource} 'unsafe-inline'`,
-      `script-src ${webview.cspSource} 'unsafe-inline'`,
+      `script-src ${webview.cspSource} 'unsafe-inline' blob:`,
       `worker-src ${webview.cspSource} blob:`,
       `img-src ${webview.cspSource} data: blob:`,
       `font-src ${webview.cspSource}`,
