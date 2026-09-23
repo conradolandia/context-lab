@@ -7,6 +7,9 @@ import { gateJobArtifacts, type JobSnapshot } from './build/artifactGate';
 import { forwardSync, backwardSync, SynctexError } from './synctex/mtxSynctex';
 import { PdfPanel } from './viewer/pdfPanel';
 
+/** Bump when shipping a SyncTeX/viewer behavior change Sir must verify in Output. */
+export const BUILD_ID = 'synctex-report-v2';
+
 let output: vscode.OutputChannel;
 let pdfPanel: PdfPanel;
 let snapshot: JobSnapshot | undefined;
@@ -245,7 +248,19 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
-  output.appendLine('ConTeXt SyncTeX extension activated.');
+  const pkgPath = path.join(context.extensionPath, 'package.json');
+  let version = 'unknown';
+  try {
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8')) as { version?: string };
+    version = pkg.version ?? version;
+  } catch {
+    // keep unknown
+  }
+  output.appendLine(
+    `ConTeXt SyncTeX activated  version=${version}  BUILD_ID=${BUILD_ID}`,
+  );
+  output.appendLine(`extensionPath=${context.extensionPath}`);
+  output.show(true);
 }
 
 export function deactivate(): void {

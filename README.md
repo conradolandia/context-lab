@@ -4,16 +4,25 @@ Companion VS Code extension for ConTeXt: compile with SyncTeX, preview PDF with 
 
 ## Run locally (F5)
 
-1. Install dependencies and compile:
+Checkout the PR branch and rebuild before launching so the Extension Host cannot load a stale `dist/`:
 
 ```bash
+git fetch origin
+git checkout cursor/fix-synctex-pdf-speed-4323
+git pull origin cursor/fix-synctex-pdf-speed-4323
 npm install
 npm run compile
 ```
 
-2. Open this folder in VS Code / Cursor.
-3. Press **F5** (launch config: **Run Extension**) to start an Extension Development Host.
-4. In the new window, open a `.tex` / ConTeXt job and run **ConTeXt: Build and Preview** from the Command Palette.
+Then open this folder in VS Code / Cursor and press **F5** (launch config **Run Extension**). `preLaunchTask` runs `npm run compile` again on every F5.
+
+After the Extension Development Host starts, open the **ConTeXt** output channel. You should see:
+
+```text
+ConTeXt SyncTeX activated  version=0.1.1  BUILD_ID=synctex-report-v2
+```
+
+If you still see `[cache] PDF →` or argv with `--goto`, the host is on an old build — close all Extension Development Host windows, re-run the commands above, and F5 again.
 
 Unit tests (no ConTeXt required):
 
