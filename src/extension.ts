@@ -7,9 +7,10 @@ import { gateJobArtifacts, type JobSnapshot } from './build/artifactGate';
 import { forwardSync, backwardSync, SynctexError } from './synctex/mtxSynctex';
 import { PdfPanel } from './viewer/pdfPanel';
 import { resolveRootFile, type RootResolution } from './project/rootFile';
+import { createDigestifClient, type DigestifClientHandle } from './lsp/digestifClient';
 
-/** Bump when shipping a SyncTeX/viewer behavior change Sir must verify in Output. */
-export const BUILD_ID = 'viewer-worker-v1';
+/** Bump when shipping a SyncTeX/viewer/LSP behavior change Sir must verify in Output. */
+export const BUILD_ID = 'digestif-lsp-v1';
 
 let output: vscode.OutputChannel;
 let pdfPanel: PdfPanel;
@@ -19,6 +20,7 @@ let generation = 0;
 let building = false;
 let lastRootResolution: RootResolution | undefined;
 let backwardInFlight = false;
+let digestif: DigestifClientHandle | undefined;
 
 function getToolchain(): Toolchain {
   return resolveToolchain();
@@ -363,10 +365,13 @@ export function activate(context: vscode.ExtensionContext): void {
     },
   );
 
+  digestif = createDigestifClient({ output });
+
   context.subscriptions.push(
     output,
     rootStatus,
     { dispose: () => pdfPanel.dispose() },
+    { dispose: () => digestif?.dispose() },
     vscode.commands.registerCommand('context.buildAndPreview', () => {
       void buildAndPreview();
     }),
@@ -385,6 +390,15 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('context.rootFile')) {
         updateRootStatus();
+      }
+      if (
+        e.affectsConfiguration('context.root') ||
+        e.affectsConfiguration('context.contextPath') ||
+        e.affectsConfiguration('context.mtxrunPath') ||
+        e.affectsConfiguration('context.digestif.enabled') ||
+        e.affectsConfiguration('context.digestifPath')
+      ) {
+        void digestif?.startOrRestart();
       }
     }),
   );
@@ -406,9 +420,11 @@ export function activate(context: vscode.ExtensionContext): void {
   if (r) {
     output.appendLine(`[root] ${r.rootFile} (rule=${r.rule})`);
   }
+  void digestif.startOrRestart();
   output.show(true);
 }
 
 export function deactivate(): void {
+  void digestif?.stop();
   pdfPanel?.dispose();
 }

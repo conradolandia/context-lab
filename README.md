@@ -8,8 +8,8 @@ Checkout the PR branch and rebuild before launching so the Extension Host cannot
 
 ```bash
 git fetch origin
-git checkout cursor/fix-synctex-pdf-speed-4323
-git pull origin cursor/fix-synctex-pdf-speed-4323
+git checkout cursor/digestif-lsp-bc94
+git pull origin cursor/digestif-lsp-bc94
 npm install
 npm run compile
 ```
@@ -19,10 +19,11 @@ Then open this folder in VS Code / Cursor and press **F5** (launch config **Run 
 After the Extension Development Host starts, open the **ConTeXt** output channel. You should see:
 
 ```text
-ConTeXt SyncTeX activated  version=0.1.6  BUILD_ID=viewer-worker-v1
+ConTeXt SyncTeX activated  version=0.1.7  BUILD_ID=digestif-lsp-v1
+[digestif] path=…  xml=…/tex/texmf-context/tex/context/interface/mkiv/context-en.xml  DIGESTIF_TEXMF=…
 ```
 
-If you still see an older `BUILD_ID`, close all Extension Development Host windows, rebuild, and F5 again.
+If Digestif is not installed, you get a warning instead; build and SyncTeX still work. If you still see an older `BUILD_ID`, close all Extension Development Host windows, rebuild, and F5 again.
 
 Unit tests (no ConTeXt required):
 
@@ -64,6 +65,53 @@ Resolution order:
 | `context.synctex.enabled` | `true` | Toggle SyncTeX |
 | `context.build.args` | `[]` | Extra args after `--synctex=repeat` |
 | `context.rootFile` | `""` | Main file to compile (workspace-relative or absolute). Empty = auto-detect |
+| `context.digestif.enabled` | `true` | Start Digestif LSP (completion / hover). Safe to leave on if Digestif is missing |
+| `context.digestifPath` | `""` | Absolute Digestif binary; empty = `digestif` on PATH |
+
+### Digestif LSP (completion / hover)
+
+This extension starts [Digestif](https://github.com/astoff/digestif) over stdio when `context.digestif.enabled` is true. TexLab is not used. Digestif is **not** vendored; install it yourself.
+
+**Install Digestif** (pick one):
+
+1. Wrapper script (uses LuaTeX / `texlua`):
+   - Download [digestif](https://raw.githubusercontent.com/astoff/digestif/master/scripts/digestif) into a directory on your `PATH` (e.g. `~/.local/bin`).
+   - `chmod +x ~/.local/bin/digestif`
+   - First run downloads the package (default `~/.digestif`).
+2. LuaRocks: `luarocks install --local digestif`, then put `~/.luarocks/bin` on `PATH`.
+
+**LMTX / interface XML**
+
+Digestif loads ConTeXt macros from the LMTX interface XML at runtime. With Sir’s tree:
+
+```json
+{
+  "context.root": "/home/andi/Apps/lmtx"
+}
+```
+
+the extension looks for:
+
+`/home/andi/Apps/lmtx/tex/texmf-context/tex/context/interface/mkiv/context-en.xml`
+
+and sets `DIGESTIF_TEXMF` to the matching `texmf-*` roots (and prepends LMTX bin dirs to `PATH` for the Digestif child).
+
+**Verify completion / hover**
+
+1. Install Digestif so `which digestif` works (or set `context.digestifPath`).
+2. Set `context.root` to `/home/andi/Apps/lmtx`.
+3. F5 → open a ConTeXt buffer with language mode **context** (or `tex`).
+4. ConTeXt Output should log `[digestif] path=… xml=…/context-en.xml …` and `language client started`.
+5. Type `\start` or `\setup` and confirm completion; hover a known command.
+
+**Troubleshooting: interface XML not found**
+
+- Confirm the file exists under `context.root` (path above).
+- If your tree layout differs, check Output for the exact expected path.
+- Empty `context.root` with no inferable toolchain root → Digestif cannot find XML; set `context.root`.
+- Missing Digestif binary → warning only; build/SyncTeX unchanged. Set `context.digestif.enabled` to `false` to silence.
+
+Digestif maps LSP language id `context` to ConTeXt and `tex` to LaTeX. Prefer the **context** language mode for ConTeXt sources when a grammar extension provides it.
 
 ### Main (root) file resolution
 
@@ -119,6 +167,8 @@ Build uses: `context --synctex=repeat` plus `context.build.args`.
 ```
 src/extension.ts
 src/toolchain/discover.ts
+src/lsp/digestifEnv.ts
+src/lsp/digestifClient.ts
 src/build/compiler.ts
 src/build/artifactGate.ts
 src/synctex/mtxSynctex.ts
@@ -126,4 +176,4 @@ src/viewer/pdfPanel.ts
 media/viewer/
 ```
 
-Phase 2 (not in this MVP): Digestif LSP, tree-sitter-context.
+Phase 2b (later): tree-sitter-context for folding/highlighting.
