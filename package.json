@@ -107,5 +107,8 @@
   "dependencies": {
     "pdfjs-dist": "^4.10.38",
     "vscode-languageclient": "^9.0.1"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true
   }
 }
