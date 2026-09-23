@@ -13,9 +13,10 @@ import { resolveToolchain, ToolchainError } from '../toolchain/discover';
 import { buildDigestifEnv, type DigestifEnvOk } from './digestifEnv';
 import { resolveDigestifLaunch } from './digestifLaunch';
 import {
-  probeDigestif,
+  DIGESTIF_START_TIMEOUT_MS,
   preferDigestifError,
   spawnDigestifServer,
+  withTimeout,
 } from './digestifProcess';
 
 /** Distinct from Marketplace `digestif` (phil.red) client ids. */
@@ -67,6 +68,9 @@ class SafeLanguageClient extends LanguageClient {
 /**
  * Create a Digestif LanguageClient manager. Does not start until startOrRestart().
  * Missing Digestif / XML must not break build or SyncTeX — only log + warn.
+ *
+ * DigestiF is an LSP server on stdio: it prints nothing until initialize.
+ * Do not preflight with `--version` (that hangs under `luametatex --luaonly`).
  */
 export function createDigestifClient(options: {
   output: vscode.OutputChannel;
@@ -79,7 +83,6 @@ export function createDigestifClient(options: {
   let lastOk: DigestifEnvOk | undefined;
   let starting = false;
   let generation = 0;
-  /** Holder so assignments inside ServerOptions callbacks stay visible to TS. */
   const bufferRef: { current: { stdout: string; stderr: string } | undefined } = {
     current: undefined,
   };
@@ -175,27 +178,6 @@ export function createDigestifClient(options: {
       });
       log(`[digestif] launch method=${launch.method} — ${launch.detail}`);
 
-      const probe = await probeDigestif(launch, resolved.env, log);
-      if (!probe.ok) {
-        lastOk = undefined;
-        await stopClient();
-        const msg =
-          `DigestiF did not start: ${probe.detail} ` +
-          `Look for "[digestif] --- last stderr ---" above. ` +
-          `Build and SyncTeX remain available. ` +
-          `(Disable Marketplace DigestiF while testing; under LMTX prefer ` +
-          `luametatex --luaonly ~/.digestif/bin/digestif or luarocks + context.digestifPath.)`;
-        log(`[digestif] ${msg}`);
-        void vscode.window.showWarningMessage(
-          `DigestiF did not start: ${probe.detail.split(/\r?\n/)[0] ?? probe.detail}`,
-        );
-        return;
-      }
-
-      if (gen !== generation) {
-        return;
-      }
-
       await stopClient();
 
       const serverOptions: ServerOptions = async () => {
@@ -236,7 +218,15 @@ export function createDigestifClient(options: {
 
       client = next;
       try {
-        await next.start();
+        log(
+          `[digestif] starting LanguageClient (initialize timeout ${DIGESTIF_START_TIMEOUT_MS}ms)…`,
+        );
+        await withTimeout(
+          next.start(),
+          DIGESTIF_START_TIMEOUT_MS,
+          `DigestiF LSP initialize timed out after ${DIGESTIF_START_TIMEOUT_MS}ms. ` +
+            `Check Output for stderr; silence when run by hand is normal (DigestiF waits for LSP on stdin).`,
+        );
         if (gen !== generation) {
           await stopClient();
           return;
@@ -246,8 +236,8 @@ export function createDigestifClient(options: {
         const msg = preferDigestifError(err, bufferRef.current);
         log(`[digestif] failed to start: ${msg}`);
         log(
-          '[digestif] if DigestiF exited, scroll up for "[digestif] --- last stderr ---" ' +
-            '(that line is the real cause; “stream was destroyed” is a follow-on).',
+          '[digestif] if DigestiF exited, scroll up for "[digestif] --- last stderr ---". ' +
+            'Running `luametatex --luaonly ~/.digestif/bin/digestif` by hand with no output is normal — it waits for LSP.',
         );
         void vscode.window.showWarningMessage(
           `DigestiF failed to start: ${msg.split(/\r?\n/)[0] ?? msg}. Build and SyncTeX remain available.`,

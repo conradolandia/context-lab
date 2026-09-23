@@ -19,13 +19,14 @@ Then open this folder in VS Code / Cursor and press **F5** (launch config **Run 
 After the Extension Development Host starts, open the **ConTeXt** output channel. You should see:
 
 ```text
-ConTeXt SyncTeX activated  version=0.1.10  BUILD_ID=digestif-lsp-v4
+ConTeXt SyncTeX activated  version=0.1.11  BUILD_ID=digestif-lsp-v5
 [digestif] root=/home/andi/Apps/lmtx  …
 [digestif] launch method=luametatex-luaonly — self-install wrapper → luametatex --luaonly …/.digestif/bin/digestif
+[digestif] spawned pid=… (stdio LSP — silence until initialize is normal)
 [digestif] language client started
 ```
 
-If DigestiF exits on startup, look for **`[digestif] --- last stderr ---`** in the ConTeXt Output channel (that line is the real reason; ignore generic “stream was destroyed”). Build and SyncTeX still work. Running Extensions should show **0 uncaught errors**.
+DigestiF is an LSP server on stdio: running `luametatex --luaonly ~/.digestif/bin/digestif` by hand prints nothing and waits — that is **normal** (it waits for LSP `initialize` on stdin). Do not treat silence as a hang. If startup fails, look for **`[digestif] --- last stderr ---`**. Build and SyncTeX still work. Running Extensions should show **0 uncaught errors**.
 
 Unit tests (no ConTeXt required):
 
@@ -114,9 +115,9 @@ Derived paths (never under `bin/`):
 1. Install DigestiF (wrapper or luarocks).
 2. Set `context.root` to `/home/andi/Apps/lmtx`.
 3. Disable Marketplace **DigestiF** in the Extension Development Host while testing.
-4. F5 → Output: `BUILD_ID=digestif-lsp-v4`, `launch method=luametatex-luaonly` (or `direct` for luarocks), then `language client started`.
-5. If it fails: find **`[digestif] --- last stderr ---`** — that is DigestiF’s own message (data files, Lua, etc.). The toast may say “stream was destroyed”; that is a follow-on after DigestiF already exited with code 1.
-6. Type `\start` / `\setup` and confirm completion/hover.
+4. F5 → Output: `BUILD_ID=digestif-lsp-v5`, `launch method=luametatex-luaonly` (or `direct` for luarocks), then **`[digestif] language client started`**.
+5. Open a ConTeXt buffer → try completion (`\setup` + Ctrl+Space) and hover on `\starttext`.
+6. If it fails: find **`[digestif] --- last stderr ---`**. Silence when DigestiF is run by hand is normal (LSP waits on stdin). A 30s initialize timeout means DigestiF never answered LSP — check stderr, Marketplace DigestiF conflict, or `DIGESTIF_TEXMF`.
 
 **Marketplace DigestiF conflict**
 
@@ -126,8 +127,10 @@ Disable Marketplace **DigestiF** (`phil.red` / similar) while testing. Our clien
 
 | Symptom | What to check |
 | --- | --- |
+| Hand-run DigestiF prints nothing and waits | **Normal** — it is an LSP server waiting for stdin |
 | `process exited code=1` + stream destroyed | Scroll to `[digestif] --- last stderr ---` |
-| Wrapper + LMTX, no stderr yet | Confirm Output shows `launch method=luametatex-luaonly` (v4+). Older builds used a bare `texlua`→`luametatex` symlink which fails. |
+| Initialize timed out after 30s | DigestiF never completed LSP handshake; check stderr / Marketplace conflict / XML env |
+| Wrapper without `luametatex-luaonly` in Output | Update to v4+; bare texlua→luametatex symlink is wrong |
 | `could not find data files` | DigestiF home incomplete; re-run wrapper once, or set `DIGESTIF_DATA` |
 | XML under `/bin/tex/` | Wrong root; set install root (parent of `tex/`) |
 | Two DigestiF servers fighting | Disable Marketplace DigestiF |

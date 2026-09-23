@@ -8,16 +8,8 @@ export interface ProcessOutputBuffers {
   stderr: string;
 }
 
-function attachBuffers(child: ChildProcess): ProcessOutputBuffers {
-  const buffers: ProcessOutputBuffers = { stdout: '', stderr: '' };
-  child.stdout?.on('data', (c: Buffer) => {
-    buffers.stdout += c.toString('utf8');
-  });
-  child.stderr?.on('data', (c: Buffer) => {
-    buffers.stderr += c.toString('utf8');
-  });
-  return buffers;
-}
+/** Default timeout for LanguageClient.start() / LSP initialize. */
+export const DIGESTIF_START_TIMEOUT_MS = 30_000;
 
 /** Log buffered DigestiF output; call on exit or failure. */
 export function logProcessOutput(
@@ -38,11 +30,10 @@ export function logProcessOutput(
       log(`[digestif stderr] ${line}`);
     }
     log('[digestif] --- end stderr ---');
-  } else {
+  } else if (opts?.code != null || opts?.signal) {
     log('[digestif] (no stderr captured)');
   }
-  if (stdout) {
-    // For --version probe stdout is useful; for LSP it should be empty/framing.
+  if (stdout && (opts?.code != null || opts?.signal)) {
     const preview = stdout.length > 2000 ? `${stdout.slice(0, 2000)}…` : stdout;
     log('[digestif] --- last stdout ---');
     for (const line of preview.split(/\r?\n/)) {
@@ -98,82 +89,29 @@ function mergeEnv(
 }
 
 /**
- * Probe DigestiF with `--version` using the resolved launch command/args/env.
+ * Race a promise against a timeout. DigestiF does not speak `--version` when
+ * started as an LSP server (it waits on stdin); LanguageClient initialize is
+ * the real readiness check.
  */
-export function probeDigestif(
-  launch: DigestifLaunch,
-  env: NodeJS.ProcessEnv,
-  log: LineLogger,
-  timeoutMs = 10000,
-): Promise<{ ok: true; version: string } | { ok: false; detail: string }> {
-  return new Promise((resolve) => {
-    let settled = false;
-    const finish = (result: { ok: true; version: string } | { ok: false; detail: string }) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      resolve(result);
-    };
-
-    const childEnv = mergeEnv(env, launch.envOverrides);
-    const args = [...launch.args, '--version'];
-    log(`[digestif] probe: ${launch.command} ${args.join(' ')}`);
-    log(`[digestif] launch method=${launch.method} — ${launch.detail}`);
-
-    let child: ChildProcess;
-    try {
-      child = spawn(launch.command, args, {
-        env: childEnv,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-    } catch (err) {
-      finish({
-        ok: false,
-        detail: err instanceof Error ? err.message : String(err),
-      });
-      return;
-    }
-
-    const buffers = attachBuffers(child);
-
+export function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  message: string,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => {
-      try {
-        child.kill('SIGTERM');
-      } catch {
-        // ignore
-      }
-      const captured = logProcessOutput(log, buffers);
-      finish({
-        ok: false,
-        detail:
-          (captured ? `${captured}\n` : '') +
-          `Digestif --version timed out after ${timeoutMs}ms.`,
-      });
+      reject(new Error(message));
     }, timeoutMs);
-
-    child.on('error', (err) => {
-      clearTimeout(timer);
-      finish({ ok: false, detail: `spawn failed: ${err.message}` });
-    });
-
-    child.on('close', (code, signal) => {
-      clearTimeout(timer);
-      const captured = logProcessOutput(log, buffers, { code, signal });
-      if (code === 0) {
-        const version = (buffers.stdout || buffers.stderr).trim() || 'ok';
-        finish({ ok: true, version });
-        return;
-      }
-      finish({
-        ok: false,
-        detail:
-          captured ||
-          `Digestif --version exited code=${code}${signal ? ` signal=${signal}` : ''}. ` +
-            `Under LMTX, DigestiF must run as: luametatex --luaonly ~/.digestif/bin/digestif ` +
-            `(not a bare texlua→luametatex symlink). Or install via luarocks and set context.digestifPath.`,
-      });
-    });
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err: unknown) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
   });
 }
 
@@ -187,11 +125,16 @@ export interface SpawnDigestifResult {
 /**
  * Spawn DigestiF as an LSP stdio server using the resolved launch.
  * Stderr is logged live and buffered; on exit the full buffer is re-logged.
+ *
+ * Note: DigestiF on stdio prints nothing until it receives LSP messages.
+ * Running `luametatex --luaonly ~/.digestif/bin/digestif` by hand and seeing
+ * silence is normal — it is waiting for initialize on stdin.
  */
 export function spawnDigestifServer(options: {
   launch: DigestifLaunch;
   env: NodeJS.ProcessEnv;
   log: LineLogger;
+  /** Extra DigestiF CLI flags before the LSP loop (e.g. --verbose). */
   extraArgs?: string[];
 }): Promise<SpawnDigestifResult> {
   const { launch, env, log, extraArgs = ['--verbose'] } = options;
@@ -218,7 +161,7 @@ export function spawnDigestifServer(options: {
     }
 
     const buffers: ProcessOutputBuffers = { stdout: '', stderr: '' };
-    log(`[digestif] spawned pid=${child.pid}`);
+    log(`[digestif] spawned pid=${child.pid} (stdio LSP — silence until initialize is normal)`);
     // Live stderr for DigestiF --verbose; do not pipe stdout (LSP framing).
     pipeLines(child.stderr, 'stderr', log, buffers);
 
@@ -228,7 +171,6 @@ export function spawnDigestifServer(options: {
     });
 
     child.on('exit', (code, signal) => {
-      // Always dump stderr on exit so code=1 is never only "stream was destroyed".
       logProcessOutput(log, buffers, { code, signal });
       if (code && code !== 0) {
         log(
