@@ -10,16 +10,27 @@ let currentScale = 1.25;
 let renderToken = 0;
 /** @type {{page:number,x:number,y:number,w:number,h:number}|null} */
 let pendingHighlight = null;
+/** Cached PDF.js module promise — avoid re-importing worker/assets every load. */
+let pdfjsPromise = null;
+/** Last opened document cache key (path:mtime) to skip identical reloads. */
+let loadedCacheKey = null;
 
 function setStatus(text, building = false) {
   statusText.textContent = text;
   document.body.classList.toggle('building', building);
 }
 
-async function loadPdfJs() {
-  const mod = await import('./pdfjs/pdf.min.mjs');
-  mod.GlobalWorkerOptions.workerSrc = new URL('./pdfjs/pdf.worker.min.mjs', import.meta.url).toString();
-  return mod;
+function loadPdfJs() {
+  if (!pdfjsPromise) {
+    pdfjsPromise = import('./pdfjs/pdf.min.mjs').then((mod) => {
+      mod.GlobalWorkerOptions.workerSrc = new URL(
+        './pdfjs/pdf.worker.min.mjs',
+        import.meta.url,
+      ).toString();
+      return mod;
+    });
+  }
+  return pdfjsPromise;
 }
 
 /**
@@ -36,86 +47,102 @@ function pdfBoxToViewport(pageViewport, llx, lly, urx, ury) {
   return { left, top, width, height };
 }
 
-async function renderAllPages(pdf) {
+async function renderPage(pdf, pageNum, token) {
+  if (token !== renderToken) {
+    return null;
+  }
+  const page = await pdf.getPage(pageNum);
+  if (token !== renderToken) {
+    return null;
+  }
+  const viewport = page.getViewport({ scale: currentScale });
+  const pageDiv = document.createElement('div');
+  pageDiv.className = 'page';
+  pageDiv.dataset.page = String(pageNum);
+  pageDiv.style.width = `${viewport.width}px`;
+  pageDiv.style.height = `${viewport.height}px`;
+
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d', { alpha: false });
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  pageDiv.appendChild(canvas);
+  viewer.appendChild(pageDiv);
+
+  await page.render({ canvasContext: ctx, viewport }).promise;
+
+  pageDiv.addEventListener('click', (ev) => {
+    if (!ev.ctrlKey && !ev.metaKey) {
+      return;
+    }
+    ev.preventDefault();
+    const rect = pageDiv.getBoundingClientRect();
+    const cssX = ev.clientX - rect.left;
+    const cssY = ev.clientY - rect.top;
+    const [pdfX, pdfY] = viewport.convertToPdfPoint(cssX, cssY);
+    vscode.postMessage({
+      type: 'click',
+      page: pageNum,
+      x: pdfX,
+      y: pdfY,
+    });
+  });
+
+  return pageDiv;
+}
+
+/**
+ * Progressive render: first page ASAP (usable viewer), then remaining pages.
+ * Avoids serial full-document wait of 10–20s before anything appears.
+ */
+async function renderAllPages(pdf, tDoc) {
   const token = ++renderToken;
   viewer.innerHTML = '';
   pageInfo.textContent = `${pdf.numPages} page${pdf.numPages === 1 ? '' : 's'}`;
 
-  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+  const t0 = performance.now();
+  await renderPage(pdf, 1, token);
+  const firstPageMs = Math.round(performance.now() - t0);
+  if (token !== renderToken) {
+    return { firstPageMs, renderMs: firstPageMs };
+  }
+
+  setStatus('Ready');
+  vscode.postMessage({
+    type: 'loaded',
+    pages: pdf.numPages,
+    loadMs: tDoc,
+    firstPageMs,
+  });
+
+  for (let pageNum = 2; pageNum <= pdf.numPages; pageNum++) {
     if (token !== renderToken) {
-      return;
+      return { firstPageMs, renderMs: Math.round(performance.now() - t0) };
     }
-    const page = await pdf.getPage(pageNum);
-    const viewport = page.getViewport({ scale: currentScale });
-    const pageDiv = document.createElement('div');
-    pageDiv.className = 'page';
-    pageDiv.dataset.page = String(pageNum);
-    pageDiv.style.width = `${viewport.width}px`;
-    pageDiv.style.height = `${viewport.height}px`;
-
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-    pageDiv.appendChild(canvas);
-    viewer.appendChild(pageDiv);
-
-    await page.render({ canvasContext: ctx, viewport }).promise;
-
-    pageDiv.addEventListener('click', (ev) => {
-      if (!ev.ctrlKey && !ev.metaKey) {
-        return;
-      }
-      ev.preventDefault();
-      const rect = pageDiv.getBoundingClientRect();
-      const cssX = ev.clientX - rect.left;
-      const cssY = ev.clientY - rect.top;
-      // Convert CSS viewport coords → PDF user space (origin bottom-left)
-      const [pdfX, pdfY] = viewport.convertToPdfPoint(cssX, cssY);
-      vscode.postMessage({
-        type: 'click',
-        page: pageNum,
-        x: pdfX,
-        y: pdfY,
-      });
-    });
+    await renderPage(pdf, pageNum, token);
   }
 
   if (pendingHighlight) {
     applyHighlight(pendingHighlight);
     pendingHighlight = null;
   }
+
+  return { firstPageMs, renderMs: Math.round(performance.now() - t0) };
 }
 
-async function openDocumentFromUrl(url) {
-  setStatus('Loading PDF…');
-  try {
-    const pdfjs = await loadPdfJs();
-    if (pdfDoc) {
-      try {
-        await pdfDoc.destroy();
-      } catch {
-        // ignore
-      }
-      pdfDoc = null;
-    }
-    const loadingTask = pdfjs.getDocument({ url, withCredentials: false });
-    pdfDoc = await loadingTask.promise;
-    await renderAllPages(pdfDoc);
+async function openDocument(source, cacheKey) {
+  if (cacheKey && cacheKey === loadedCacheKey && pdfDoc) {
     setStatus('Ready');
-    vscode.postMessage({ type: 'loaded', pages: pdfDoc.numPages });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    setStatus(`Load error: ${message}`);
-    vscode.postMessage({ type: 'loadError', message });
+    vscode.postMessage({
+      type: 'loaded',
+      pages: pdfDoc.numPages,
+      reused: true,
+    });
+    return;
   }
-}
 
-/**
- * Fallback when asWebviewUri fetch 401s: host posts PDF bytes.
- */
-async function openDocumentFromData(data) {
   setStatus('Loading PDF…');
+  const tStart = performance.now();
   try {
     const pdfjs = await loadPdfJs();
     if (pdfDoc) {
@@ -126,18 +153,42 @@ async function openDocumentFromData(data) {
       }
       pdfDoc = null;
     }
-    const payload =
-      data instanceof ArrayBuffer
-        ? data
-        : data?.buffer
-          ? data
-          : new Uint8Array(data);
-    const loadingTask = pdfjs.getDocument({ data: payload });
+
+    let loadingTask;
+    if (source.data != null) {
+      const payload =
+        source.data instanceof ArrayBuffer
+          ? source.data
+          : source.data?.buffer
+            ? source.data
+            : new Uint8Array(source.data);
+      loadingTask = pdfjs.getDocument({ data: payload });
+    } else {
+      loadingTask = pdfjs.getDocument({
+        url: source.url,
+        withCredentials: false,
+        // Local vscode-resource: skip speculative page fetches beyond the request.
+        disableAutoFetch: true,
+      });
+    }
+
     pdfDoc = await loadingTask.promise;
-    await renderAllPages(pdfDoc);
+    const loadMs = Math.round(performance.now() - tStart);
+    loadedCacheKey = cacheKey || null;
+
+    const { firstPageMs, renderMs } = await renderAllPages(pdfDoc, loadMs);
+    if (pdfDoc.numPages > 1) {
+      vscode.postMessage({
+        type: 'loaded',
+        pages: pdfDoc.numPages,
+        loadMs,
+        firstPageMs,
+        renderMs,
+      });
+    }
     setStatus('Ready');
-    vscode.postMessage({ type: 'loaded', pages: pdfDoc.numPages });
   } catch (err) {
+    loadedCacheKey = null;
     const message = err instanceof Error ? err.message : String(err);
     setStatus(`Load error: ${message}`);
     vscode.postMessage({ type: 'loadError', message });
@@ -183,9 +234,9 @@ window.addEventListener('message', (event) => {
   switch (msg.type) {
     case 'loadPdf':
       if (msg.data != null) {
-        openDocumentFromData(msg.data);
+        openDocument({ data: msg.data }, msg.cacheKey);
       } else if (msg.url) {
-        openDocumentFromUrl(msg.url);
+        openDocument({ url: msg.url }, msg.cacheKey);
       } else {
         setStatus('Load error: missing PDF url/data');
         vscode.postMessage({

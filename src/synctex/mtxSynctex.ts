@@ -135,21 +135,48 @@ export function parseFindOutput(text: string): ForwardSyncResult | undefined {
 
 /**
  * Parse mtxrun --script synctex --report --direct [--console] output.
- * ConTeXt may emit bare or quoted values, e.g.:
- *   filename='include/contenido/00-1-dedicatoria.tex' linenumber='2' tolerance=0
+ *
+ * Forms accepted:
+ * 1. Keyed: filename='…' linenumber='2' tolerance=0  (or bare values)
+ * 2. Console (--direct --console): "rel/or/abs/path.tex" <line> <tolerance>
+ *    e.g. "include/contenido/00-1-dedicatoria.tex" 2 11
  */
 export function parseReportOutput(text: string): BackwardSyncResult | undefined {
-  const re =
+  const keyed =
     /filename\s*=\s*(\S+)\s+linenumber\s*=\s*['"]?(\d+)['"]?\s+tolerance\s*=\s*['"]?(\d+)['"]?/i;
-  const m = text.match(re);
-  if (!m) {
-    return undefined;
+  const keyedMatch = text.match(keyed);
+  if (keyedMatch) {
+    return {
+      filename: unquoteSynctexValue(keyedMatch[1]),
+      linenumber: Number(keyedMatch[2]),
+      tolerance: Number(keyedMatch[3]),
+    };
   }
-  return {
-    filename: unquoteSynctexValue(m[1]),
-    linenumber: Number(m[2]),
-    tolerance: Number(m[3]),
-  };
+
+  // Prefer a quoted path token; fall back to a bare *.tex path.
+  const consoleQuoted =
+    /(?:^|[\s|])(["'])([^"'\n]+)\1\s+(\d+)\s+(\d+)\s*(?:$|[\r\n])/m;
+  const q = text.match(consoleQuoted);
+  if (q) {
+    return {
+      filename: q[2],
+      linenumber: Number(q[3]),
+      tolerance: Number(q[4]),
+    };
+  }
+
+  const consoleBare =
+    /(?:^|[\s|])(\S+\.(?:tex|ctx|mkiv|mkxl))\s+(\d+)\s+(\d+)\s*(?:$|[\r\n])/im;
+  const b = text.match(consoleBare);
+  if (b) {
+    return {
+      filename: b[1],
+      linenumber: Number(b[2]),
+      tolerance: Number(b[3]),
+    };
+  }
+
+  return undefined;
 }
 
 /** True when mtxrun reported a ConTeXt synctex open/parse failure. */

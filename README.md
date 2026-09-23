@@ -19,10 +19,10 @@ Then open this folder in VS Code / Cursor and press **F5** (launch config **Run 
 After the Extension Development Host starts, open the **ConTeXt** output channel. You should see:
 
 ```text
-ConTeXt SyncTeX activated  version=0.1.1  BUILD_ID=synctex-report-v2
+ConTeXt SyncTeX activated  version=0.1.2  BUILD_ID=synctex-report-v3
 ```
 
-If you still see `[cache] PDF →` or argv with `--goto`, the host is on an old build — close all Extension Development Host windows, re-run the commands above, and F5 again.
+If you still see `[cache] PDF →`, argv with `--goto`, or `BUILD_ID=synctex-report-v2`, the host is on an old build — close all Extension Development Host windows, re-run the commands above, and F5 again.
 
 Unit tests (no ConTeXt required):
 
@@ -90,9 +90,9 @@ Build uses: `context --synctex=repeat` plus `context.build.args`.
 
 1. Set `"context.root": "/home/andi/Apps/lmtx"` (or PATH).
 2. F5 → open a multi-file job → **Build and Preview**.
-3. **Ctrl+click** the dedicatory / include region → should open `include/contenido/00-1-dedicatoria.tex` at line 2 (or the matching Input).
-4. Confirm Output shows `--report --direct --console` and `file=… line=…` (not “no match”).
-5. Confirm forward (`Ctrl+Alt+J`) and that a long/failed build does not replace the last good view.
+3. **Ctrl+click** the dedicatory / include region → should open `include/contenido/00-1-dedicatoria.tex` at line 2.
+4. Confirm Output shows `file=include/contenido/00-1-dedicatoria.tex line=2` (not “no match”), plus `--report --direct --console`.
+5. Confirm viewer timing lines (`firstPageMs=…`) and that a long/failed build does not replace the last good view.
 
 ## Layout
 

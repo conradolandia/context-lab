@@ -2,7 +2,7 @@
   "name": "context-synctex",
   "displayName": "ConTeXt SyncTeX",
   "description": "ConTeXt build, PDF.js viewer, and SyncTeX forward/backward navigation",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "context-lab",
   "engines": {
     "vscode": "^1.85.0"
@@ -12,10 +12,7 @@
   ],
   "activationEvents": [
     "onLanguage:context",
-    "onLanguage:tex",
-    "onCommand:context.buildAndPreview",
-    "onCommand:context.forwardSyncTeX",
-    "onCommand:context.showPdf"
+    "onLanguage:tex"
   ],
   "main": "./dist/extension.js",
   "contributes": {

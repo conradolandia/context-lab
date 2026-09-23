@@ -81,6 +81,25 @@ describe('mtxSynctex parseReportOutput', () => {
     assert.equal(hit!.tolerance, 0);
   });
 
+  it('parses --direct --console space-separated form ("path" line tol)', () => {
+    const text = readFixture('report-console.txt');
+    const hit = parseReportOutput(text);
+    assert.ok(hit);
+    assert.equal(hit!.filename, 'include/contenido/00-1-dedicatoria.tex');
+    assert.equal(hit!.linenumber, 2);
+    assert.equal(hit!.tolerance, 11);
+  });
+
+  it('parses console form when embedded after argv error suffix noise', () => {
+    const text =
+      'Backward SyncTeX produced no match (exit 0) argv=[...]: "include/contenido/00-1-dedicatoria.tex" 2 11\n';
+    const hit = parseReportOutput(text);
+    assert.ok(hit);
+    assert.equal(hit!.filename, 'include/contenido/00-1-dedicatoria.tex');
+    assert.equal(hit!.linenumber, 2);
+    assert.equal(hit!.tolerance, 11);
+  });
+
   it('returns undefined when no match line is present', () => {
     assert.equal(parseReportOutput('invalid synctex log file'), undefined);
   });

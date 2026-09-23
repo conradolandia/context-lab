@@ -5,7 +5,14 @@ import * as fsp from 'node:fs/promises';
 
 export type ViewerMessage =
   | { type: 'ready' }
-  | { type: 'loaded'; pages: number }
+  | {
+      type: 'loaded';
+      pages: number;
+      loadMs?: number;
+      firstPageMs?: number;
+      renderMs?: number;
+      reused?: boolean;
+    }
   | { type: 'loadError'; message: string }
   | { type: 'click'; page: number; x: number; y: number };
 
@@ -22,23 +29,25 @@ export interface ForwardSyncPayload {
  *
  * Happy path: load the real gated job PDF via asWebviewUri with the job
  * directory (and workspace folders) in localResourceRoots.
- * Fallback: post PDF bytes only if the URI fetch 401s.
- * Never reload mid-compile — caller only invokes showJobPdf after the gate.
+ * Skips reload when path+mtime unchanged. Bytes only if URI fetch 401s.
  */
 export class PdfPanel {
   public static readonly viewType = 'context.pdfPreview';
 
   private panel: vscode.WebviewPanel | undefined;
   private currentPdfPath: string | undefined;
+  private currentMtimeMs: number | undefined;
   private previousPdfPath: string | undefined;
   private jobDirRoots: vscode.Uri[] = [];
   private building = false;
   private recovering = false;
   private preferBytesFallback = false;
+  private loadStartedAt = 0;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly onClick: (page: number, x: number, y: number) => void,
+    private readonly onLog?: (message: string) => void,
   ) {}
 
   /** Ensure jobDir (and workspace folders) are allowed for asWebviewUri. */
@@ -113,7 +122,7 @@ export class PdfPanel {
 
   /**
    * Load the gated job PDF. Call only after exit 0 + stability gate.
-   * Keeps previous path for load-error recovery.
+   * Skips network/render work when the same path+mtime is already shown.
    */
   public async showJobPdf(jobPdfPath: string, jobDir: string): Promise<void> {
     this.setJobDir(jobDir);
@@ -126,10 +135,21 @@ export class PdfPanel {
       return;
     }
 
+    const mtimeMs = fs.statSync(jobPdfPath).mtimeMs;
+    if (
+      this.panel &&
+      this.currentPdfPath === jobPdfPath &&
+      this.currentMtimeMs === mtimeMs
+    ) {
+      this.onLog?.(`[viewer] skip reload (unchanged mtime) ${jobPdfPath}`);
+      return;
+    }
+
     if (this.currentPdfPath && this.currentPdfPath !== jobPdfPath) {
       this.previousPdfPath = this.currentPdfPath;
     }
     this.currentPdfPath = jobPdfPath;
+    this.currentMtimeMs = mtimeMs;
     await this.loadPdf(jobPdfPath);
   }
 
@@ -154,24 +174,32 @@ export class PdfPanel {
   }
 
   private async loadPdf(pdfPath: string): Promise<void> {
+    this.loadStartedAt = Date.now();
     if (this.preferBytesFallback) {
       await this.postPdfBytes(pdfPath);
       return;
     }
     const uri = this.panel!.webview.asWebviewUri(vscode.Uri.file(pdfPath));
+    this.onLog?.(`[viewer] loadPdf url=${uri.toString()}`);
     await this.panel!.webview.postMessage({
       type: 'loadPdf',
       url: uri.toString(),
+      cacheKey: `${pdfPath}:${this.currentMtimeMs ?? 0}`,
     });
   }
 
   private async postPdfBytes(pdfPath: string): Promise<void> {
     try {
+      const t0 = Date.now();
       const buf = await fsp.readFile(pdfPath);
       const data = new Uint8Array(buf);
+      this.onLog?.(
+        `[viewer] bytes fallback size=${data.byteLength} readMs=${Date.now() - t0}`,
+      );
       await this.panel!.webview.postMessage({
         type: 'loadPdf',
         data,
+        cacheKey: `${pdfPath}:${this.currentMtimeMs ?? 0}`,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -211,6 +239,7 @@ export class PdfPanel {
       );
       this.currentPdfPath = fallback;
       try {
+        this.currentMtimeMs = fs.statSync(fallback).mtimeMs;
         await this.loadPdf(fallback);
       } finally {
         this.recovering = false;
@@ -234,6 +263,18 @@ export class PdfPanel {
           this.setBuilding(true);
         }
         break;
+      case 'loaded': {
+        const hostMs = this.loadStartedAt ? Date.now() - this.loadStartedAt : undefined;
+        this.onLog?.(
+          `[viewer] loaded pages=${msg.pages}` +
+            (msg.loadMs != null ? ` getDocumentMs=${msg.loadMs}` : '') +
+            (msg.firstPageMs != null ? ` firstPageMs=${msg.firstPageMs}` : '') +
+            (msg.renderMs != null ? ` allPagesMs=${msg.renderMs}` : '') +
+            (hostMs != null ? ` hostRoundtripMs=${hostMs}` : '') +
+            (msg.reused ? ' reused=1' : ''),
+        );
+        break;
+      }
       case 'loadError':
         void this.recoverFromLoadError(msg.message);
         break;

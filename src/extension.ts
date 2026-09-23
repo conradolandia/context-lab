@@ -8,7 +8,7 @@ import { forwardSync, backwardSync, SynctexError } from './synctex/mtxSynctex';
 import { PdfPanel } from './viewer/pdfPanel';
 
 /** Bump when shipping a SyncTeX/viewer behavior change Sir must verify in Output. */
-export const BUILD_ID = 'synctex-report-v2';
+export const BUILD_ID = 'synctex-report-v3';
 
 let output: vscode.OutputChannel;
 let pdfPanel: PdfPanel;
@@ -231,9 +231,15 @@ async function handlePdfClick(page: number, x: number, y: number): Promise<void>
 export function activate(context: vscode.ExtensionContext): void {
   output = vscode.window.createOutputChannel('ConTeXt');
 
-  pdfPanel = new PdfPanel(context.extensionUri, (page, x, y) => {
-    void handlePdfClick(page, x, y);
-  });
+  pdfPanel = new PdfPanel(
+    context.extensionUri,
+    (page, x, y) => {
+      void handlePdfClick(page, x, y);
+    },
+    (message) => {
+      output.appendLine(message);
+    },
+  );
 
   context.subscriptions.push(
     output,
