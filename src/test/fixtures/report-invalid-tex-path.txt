@@ -1,0 +1,1 @@
+mtx-synctex     | invalid synctex log file 'include/contenido/00-1-dedicatoria.tex'

@@ -4,16 +4,25 @@ Companion VS Code extension for ConTeXt: compile with SyncTeX, preview PDF with 
 
 ## Run locally (F5)
 
-1. Install dependencies and compile:
+Checkout the PR branch and rebuild before launching so the Extension Host cannot load a stale `dist/`:
 
 ```bash
+git fetch origin
+git checkout cursor/fix-synctex-pdf-speed-4323
+git pull origin cursor/fix-synctex-pdf-speed-4323
 npm install
 npm run compile
 ```
 
-2. Open this folder in VS Code / Cursor.
-3. Press **F5** (launch config: **Run Extension**) to start an Extension Development Host.
-4. In the new window, open a `.tex` / ConTeXt job and run **ConTeXt: Build and Preview** from the Command Palette.
+Then open this folder in VS Code / Cursor and press **F5** (launch config **Run Extension**). `preLaunchTask` runs `npm run compile` again on every F5.
+
+After the Extension Development Host starts, open the **ConTeXt** output channel. You should see:
+
+```text
+ConTeXt SyncTeX activated  version=0.1.6  BUILD_ID=viewer-worker-v1
+```
+
+If you still see an older `BUILD_ID`, close all Extension Development Host windows, rebuild, and F5 again.
 
 Unit tests (no ConTeXt required):
 
@@ -26,11 +35,16 @@ npm test
 | Action | Command / binding |
 | --- | --- |
 | Build then open/refresh viewer | **ConTeXt: Build and Preview** |
-| Show last gated PDF snapshot | **ConTeXt: Show PDF** |
+| Show last gated PDF | **ConTeXt: Show PDF** |
 | Forward SyncTeX (source → PDF) | **ConTeXt: Forward SyncTeX** — `Ctrl+Alt+J` (macOS: `Cmd+Alt+J`) |
 | Backward SyncTeX (PDF → source) | **Ctrl+click** (macOS: **Cmd+click**) in the PDF webview |
 
-Forward/backward call `mtxrun --script synctex --find` / `--report` against a **frozen** `.synctex` snapshot paired with the shown PDF.
+CLI (project synctex, `cwd` = job directory):
+
+- Forward: `mtxrun --script synctex --find --direct --file=… --line=… <job.synctex>`
+- Backward: `mtxrun --script synctex --report --direct --console --page=… --x=… --y=… <job.synctex>`
+
+The extension opens the resolved source itself (no `--editor`). Output channel logs exact `cwd` and `argv`. Parser accepts quoted values such as `filename='include/…/file.tex' linenumber='2'`.
 
 ## Toolchain settings
 
@@ -49,6 +63,22 @@ Resolution order:
 | `context.mtxrunPath` | `""` | Absolute `mtxrun` binary |
 | `context.synctex.enabled` | `true` | Toggle SyncTeX |
 | `context.build.args` | `[]` | Extra args after `--synctex=repeat` |
+| `context.rootFile` | `""` | Main file to compile (workspace-relative or absolute). Empty = auto-detect |
+
+### Main (root) file resolution
+
+Order (first match wins):
+
+1. Setting `context.rootFile`
+2. Magic comment in the first ~20 lines of the active file: `% !TEX root = <path>` (relative to that file)
+3. ConTeXt structure: if the active file is a `\startcomponent`, find `\product <name>` and resolve `<name>.tex` nearby / in the workspace (compile the product even if it has `\project`)
+4. Fallback: the active file
+
+The status bar shows `ConTeXt: <rootname>`; click it to set or clear `context.rootFile` for the workspace. Build / Show PDF use the resolved root’s PDF and synctex; Forward SyncTeX still passes the **active** file+line to `--file`.
+
+## SyncTeX coordinates
+
+mtxrun `--script synctex` exchanges **y top-down** (origin at the page top). The viewer converts PDF.js bottom-up click y with `pageHeight - pdfY` before `--report`, and maps forward `lly`/`ury` as top-down when highlighting.
 
 Example (Sir’s machine):
 
@@ -58,31 +88,31 @@ Example (Sir’s machine):
 }
 ```
 
-If a binary is missing, the extension reports a clear error pointing at `context.root` and PATH setup.
-
 ## Compile-safe PDF viewer
 
-ConTeXt often rewrites the job PDF for several seconds. Loading that file mid-write crashes PDF.js. This extension:
+ConTeXt often rewrites the job PDF for several seconds. This extension:
 
-- Keeps the **last good** cached view while a build runs (status: Building…)
+- Keeps the **last good** view while a build runs (status: Building…); does not reload mid-compile
 - Does **not** `fs.watch` the live job PDF into the viewer
-- After exit code 0, runs a **stability gate** (non-zero size settle, `%PDF-` header) then copies PDF + synctex into an extension cache
-- Points PDF.js only at that **cache snapshot**
-- On webview load failure, restores the **previous** snapshot when available
-- Never mixes a new PDF with an old synctex (or the reverse)
+- After exit code 0, runs a **stability gate** (size settle, `%PDF-` header) on the **job** PDF next to the document
+- Loads that **real job PDF** via a loopback **range server** (`Accept-Ranges` + CORS) so PDF.js can request page-1 chunks; falls back to `asWebviewUri`, then bytes on 401
+- Runs PDF.js parsing in a **real dedicated worker** built from a `blob:` URL (VS Code webview `workerSrc` URLs are cross-origin and fall back to a fake/main-thread worker)
+- Runs SyncTeX against the **real job `.synctex` / `.synctex.gz`** with `cwd=jobDir` (no globalStorage synctex copy on the happy path)
+- If URI load 401s, falls back once to posting PDF bytes for that session
+- Never mixes a new PDF with an old synctex mid-build (lookups use the last gated pair)
 
 Build uses: `context --synctex=repeat` plus `context.build.args`.
 
 ## Local LMTX verification (e2e SyncTeX)
 
-Cloud / CI covers scaffolding, compile, and unit tests for gate + SyncTeX CLI parsing. End-to-end click ↔ source accuracy needs a real LMTX install:
-
-1. Set `"context.root": "/home/andi/Apps/lmtx"` (or ensure `context` / `mtxrun` are on PATH).
-2. F5 → open a ConTeXt job → **Build and Preview**.
-3. Confirm forward (`Ctrl+Alt+J`) scrolls/highlights the PDF and Ctrl+click jumps to the source line.
-4. Confirm a long compile keeps the previous PDF visible and a failed build does not replace it.
-
-Candidate host when that path is available: connected machine `furiosa`.
+1. Set `"context.root": "/home/andi/Apps/lmtx"` (or PATH).
+2. F5 → open a multi-file job → **Build and Preview**.
+3. **Ctrl+click** the dedicatory / include region → should open `include/contenido/00-1-dedicatoria.tex` at line 2.
+4. Confirm Output shows `file=include/contenido/00-1-dedicatoria.tex line=2` (not “no match”), plus `--report --direct --console`.
+5. **Ctrl+Alt+J** / Ctrl+click on a long page (e.g. prologue page 12) — highlight and jumps should track the correct vertical position.
+6. Status bar shows the main file; click to change `context.rootFile`.
+7. On a large PDF (`BUILD_ID=viewer-worker-v1`): Output should show `worker=real`, `rangeServer=http://127.0.0.1:…`, `rangeReqs` > 0, and `getDocumentMs` / `firstPageMs` in the low thousands (target: first page ~1–2 s on a ~70 MB / 360-page job). If you see `worker=fake`, the blob worker failed — report that line.
+8. Confirm a long/failed build does not replace the last good view.
 
 ## Layout
 
@@ -93,7 +123,7 @@ src/build/compiler.ts
 src/build/artifactGate.ts
 src/synctex/mtxSynctex.ts
 src/viewer/pdfPanel.ts
-media/viewer/          # PDF.js page + assets
+media/viewer/
 ```
 
 Phase 2 (not in this MVP): Digestif LSP, tree-sitter-context.

@@ -9,12 +9,6 @@ export interface ArtifactGateOptions {
   settleSamples?: number;
 }
 
-export interface GateResult {
-  pdfPath: string;
-  synctexPath?: string;
-  size: number;
-}
-
 export class ArtifactGateError extends Error {
   constructor(message: string) {
     super(message);
@@ -60,7 +54,6 @@ export async function hasEofMarker(filePath: string): Promise<boolean> {
 
 /**
  * Wait until the PDF exists, has non-zero stable size, and a %PDF- header.
- * Optionally checks for %%EOF near the end.
  */
 export async function waitForStablePdf(
   pdfPath: string,
@@ -93,7 +86,6 @@ export async function waitForStablePdf(
             `File does not look like a PDF (missing %PDF- header): ${pdfPath}`,
           );
         }
-        // Optional EOF check — warn but do not hard-fail if absent (incremental writers).
         await hasEofMarker(pdfPath);
         return stat.size;
       }
@@ -120,57 +112,40 @@ export function findSynctexSibling(pdfPath: string): string | undefined {
   return undefined;
 }
 
-export interface CacheSnapshot {
+/**
+ * Gated job artifacts. Happy path uses the real project PDF + synctex
+ * (no globalStorage copy). Viewer refreshes only after the gate passes.
+ */
+export interface JobSnapshot {
+  /** Absolute path to the job PDF under the project (viewer loads this). */
   pdfPath: string;
+  /** Absolute path to the job .synctex / .synctex.gz (SyncTeX lookups). */
   synctexPath?: string;
+  /** Directory where the job was built — mtxrun SyncTeX cwd. */
+  jobDir: string;
   generation: number;
+  size: number;
 }
 
 /**
- * Copy a gated PDF (+ matching synctex) into an extension cache directory.
- * Returns paths to the frozen snapshot pair.
+ * After exit 0: wait for the job PDF to settle, then record paths to the
+ * real project PDF and sibling synctex. Does not copy into globalStorage.
  */
-export async function publishToCache(
+export async function gateJobArtifacts(
   jobPdfPath: string,
-  cacheDir: string,
   generation: number,
   options: ArtifactGateOptions = {},
-): Promise<CacheSnapshot> {
-  await fsp.mkdir(cacheDir, { recursive: true });
-  const size = await waitForStablePdf(jobPdfPath, options);
-
-  const cachedPdf = path.join(cacheDir, `view-${generation}.pdf`);
-  await fsp.copyFile(jobPdfPath, cachedPdf);
-
-  let cachedSynctex: string | undefined;
-  const synctex = findSynctexSibling(jobPdfPath);
-  if (synctex) {
-    const ext = synctex.endsWith('.gz') ? '.synctex.gz' : '.synctex';
-    cachedSynctex = path.join(cacheDir, `view-${generation}${ext}`);
-    await fsp.copyFile(synctex, cachedSynctex);
-  }
-
-  // Re-validate header on the copy
-  if (!(await hasPdfHeader(cachedPdf))) {
-    throw new ArtifactGateError('Cached PDF copy failed header check');
-  }
+): Promise<JobSnapshot> {
+  const absPdf = path.resolve(jobPdfPath);
+  const size = await waitForStablePdf(absPdf, options);
+  const jobDir = path.dirname(absPdf);
+  const syn = findSynctexSibling(absPdf);
 
   return {
-    pdfPath: cachedPdf,
-    synctexPath: cachedSynctex,
+    pdfPath: absPdf,
+    synctexPath: syn ? path.resolve(syn) : undefined,
+    jobDir,
     generation,
-    // expose size for tests via unused param path
+    size,
   };
-}
-
-/** Exported for unit tests that need gate result metadata. */
-export async function gateAndCopy(
-  jobPdfPath: string,
-  cacheDir: string,
-  generation: number,
-  options?: ArtifactGateOptions,
-): Promise<GateResult & CacheSnapshot> {
-  const snap = await publishToCache(jobPdfPath, cacheDir, generation, options);
-  const size = (await fsp.stat(snap.pdfPath)).size;
-  return { ...snap, size };
 }

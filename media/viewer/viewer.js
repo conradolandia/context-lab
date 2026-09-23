@@ -2,93 +2,486 @@
 const vscode = acquireVsCodeApi();
 
 const statusText = document.getElementById('statusText');
-const pageInfo = document.getElementById('pageInfo');
 const viewer = document.getElementById('viewer');
+const pageInput = document.getElementById('pageInput');
+const pageTotal = document.getElementById('pageTotal');
+const zoomLabel = document.getElementById('zoomLabel');
+const btnPrev = document.getElementById('btnPrev');
+const btnNext = document.getElementById('btnNext');
+const btnZoomIn = document.getElementById('btnZoomIn');
+const btnZoomOut = document.getElementById('btnZoomOut');
+const btnFitWidth = document.getElementById('btnFitWidth');
+
+const SCALE_MIN = 0.5;
+const SCALE_MAX = 3;
+const SCALE_STEP = 0.15;
+const HIGHLIGHT_MS = 4000;
+const BUFFER = 1; // render visible ±1
 
 let pdfDoc = null;
 let currentScale = 1.25;
-let renderToken = 0;
-/** @type {{page:number,x:number,y:number,w:number,h:number}|null} */
+let currentPage = 1;
+/** @type {number[]} base (scale=1) page heights */
+let pageHeights = [];
+/** @type {number[]} base (scale=1) page widths */
+let pageWidths = [];
+/** @type {Map<number, HTMLElement>} */
+const pageEls = new Map();
+/** @type {Set<number>} */
+const renderedPages = new Set();
+/** @type {Set<number>} */
+const renderingPages = new Set();
+/** @type {ReturnType<typeof setTimeout>|null} */
+let highlightFadeTimer = null;
+/** @type {ReturnType<typeof setTimeout>|null} */
+let scrollRaf = null;
+/**
+ * @type {{page:number, llx:number, lly:number, urx:number, ury:number}|null}
+ */
+let activeHighlight = null;
 let pendingHighlight = null;
+let pdfjsPromise = null;
+/** @type {Worker|null} dedicated PDF.js worker (blob URL; same-origin) */
+let pdfWorker = null;
+/** @type {'real'|'fake'|'unknown'} */
+let workerMode = 'unknown';
+let loadedCacheKey = null;
+/** Prevent overlapping openDocument for the same key */
+let openInFlightKey = null;
 
 function setStatus(text, building = false) {
   statusText.textContent = text;
   document.body.classList.toggle('building', building);
 }
 
-async function loadPdfJs() {
-  const mod = await import('./pdfjs/pdf.min.mjs');
-  mod.GlobalWorkerOptions.workerSrc = new URL('./pdfjs/pdf.worker.min.mjs', import.meta.url).toString();
-  return mod;
+function updateToolbar() {
+  const pages = pdfDoc?.numPages ?? 0;
+  pageTotal.textContent = `/ ${pages}`;
+  pageInput.max = String(Math.max(pages, 1));
+  pageInput.value = String(currentPage);
+  pageInput.disabled = pages === 0;
+  btnPrev.disabled = pages === 0 || currentPage <= 1;
+  btnNext.disabled = pages === 0 || currentPage >= pages;
+  zoomLabel.textContent = `${Math.round(currentScale * 100)}%`;
+  btnZoomIn.disabled = !pdfDoc || currentScale >= SCALE_MAX - 1e-9;
+  btnZoomOut.disabled = !pdfDoc || currentScale <= SCALE_MIN + 1e-9;
+  btnFitWidth.disabled = !pdfDoc;
 }
 
 /**
- * ConTeXt / SyncTeX use PDF user space (bp from bottom-left).
- * PDF.js viewport uses top-left CSS pixels. Convert box for highlight.
+ * VS Code webviews serve extension resources via a service worker that
+ * dedicated Workers cannot reach. Setting workerSrc to a vscode-cdn /
+ * asWebviewUri URL stalls, and PDF.js silently falls back to a "fake
+ * worker" (main-thread parse of the whole PDF — ~30s for 70 MB).
+ *
+ * Same approach as vscode-pdf-next: fetch the self-contained worker
+ * bundle as text in the page context, build a blob: module Worker, and
+ * hand it to PDF.js via GlobalWorkerOptions.workerPort.
  */
+async function createBlobPdfWorker() {
+  if (typeof Worker !== 'function') {
+    return null;
+  }
+  const workerUrl = new URL(
+    './pdfjs/pdf.worker.min.mjs',
+    import.meta.url,
+  ).toString();
+  const resp = await fetch(workerUrl);
+  if (!resp.ok) {
+    throw new Error(`worker fetch ${resp.status} ${resp.statusText}`);
+  }
+  const text = await resp.text();
+  const blobUrl = URL.createObjectURL(
+    new Blob([text], { type: 'text/javascript' }),
+  );
+  return new Worker(blobUrl, { type: 'module', name: 'pdfjs-worker' });
+}
+
+function detectWorkerMode(loadingTask) {
+  const port = loadingTask?._worker?.port;
+  if (typeof Worker !== 'undefined' && port instanceof Worker) {
+    return 'real';
+  }
+  return 'fake';
+}
+
+function loadPdfJs() {
+  if (!pdfjsPromise) {
+    pdfjsPromise = (async () => {
+      const mod = await import('./pdfjs/pdf.min.mjs');
+      try {
+        if (!pdfWorker) {
+          pdfWorker = await createBlobPdfWorker();
+        }
+        if (pdfWorker) {
+          mod.GlobalWorkerOptions.workerPort = pdfWorker;
+          workerMode = 'real';
+        } else {
+          throw new Error('Worker API unavailable');
+        }
+      } catch (err) {
+        console.warn(
+          'PDF.js blob worker failed; falling back to workerSrc (likely fake worker)',
+          err,
+        );
+        workerMode = 'unknown';
+        mod.GlobalWorkerOptions.workerSrc = new URL(
+          './pdfjs/pdf.worker.min.mjs',
+          import.meta.url,
+        ).toString();
+      }
+      return mod;
+    })();
+  }
+  return pdfjsPromise;
+}
+
 function pdfBoxToViewport(pageViewport, llx, lly, urx, ury) {
   const [x1, y1] = pageViewport.convertToViewportPoint(llx, ury);
   const [x2, y2] = pageViewport.convertToViewportPoint(urx, lly);
-  const left = Math.min(x1, x2);
-  const top = Math.min(y1, y2);
-  const width = Math.abs(x2 - x1);
-  const height = Math.abs(y2 - y1);
-  return { left, top, width, height };
+  return {
+    left: Math.min(x1, x2),
+    top: Math.min(y1, y2),
+    width: Math.abs(x2 - x1),
+    height: Math.abs(y2 - y1),
+  };
 }
 
-async function renderAllPages(pdf) {
-  const token = ++renderToken;
-  viewer.innerHTML = '';
-  pageInfo.textContent = `${pdf.numPages} page${pdf.numPages === 1 ? '' : 's'}`;
+/**
+ * mtx-synctex --find returns y top-down (y=0 at page top). Convert to PDF
+ * bottom-up using the page view box, then to CSS via PDF.js.
+ */
+function mtxBoxToViewport(page, pageViewport, llx, lly, urx, ury) {
+  const view = page.view; // [xMin, yMin, xMax, yMax]
+  const yMax = view[3];
+  const topFromTop = Math.min(lly, ury);
+  const bottomFromTop = Math.max(lly, ury);
+  const pdfTop = yMax - topFromTop;
+  const pdfBottom = yMax - bottomFromTop;
+  return pdfBoxToViewport(pageViewport, llx, pdfBottom, urx, pdfTop);
+}
 
-  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-    if (token !== renderToken) {
-      return;
-    }
-    const page = await pdf.getPage(pageNum);
-    const viewport = page.getViewport({ scale: currentScale });
+function normalizeHighlight(msg) {
+  const llx = msg.llx ?? msg.x ?? 0;
+  const lly = msg.lly ?? msg.y ?? 0;
+  const urx = msg.urx ?? (msg.width != null ? llx + msg.width : llx + 40);
+  const ury = msg.ury ?? (msg.height != null ? lly + msg.height : lly + 12);
+  return { page: Number(msg.page) || 1, llx, lly, urx, ury };
+}
+
+function clearHighlightDom() {
+  document.querySelectorAll('.highlight').forEach((el) => el.remove());
+  if (highlightFadeTimer) {
+    clearTimeout(highlightFadeTimer);
+    highlightFadeTimer = null;
+  }
+}
+
+function scaledSize(pageNum) {
+  const w = (pageWidths[pageNum - 1] || 612) * currentScale;
+  const h = (pageHeights[pageNum - 1] || 792) * currentScale;
+  return { w, h };
+}
+
+function layoutPlaceholders() {
+  viewer.innerHTML = '';
+  pageEls.clear();
+  renderedPages.clear();
+  renderingPages.clear();
+  if (!pdfDoc) {
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  for (let i = 1; i <= pdfDoc.numPages; i++) {
+    const { w, h } = scaledSize(i);
     const pageDiv = document.createElement('div');
-    pageDiv.className = 'page';
-    pageDiv.dataset.page = String(pageNum);
+    pageDiv.className = 'page placeholder';
+    pageDiv.dataset.page = String(i);
+    pageDiv.style.width = `${w}px`;
+    pageDiv.style.height = `${h}px`;
+    frag.appendChild(pageDiv);
+    pageEls.set(i, pageDiv);
+  }
+  viewer.appendChild(frag);
+}
+
+function visibleRange() {
+  if (!pdfDoc) {
+    return { from: 1, to: 1 };
+  }
+  const top = viewer.scrollTop;
+  const bottom = top + viewer.clientHeight;
+  let from = 1;
+  let to = pdfDoc.numPages;
+  let found = false;
+  for (let i = 1; i <= pdfDoc.numPages; i++) {
+    const el = pageEls.get(i);
+    if (!el) {
+      continue;
+    }
+    const elTop = el.offsetTop;
+    const elBottom = elTop + el.offsetHeight;
+    if (elBottom >= top && elTop <= bottom) {
+      if (!found) {
+        from = i;
+        found = true;
+      }
+      to = i;
+    } else if (found && elTop > bottom) {
+      break;
+    }
+  }
+  from = Math.max(1, from - BUFFER);
+  to = Math.min(pdfDoc.numPages, to + BUFFER);
+  return { from, to };
+}
+
+async function renderPageCanvas(pageNum) {
+  if (!pdfDoc || renderedPages.has(pageNum) || renderingPages.has(pageNum)) {
+    return;
+  }
+  const pageDiv = pageEls.get(pageNum);
+  if (!pageDiv) {
+    return;
+  }
+  renderingPages.add(pageNum);
+  try {
+    const page = await pdfDoc.getPage(pageNum);
+    const viewport = page.getViewport({ scale: currentScale });
     pageDiv.style.width = `${viewport.width}px`;
     pageDiv.style.height = `${viewport.height}px`;
+    pageDiv.classList.remove('placeholder');
+    pageDiv.replaceChildren();
 
     const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { alpha: false });
     canvas.width = viewport.width;
     canvas.height = viewport.height;
     pageDiv.appendChild(canvas);
-    viewer.appendChild(pageDiv);
+    // Store viewport + page.view for delegated click conversion (mtx y is top-down).
+    pageDiv._viewport = viewport;
+    pageDiv._pageView = page.view; // [xMin, yMin, xMax, yMax]
 
     await page.render({ canvasContext: ctx, viewport }).promise;
+    renderedPages.add(pageNum);
 
-    pageDiv.addEventListener('click', (ev) => {
-      if (!ev.ctrlKey && !ev.metaKey) {
-        return;
-      }
-      ev.preventDefault();
-      const rect = pageDiv.getBoundingClientRect();
-      const cssX = ev.clientX - rect.left;
-      const cssY = ev.clientY - rect.top;
-      // Convert CSS viewport coords → PDF user space (origin bottom-left)
-      const [pdfX, pdfY] = viewport.convertToPdfPoint(cssX, cssY);
-      vscode.postMessage({
-        type: 'click',
-        page: pageNum,
-        x: pdfX,
-        y: pdfY,
-      });
-    });
-  }
-
-  if (pendingHighlight) {
-    applyHighlight(pendingHighlight);
-    pendingHighlight = null;
+    if (pendingHighlight && pendingHighlight.page === pageNum) {
+      paintHighlight();
+    } else if (activeHighlight && activeHighlight.page === pageNum) {
+      paintHighlight();
+    }
+  } finally {
+    renderingPages.delete(pageNum);
   }
 }
 
-async function openDocument(url) {
+function unrenderPage(pageNum) {
+  if (!renderedPages.has(pageNum)) {
+    return;
+  }
+  const pageDiv = pageEls.get(pageNum);
+  if (!pageDiv) {
+    return;
+  }
+  const { w, h } = scaledSize(pageNum);
+  pageDiv.classList.add('placeholder');
+  pageDiv.replaceChildren();
+  pageDiv.style.width = `${w}px`;
+  pageDiv.style.height = `${h}px`;
+  pageDiv._viewport = undefined;
+  renderedPages.delete(pageNum);
+}
+
+async function syncVisiblePages() {
+  if (!pdfDoc) {
+    return;
+  }
+  const { from, to } = visibleRange();
+  const needed = new Set();
+  for (let i = from; i <= to; i++) {
+    needed.add(i);
+  }
+  for (const p of [...renderedPages]) {
+    if (!needed.has(p)) {
+      unrenderPage(p);
+    }
+  }
+  const jobs = [];
+  for (const p of needed) {
+    if (!renderedPages.has(p)) {
+      jobs.push(renderPageCanvas(p));
+    }
+  }
+  await Promise.all(jobs);
+}
+
+function scheduleSyncVisible() {
+  if (scrollRaf) {
+    return;
+  }
+  scrollRaf = setTimeout(() => {
+    scrollRaf = null;
+    void syncVisiblePages();
+    // Update current page from scroll position
+    if (!pdfDoc) {
+      return;
+    }
+    const mid = viewer.scrollTop + viewer.clientHeight / 3;
+    let best = 1;
+    for (let i = 1; i <= pdfDoc.numPages; i++) {
+      const el = pageEls.get(i);
+      if (el && el.offsetTop <= mid) {
+        best = i;
+      }
+    }
+    if (best !== currentPage) {
+      currentPage = best;
+      updateToolbar();
+    }
+  }, 50);
+}
+
+function paintHighlight() {
+  clearHighlightDom();
+  const msg = activeHighlight;
+  if (!msg || !pdfDoc) {
+    return;
+  }
+  const pageDiv = pageEls.get(msg.page);
+  if (!pageDiv || !renderedPages.has(msg.page)) {
+    pendingHighlight = msg;
+    void ensurePageRendered(msg.page).then(() => {
+      if (activeHighlight && activeHighlight.page === msg.page) {
+        paintHighlight();
+      }
+    });
+    return;
+  }
+  pendingHighlight = null;
+
+  pdfDoc.getPage(msg.page).then((page) => {
+    if (!activeHighlight || activeHighlight.page !== msg.page) {
+      return;
+    }
+    const still = pageEls.get(msg.page);
+    if (!still || !renderedPages.has(msg.page)) {
+      pendingHighlight = msg;
+      return;
+    }
+    const viewport = page.getViewport({ scale: currentScale });
+    const box = mtxBoxToViewport(page, viewport, msg.llx, msg.lly, msg.urx, msg.ury);
+    const hl = document.createElement('div');
+    hl.className = 'highlight';
+    hl.style.left = `${box.left}px`;
+    hl.style.top = `${box.top}px`;
+    hl.style.width = `${Math.max(box.width, 8)}px`;
+    hl.style.height = `${Math.max(box.height, 8)}px`;
+    still.appendChild(hl);
+    hl.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+
+    vscode.postMessage({
+      type: 'highlight',
+      page: msg.page,
+      viewportLeft: box.left,
+      top: box.top,
+      w: box.width,
+      h: box.height,
+      scale: currentScale,
+      llx: msg.llx,
+      lly: msg.lly,
+      urx: msg.urx,
+      ury: msg.ury,
+    });
+
+    highlightFadeTimer = setTimeout(() => {
+      hl.style.opacity = '0';
+    }, HIGHLIGHT_MS);
+  });
+}
+
+function applyHighlight(raw) {
+  activeHighlight = normalizeHighlight(raw);
+  currentPage = activeHighlight.page;
+  updateToolbar();
+  const el = pageEls.get(activeHighlight.page);
+  if (el) {
+    el.scrollIntoView({ behavior: 'instant', block: 'center' });
+  }
+  paintHighlight();
+}
+
+async function ensurePageRendered(pageNum) {
+  if (!pdfDoc) {
+    return;
+  }
+  const el = pageEls.get(pageNum);
+  if (el) {
+    el.scrollIntoView({ behavior: 'instant', block: 'nearest' });
+  }
+  await syncVisiblePages();
+  if (!renderedPages.has(pageNum)) {
+    await renderPageCanvas(pageNum);
+  }
+}
+
+async function measurePages(pdf) {
+  pageHeights = [];
+  pageWidths = [];
+  // Sample page 1 for geometry; assume uniform if later pages match common case.
+  // For mixed sizes, measure a few more cheaply.
+  const first = await pdf.getPage(1);
+  const v1 = first.getViewport({ scale: 1 });
+  for (let i = 1; i <= pdf.numPages; i++) {
+    pageWidths[i - 1] = v1.width;
+    pageHeights[i - 1] = v1.height;
+  }
+  // Spot-check last page (often same) — if different, measure odds later on demand.
+  if (pdf.numPages > 1) {
+    const last = await pdf.getPage(pdf.numPages);
+    const vl = last.getViewport({ scale: 1 });
+    if (Math.abs(vl.height - v1.height) > 1 || Math.abs(vl.width - v1.width) > 1) {
+      // Mixed sizes: measure all (metadata only, no canvas) — still much cheaper than rendering.
+      const jobs = [];
+      for (let i = 1; i <= pdf.numPages; i++) {
+        jobs.push(
+          pdf.getPage(i).then((p) => {
+            const v = p.getViewport({ scale: 1 });
+            pageWidths[i - 1] = v.width;
+            pageHeights[i - 1] = v.height;
+          }),
+        );
+      }
+      await Promise.all(jobs);
+    } else {
+      pageWidths[pdf.numPages - 1] = vl.width;
+      pageHeights[pdf.numPages - 1] = vl.height;
+    }
+  }
+}
+
+async function openDocument(source, cacheKey, useRange) {
+  if (cacheKey && cacheKey === loadedCacheKey && pdfDoc) {
+    setStatus('Ready');
+    updateToolbar();
+    vscode.postMessage({
+      type: 'loaded',
+      pages: pdfDoc.numPages,
+      reused: true,
+      virtual: true,
+    });
+    if (activeHighlight) {
+      paintHighlight();
+    }
+    return;
+  }
+  if (cacheKey && openInFlightKey === cacheKey) {
+    return;
+  }
+  openInFlightKey = cacheKey || 'inflight';
+
   setStatus('Loading PDF…');
+  const tStart = performance.now();
+  let bytesFetched = 0;
   try {
     const pdfjs = await loadPdfJs();
     if (pdfDoc) {
@@ -99,48 +492,200 @@ async function openDocument(url) {
       }
       pdfDoc = null;
     }
-    const loadingTask = pdfjs.getDocument({ url, withCredentials: false });
+
+    let loadingTask;
+    if (source.data != null) {
+      const payload =
+        source.data instanceof ArrayBuffer
+          ? source.data
+          : source.data?.buffer
+            ? source.data
+            : new Uint8Array(source.data);
+      bytesFetched = payload.byteLength ?? payload.length ?? 0;
+      loadingTask = pdfjs.getDocument({ data: payload });
+    } else {
+      const opts = {
+        url: source.url,
+        withCredentials: false,
+        disableAutoFetch: true,
+        disableStream: false,
+        disableRange: !useRange,
+      };
+      if (useRange) {
+        // 1 MiB chunks — fewer round-trips on loopback than the 64 KiB default
+        opts.rangeChunkSize = 65536 * 16;
+      }
+      loadingTask = pdfjs.getDocument(opts);
+      loadingTask.onProgress = (p) => {
+        if (p && typeof p.loaded === 'number') {
+          bytesFetched = p.loaded;
+        }
+      };
+    }
+
     pdfDoc = await loadingTask.promise;
-    await renderAllPages(pdfDoc);
+    workerMode = detectWorkerMode(loadingTask);
+    const loadMs = Math.round(performance.now() - tStart);
+    loadedCacheKey = cacheKey || null;
+    currentPage = 1;
+
+    const tMeasure = performance.now();
+    await measurePages(pdfDoc);
+    layoutPlaceholders();
+    const t0 = performance.now();
+    await syncVisiblePages();
+    const firstPageMs = Math.round(performance.now() - t0);
+    const renderMs = Math.round(performance.now() - tMeasure);
+
     setStatus('Ready');
-    vscode.postMessage({ type: 'loaded', pages: pdfDoc.numPages });
+    updateToolbar();
+    vscode.postMessage({
+      type: 'loaded',
+      pages: pdfDoc.numPages,
+      loadMs,
+      firstPageMs,
+      renderMs,
+      bytesFetched,
+      worker: workerMode,
+      virtual: true,
+      useRange: !!useRange,
+    });
+
+    if (activeHighlight) {
+      paintHighlight();
+    }
   } catch (err) {
+    loadedCacheKey = null;
     const message = err instanceof Error ? err.message : String(err);
     setStatus(`Load error: ${message}`);
     vscode.postMessage({ type: 'loadError', message });
+  } finally {
+    openInFlightKey = null;
   }
 }
 
-function applyHighlight(msg) {
-  document.querySelectorAll('.highlight').forEach((el) => el.remove());
-  const pageDiv = viewer.querySelector(`.page[data-page="${msg.page}"]`);
-  if (!pageDiv || !pdfDoc) {
-    pendingHighlight = msg;
+async function setScale(nextScale) {
+  if (!pdfDoc) {
     return;
   }
-
-  pdfDoc.getPage(msg.page).then((page) => {
-    const viewport = page.getViewport({ scale: currentScale });
-    const box = pdfBoxToViewport(
-      viewport,
-      msg.x ?? msg.llx ?? 0,
-      msg.y ?? msg.lly ?? 0,
-      msg.width != null ? (msg.x ?? msg.llx ?? 0) + msg.width : msg.urx ?? (msg.x ?? 0) + 40,
-      msg.height != null ? (msg.y ?? msg.lly ?? 0) + msg.height : msg.ury ?? (msg.y ?? 0) + 12,
-    );
-    const hl = document.createElement('div');
-    hl.className = 'highlight';
-    hl.style.left = `${box.left}px`;
-    hl.style.top = `${box.top}px`;
-    hl.style.width = `${Math.max(box.width, 8)}px`;
-    hl.style.height = `${Math.max(box.height, 8)}px`;
-    pageDiv.appendChild(hl);
-    pageDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    setTimeout(() => {
-      hl.style.opacity = '0';
-    }, 2000);
+  const clamped = Math.min(SCALE_MAX, Math.max(SCALE_MIN, nextScale));
+  if (Math.abs(clamped - currentScale) < 1e-6) {
+    updateToolbar();
+    return;
+  }
+  currentScale = clamped;
+  updateToolbar();
+  setStatus('Zooming…');
+  const t0 = performance.now();
+  // Keep scroll position roughly by page, not pixel.
+  const keepPage = currentPage;
+  layoutPlaceholders();
+  const el = pageEls.get(keepPage);
+  if (el) {
+    el.scrollIntoView({ behavior: 'instant', block: 'start' });
+  }
+  await syncVisiblePages();
+  const renderMs = Math.round(performance.now() - t0);
+  setStatus('Ready');
+  // Zoom must NOT re-getDocument; log render only.
+  vscode.postMessage({
+    type: 'loaded',
+    pages: pdfDoc.numPages,
+    renderMs,
+    virtual: true,
+    reused: true,
   });
+  if (activeHighlight) {
+    paintHighlight();
+  }
 }
+
+async function fitWidth() {
+  if (!pdfDoc) {
+    return;
+  }
+  const baseW = pageWidths[currentPage - 1] || pageWidths[0] || 612;
+  const available = Math.max(40, viewer.clientWidth - 24);
+  await setScale(available / baseW);
+}
+
+async function goToPage(pageNum) {
+  if (!pdfDoc) {
+    return;
+  }
+  const n = Math.min(pdfDoc.numPages, Math.max(1, Math.round(pageNum)));
+  currentPage = n;
+  updateToolbar();
+  const pageDiv = pageEls.get(n);
+  if (pageDiv) {
+    pageDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  await ensurePageRendered(n);
+}
+
+// Single delegated Ctrl/Cmd+click — never register per-page listeners (avoids doubles).
+viewer.addEventListener('click', (ev) => {
+  if (!ev.ctrlKey && !ev.metaKey) {
+    return;
+  }
+  const pageDiv = ev.target?.closest?.('.page');
+  if (!pageDiv || !pdfDoc) {
+    return;
+  }
+  const pageNum = Number(pageDiv.dataset.page);
+  const viewport = pageDiv._viewport;
+  if (!viewport || !pageNum) {
+    return;
+  }
+  ev.preventDefault();
+  ev.stopPropagation();
+  const rect = pageDiv.getBoundingClientRect();
+  const cssX = ev.clientX - rect.left;
+  const cssY = ev.clientY - rect.top;
+  const [pdfX, pdfY] = viewport.convertToPdfPoint(cssX, cssY);
+  // mtx-synctex --y is top-down; PDF.js pdfY is bottom-up.
+  const view = pageDiv._pageView || viewport.viewBox || [0, 0, 612, 792];
+  const yMax = view[3];
+  const yMin = view[1];
+  const pageHeight = yMax - yMin;
+  const mtxY = yMax - pdfY;
+  vscode.postMessage({
+    type: 'click',
+    page: pageNum,
+    x: pdfX,
+    y: mtxY,
+    pdfY,
+    pageHeight,
+  });
+});
+
+btnPrev.addEventListener('click', () => {
+  void goToPage(currentPage - 1);
+});
+btnNext.addEventListener('click', () => {
+  void goToPage(currentPage + 1);
+});
+btnZoomIn.addEventListener('click', () => {
+  void setScale(currentScale + SCALE_STEP);
+});
+btnZoomOut.addEventListener('click', () => {
+  void setScale(currentScale - SCALE_STEP);
+});
+btnFitWidth.addEventListener('click', () => {
+  void fitWidth();
+});
+pageInput.addEventListener('change', () => {
+  void goToPage(Number(pageInput.value) || 1);
+});
+pageInput.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Enter') {
+    void goToPage(Number(pageInput.value) || 1);
+  }
+});
+
+viewer.addEventListener('scroll', () => {
+  scheduleSyncVisible();
+});
 
 window.addEventListener('message', (event) => {
   const msg = event.data;
@@ -149,7 +694,17 @@ window.addEventListener('message', (event) => {
   }
   switch (msg.type) {
     case 'loadPdf':
-      openDocument(msg.url);
+      if (msg.data != null) {
+        void openDocument({ data: msg.data }, msg.cacheKey, false);
+      } else if (msg.url) {
+        void openDocument({ url: msg.url }, msg.cacheKey, !!msg.useRange);
+      } else {
+        setStatus('Load error: missing PDF url/data');
+        vscode.postMessage({
+          type: 'loadError',
+          message: 'Host did not send PDF url or bytes',
+        });
+      }
       break;
     case 'building':
       setStatus(msg.message || 'Building…', true);
@@ -168,4 +723,5 @@ window.addEventListener('message', (event) => {
   }
 });
 
+updateToolbar();
 vscode.postMessage({ type: 'ready' });

@@ -4,6 +4,8 @@
   --fg: #d4d4d4;
   --bar: #252526;
   --accent: #0e639c;
+  --btn: #333;
+  --btn-hover: #3c3c3c;
   --highlight: rgba(255, 200, 0, 0.35);
 }
 
@@ -22,19 +24,64 @@ body {
   overflow: hidden;
 }
 
-#statusBar {
+#toolbar {
   display: flex;
-  justify-content: space-between;
+  flex-wrap: wrap;
   align-items: center;
-  height: 28px;
-  padding: 0 10px;
+  gap: 10px 16px;
+  min-height: 32px;
+  padding: 4px 10px;
   background: var(--bar);
   font-size: 12px;
   border-bottom: 1px solid #333;
 }
 
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#toolbar button {
+  background: var(--btn);
+  color: var(--fg);
+  border: 1px solid #444;
+  border-radius: 3px;
+  padding: 2px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  line-height: 1.4;
+}
+
+#toolbar button:hover:not(:disabled) {
+  background: var(--btn-hover);
+}
+
+#toolbar button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+#pageInput {
+  width: 3.2em;
+  background: #1a1a1a;
+  color: var(--fg);
+  border: 1px solid #444;
+  border-radius: 3px;
+  padding: 2px 4px;
+  font-size: 12px;
+  text-align: center;
+}
+
+#zoomLabel,
+#pageTotal,
+#statusText {
+  color: #aaa;
+  white-space: nowrap;
+}
+
 #viewer {
-  height: calc(100% - 28px);
+  height: calc(100% - 40px);
   overflow: auto;
   padding: 12px;
   outline: none;
@@ -46,6 +93,12 @@ body {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
   background: #fff;
   width: fit-content;
+}
+
+.page.placeholder {
+  background: #2a2a2a;
+  box-shadow: none;
+  border: 1px solid #333;
 }
 
 .page canvas {
