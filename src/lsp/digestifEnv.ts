@@ -1,6 +1,5 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import * as os from 'node:os';
 import { execFileSync } from 'node:child_process';
 import {
   candidateBinDirs,
@@ -8,6 +7,7 @@ import {
   resolveInstallRoot,
   TEXMF_CONTEXT_REL,
 } from '../toolchain/paths';
+import { writeTexluaLuaonlyShim } from './digestifLaunch';
 
 export { CONTEXT_INTERFACE_REL, TEXMF_CONTEXT_REL } from '../toolchain/paths';
 
@@ -21,6 +21,10 @@ export type DigestifEnvOk = {
   env: NodeJS.ProcessEnv;
   /** Normalized LMTX install root (parent of tex/). */
   root: string;
+  /** Absolute luametatex when found under the install root. */
+  luametatex?: string;
+  /** Absolute texlua when found (real binary, not our shim). */
+  texlua?: string;
 };
 
 export type DigestifEnvFail = {
@@ -309,8 +313,8 @@ export function buildDigestifEnv(options: BuildDigestifEnvOptions): DigestifEnvR
   const pathSep = process.platform === 'win32' ? ';' : ':';
   const existingPath = base.PATH ?? base.Path ?? '';
 
-  // Digestif's self-install wrapper runs `texlua`. LMTX often only ships
-  // `luametatex`. If texlua is missing, add a shim dir on PATH.
+  // DigestiF's self-install wrapper runs `texlua`. LMTX ships `luametatex`, which
+  // is NOT a drop-in texlua: without --luaonly it treats extension-less scripts as TeX.
   const texluaName = process.platform === 'win32' ? 'texlua.exe' : 'texlua';
   const luametaName = process.platform === 'win32' ? 'luametatex.exe' : 'luametatex';
   const realTexlua = binDirs.map((d) => path.join(d, texluaName)).find((p) => isExecutable(p));
@@ -319,9 +323,10 @@ export function buildDigestifEnv(options: BuildDigestifEnvOptions): DigestifEnvR
   const pathPrefix = [...binDirs];
   let texluaShimDir: string | undefined;
   if (!realTexlua && luametatex) {
-    texluaShimDir = ensureTexluaShim(luametatex);
-    if (texluaShimDir) {
-      pathPrefix.unshift(texluaShimDir);
+    const shim = writeTexluaLuaonlyShim(luametatex);
+    if (shim) {
+      texluaShimDir = shim.shimDir;
+      pathPrefix.unshift(shim.shimDir);
     }
   }
 
@@ -333,9 +338,12 @@ export function buildDigestifEnv(options: BuildDigestifEnvOptions): DigestifEnvR
     DIGESTIF_TEXMF: pathListJoin(texmfDirs),
   };
 
-  const texlua = realTexlua ?? (texluaShimDir ? path.join(texluaShimDir, texluaName) : undefined) ?? luametatex;
-  if (texlua) {
-    env.TEXLUA = texlua;
+  if (luametatex) {
+    env.TEXLUA = realTexlua ?? (texluaShimDir
+      ? path.join(texluaShimDir, process.platform === 'win32' ? 'texlua.cmd' : 'texlua')
+      : luametatex);
+  } else if (realTexlua) {
+    env.TEXLUA = realTexlua;
   }
 
   return {
@@ -345,46 +353,7 @@ export function buildDigestifEnv(options: BuildDigestifEnvOptions): DigestifEnvR
     texmfDirs,
     env,
     root,
+    luametatex,
+    texlua: realTexlua,
   };
-}
-
-/**
- * Create a durable shim directory containing `texlua` → luametatex so the
- * Digestif wrapper script (`LUA=texlua`) can exec under LMTX.
- */
-function ensureTexluaShim(luametatexPath: string): string | undefined {
-  try {
-    const shimDir = path.join(os.homedir(), '.cache', 'context-synctex', 'bin');
-    fs.mkdirSync(shimDir, { recursive: true });
-    const shim = path.join(shimDir, process.platform === 'win32' ? 'texlua.exe' : 'texlua');
-    let needLink = true;
-    try {
-      if (fs.existsSync(shim)) {
-        const target = fs.realpathSync(shim);
-        if (target === fs.realpathSync(luametatexPath)) {
-          needLink = false;
-        } else {
-          fs.unlinkSync(shim);
-        }
-      }
-    } catch {
-      try {
-        fs.unlinkSync(shim);
-      } catch {
-        // ignore
-      }
-    }
-    if (needLink) {
-      if (process.platform === 'win32') {
-        // Symlinks may need admin on Windows; copy as fallback is heavy — try symlink.
-        fs.symlinkSync(luametatexPath, shim);
-      } else {
-        fs.symlinkSync(luametatexPath, shim);
-      }
-      fs.chmodSync(shim, 0o755);
-    }
-    return shimDir;
-  } catch {
-    return undefined;
-  }
 }

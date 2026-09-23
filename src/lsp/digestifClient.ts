@@ -11,7 +11,12 @@ import {
 } from 'vscode-languageclient/node';
 import { resolveToolchain, ToolchainError } from '../toolchain/discover';
 import { buildDigestifEnv, type DigestifEnvOk } from './digestifEnv';
-import { probeDigestif, spawnDigestifServer } from './digestifProcess';
+import { resolveDigestifLaunch } from './digestifLaunch';
+import {
+  probeDigestif,
+  preferDigestifError,
+  spawnDigestifServer,
+} from './digestifProcess';
 
 /** Distinct from Marketplace `digestif` (phil.red) client ids. */
 export const DIGESTIF_CLIENT_ID = 'contextSyncTeX.digestif';
@@ -74,6 +79,10 @@ export function createDigestifClient(options: {
   let lastOk: DigestifEnvOk | undefined;
   let starting = false;
   let generation = 0;
+  /** Holder so assignments inside ServerOptions callbacks stay visible to TS. */
+  const bufferRef: { current: { stdout: string; stderr: string } | undefined } = {
+    current: undefined,
+  };
 
   async function stopClient(): Promise<void> {
     const c = client;
@@ -97,6 +106,7 @@ export function createDigestifClient(options: {
     }
     starting = true;
     const gen = ++generation;
+    bufferRef.current = undefined;
     try {
       const cfg = vscode.workspace.getConfiguration('context');
       const enabled = cfg.get<boolean>('digestif.enabled', true);
@@ -150,26 +160,35 @@ export function createDigestifClient(options: {
         `[digestif] xml=${resolved.interfaceXmlPath}  ` +
           `DIGESTIF_TEXMF=${resolved.texmfDirs.join(process.platform === 'win32' ? ';' : ':')}`,
       );
-      if (resolved.env.PATH) {
-        const pathPreview = resolved.env.PATH.split(process.platform === 'win32' ? ';' : ':')
-          .slice(0, 6)
-          .join(process.platform === 'win32' ? ';' : ':');
-        log(`[digestif] PATH(prefix)=${pathPreview}`);
+      if (resolved.luametatex) {
+        log(`[digestif] luametatex=${resolved.luametatex}`);
       }
       if (resolved.env.TEXLUA) {
         log(`[digestif] TEXLUA=${resolved.env.TEXLUA}`);
       }
 
-      const probe = await probeDigestif(resolved.digestifPath, resolved.env, log);
+      const launch = resolveDigestifLaunch({
+        digestifPath: resolved.digestifPath,
+        root: resolved.root,
+        luametatex: resolved.luametatex,
+        texlua: resolved.texlua,
+      });
+      log(`[digestif] launch method=${launch.method} — ${launch.detail}`);
+
+      const probe = await probeDigestif(launch, resolved.env, log);
       if (!probe.ok) {
         lastOk = undefined;
         await stopClient();
         const msg =
-          `Digestif did not start: ${probe.detail} ` +
+          `DigestiF did not start: ${probe.detail} ` +
+          `Look for "[digestif] --- last stderr ---" above. ` +
           `Build and SyncTeX remain available. ` +
-          `(If Marketplace extension "Digestif" is also installed, disable it while testing this one.)`;
+          `(Disable Marketplace DigestiF while testing; under LMTX prefer ` +
+          `luametatex --luaonly ~/.digestif/bin/digestif or luarocks + context.digestifPath.)`;
         log(`[digestif] ${msg}`);
-        void vscode.window.showWarningMessage(msg);
+        void vscode.window.showWarningMessage(
+          `DigestiF did not start: ${probe.detail.split(/\r?\n/)[0] ?? probe.detail}`,
+        );
         return;
       }
 
@@ -179,29 +198,30 @@ export function createDigestifClient(options: {
 
       await stopClient();
 
-      const serverOptions: ServerOptions = () =>
-        spawnDigestifServer({
-          digestifPath: resolved.digestifPath,
+      const serverOptions: ServerOptions = async () => {
+        const spawned = await spawnDigestifServer({
+          launch,
           env: resolved.env,
           log,
         });
+        bufferRef.current = spawned.buffers;
+        return spawned.process;
+      };
 
       const clientOptions: LanguageClientOptions = {
         documentSelector: DIGESTIF_DOCUMENT_SELECTOR,
         outputChannel: output,
         revealOutputChannelOn: RevealOutputChannelOn.Never,
-        // Prevent DefaultErrorHandler restart storms (each failed restart called stop() → uncaught).
         errorHandler: {
           error: () => ({ action: ErrorAction.Shutdown, handled: true }),
           closed: () => ({
             action: CloseAction.DoNotRestart,
-            message: 'Digestif language server connection closed.',
+            message: 'DigestiF language server connection closed.',
             handled: true,
           }),
         },
-        // Library still void-stops on false; SafeLanguageClient makes that a no-op when not Running.
         initializationFailedHandler: (error) => {
-          const msg = error instanceof Error ? error.message : String(error);
+          const msg = preferDigestifError(error, bufferRef.current);
           log(`[digestif] initialization failed: ${msg}`);
           return false;
         },
@@ -223,10 +243,14 @@ export function createDigestifClient(options: {
         }
         log('[digestif] language client started');
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = preferDigestifError(err, bufferRef.current);
         log(`[digestif] failed to start: ${msg}`);
+        log(
+          '[digestif] if DigestiF exited, scroll up for "[digestif] --- last stderr ---" ' +
+            '(that line is the real cause; “stream was destroyed” is a follow-on).',
+        );
         void vscode.window.showWarningMessage(
-          `Digestif failed to start: ${msg}. Build and SyncTeX remain available.`,
+          `DigestiF failed to start: ${msg.split(/\r?\n/)[0] ?? msg}. Build and SyncTeX remain available.`,
         );
         client = undefined;
         lastOk = undefined;

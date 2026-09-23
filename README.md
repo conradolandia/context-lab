@@ -19,13 +19,13 @@ Then open this folder in VS Code / Cursor and press **F5** (launch config **Run 
 After the Extension Development Host starts, open the **ConTeXt** output channel. You should see:
 
 ```text
-ConTeXt SyncTeX activated  version=0.1.9  BUILD_ID=digestif-lsp-v3
-[digestif] root=/home/andi/Apps/lmtx  context=…/tex/texmf-linux-64/bin/context  mtxrun=…  digestif=…
-[digestif] xml=/home/andi/Apps/lmtx/tex/texmf-context/tex/context/interface/mkiv/context-en.xml  DIGESTIF_TEXMF=…
+ConTeXt SyncTeX activated  version=0.1.10  BUILD_ID=digestif-lsp-v4
+[digestif] root=/home/andi/Apps/lmtx  …
+[digestif] launch method=luametatex-luaonly — self-install wrapper → luametatex --luaonly …/.digestif/bin/digestif
 [digestif] language client started
 ```
 
-If Digestif is not installed or exits on startup, you get a warning with stderr/exit detail instead; build and SyncTeX still work. Running Extensions should show **0 uncaught errors**. If you still see an older `BUILD_ID`, close all Extension Development Host windows, rebuild, and F5 again.
+If DigestiF exits on startup, look for **`[digestif] --- last stderr ---`** in the ConTeXt Output channel (that line is the real reason; ignore generic “stream was destroyed”). Build and SyncTeX still work. Running Extensions should show **0 uncaught errors**.
 
 Unit tests (no ConTeXt required):
 
@@ -85,17 +85,17 @@ Resolution order:
 
 This extension starts [Digestif](https://github.com/astoff/digestif) over stdio when `context.digestif.enabled` is true. TexLab is not used. Digestif is **not** vendored; install it yourself.
 
-**Install Digestif** (pick one):
+**Install DigestiF** (pick one):
 
-1. Wrapper script (uses LuaTeX / `texlua`):
-   - Download [digestif](https://raw.githubusercontent.com/astoff/digestif/master/scripts/digestif) into a directory on your `PATH` (e.g. `~/.local/bin`).
-   - `chmod +x ~/.local/bin/digestif`
-   - First run downloads the package (default `~/.digestif`).
-2. LuaRocks: `luarocks install --local digestif`, then put `~/.luarocks/bin` on `PATH`.
+1. **Self-install wrapper** (expects a LuaTeX-compatible `texlua`):
+   - Download [digestif](https://raw.githubusercontent.com/astoff/digestif/master/scripts/digestif) into `~/.local/bin`, `chmod +x`.
+   - First run clones into `~/.digestif`.
+   - Under **LMTX**, TeX Live `texlua` is usually missing. This extension launches DigestiF as:
+     `luametatex --luaonly ~/.digestif/bin/digestif`
+     (and installs a `texlua` shim that runs `luametatex --luaonly`, not a bare symlink).
+2. **LuaRocks** (often easier with a system Lua): `luarocks install --local digestif`, put `~/.luarocks/bin` on `PATH`, or set `context.digestifPath` to that script.
 
 **LMTX / interface XML**
-
-Digestif loads ConTeXt macros from the LMTX interface XML at runtime:
 
 ```json
 {
@@ -106,33 +106,33 @@ Digestif loads ConTeXt macros from the LMTX interface XML at runtime:
 Derived paths (never under `bin/`):
 
 - XML: `/home/andi/Apps/lmtx/tex/texmf-context/tex/context/interface/mkiv/context-en.xml`
-- `DIGESTIF_TEXMF`: `/home/andi/Apps/lmtx/tex/texmf-context` (plus sibling content `texmf-*` trees; not `texmf-linux-64`)
-- PATH for the Digestif child: prepends `{root}/tex/texmf-*/bin`
-
-If `context.root` (or PATH inference) accidentally points at a `bin/` directory, the extension walks parents until it finds `tex/texmf-context`.
+- `DIGESTIF_TEXMF`: `/home/andi/Apps/lmtx/tex/texmf-context`
+- Launch (typical): `…/tex/texmf-linux-64/bin/luametatex --luaonly ~/.digestif/bin/digestif`
 
 **Verify completion / hover**
 
-1. Install Digestif so `which digestif` works (or set `context.digestifPath`).
-2. Set `context.root` to `/home/andi/Apps/lmtx` (install root, parent of `tex/`).
-3. F5 → open a ConTeXt buffer with language mode **context** (or `tex`).
-4. ConTeXt Output should log `BUILD_ID=digestif-lsp-v3`, `root=…/lmtx`, `xml=…/tex/texmf-context/…/context-en.xml`, and `language client started` (or a clear Digestif exit/stderr reason — not uncaught Extension Host errors).
-5. Type `\start` or `\setup` and confirm completion; hover a known command.
+1. Install DigestiF (wrapper or luarocks).
+2. Set `context.root` to `/home/andi/Apps/lmtx`.
+3. Disable Marketplace **DigestiF** in the Extension Development Host while testing.
+4. F5 → Output: `BUILD_ID=digestif-lsp-v4`, `launch method=luametatex-luaonly` (or `direct` for luarocks), then `language client started`.
+5. If it fails: find **`[digestif] --- last stderr ---`** — that is DigestiF’s own message (data files, Lua, etc.). The toast may say “stream was destroyed”; that is a follow-on after DigestiF already exited with code 1.
+6. Type `\start` / `\setup` and confirm completion/hover.
 
-**Marketplace Digestif conflict**
+**Marketplace DigestiF conflict**
 
-If the Marketplace extension **Digestif** (`phil.red` / similar) is also installed in the Extension Development Host, disable it while testing this one. Both may spawn the same `digestif` binary and fight over TeX buffers. Our client id is `contextSyncTeX.digestif` / name **ConTeXt SyncTeX Digestif** (distinct from the Marketplace client).
+Disable Marketplace **DigestiF** (`phil.red` / similar) while testing. Our client id is `contextSyncTeX.digestif` / **ConTeXt SyncTeX Digestif**.
 
-**Troubleshooting: interface XML not found**
+**Troubleshooting**
 
-- Confirm XML exists at `{context.root}/tex/texmf-context/tex/context/interface/mkiv/context-en.xml`.
-- Do **not** set `context.root` to `…/tex/texmf-linux-64/bin` (or any `bin/`). Use the install root.
-- If Output shows an XML path containing `/bin/tex/texmf-context/`, root resolution is wrong — use `digestif-lsp-v2+` and check `context.root`.
-- Empty `context.root` with no inferable toolchain root → set `context.root`.
-- Missing Digestif binary → warning only; build/SyncTeX unchanged. Set `context.digestif.enabled` to `false` to silence.
-- Digestif exits immediately / “connection got disposed”: check Output for `[digestif stderr]` and `process exited code=…`. The wrapper needs `texlua` on PATH; this extension shims `texlua` → `luametatex` under LMTX when needed. Also confirm `DIGESTIF_TEXMF` points at `…/tex/texmf-context`.
+| Symptom | What to check |
+| --- | --- |
+| `process exited code=1` + stream destroyed | Scroll to `[digestif] --- last stderr ---` |
+| Wrapper + LMTX, no stderr yet | Confirm Output shows `launch method=luametatex-luaonly` (v4+). Older builds used a bare `texlua`→`luametatex` symlink which fails. |
+| `could not find data files` | DigestiF home incomplete; re-run wrapper once, or set `DIGESTIF_DATA` |
+| XML under `/bin/tex/` | Wrong root; set install root (parent of `tex/`) |
+| Two DigestiF servers fighting | Disable Marketplace DigestiF |
 
-Digestif maps LSP language id `context` to ConTeXt and `tex` to LaTeX. Prefer the **context** language mode for ConTeXt sources when a grammar extension provides it.
+DigestiF maps LSP language id `context` to ConTeXt and `tex` to LaTeX. Prefer the **context** language mode for ConTeXt sources when a grammar extension provides it.
 
 ### Main (root) file resolution
 

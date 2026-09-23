@@ -31,6 +31,7 @@ const testOptions = {
     join(__dirname, 'src/test/rootFile.test.ts'),
     join(__dirname, 'src/test/digestifEnv.test.ts'),
     join(__dirname, 'src/test/digestifProbe.test.ts'),
+    join(__dirname, 'src/test/digestifLaunch.test.ts'),
   ],
   bundle: true,
   outdir: join(__dirname, 'dist/test'),
