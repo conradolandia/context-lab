@@ -2,7 +2,7 @@
   "name": "context-synctex",
   "displayName": "ConTeXt SyncTeX",
   "description": "ConTeXt build, PDF.js viewer, and SyncTeX forward/backward navigation",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "publisher": "context-lab",
   "engines": {
     "vscode": "^1.85.0"
@@ -76,7 +76,7 @@
         "context.rootFile": {
           "type": "string",
           "default": "",
-          "description": "Main ConTeXt file to compile (workspace-relative or absolute). Empty = auto-detect via % !TEX root, \\startcomponent→\\product, or the active file."
+          "description": "Main ConTeXt file to compile (workspace-relative or absolute). Empty = auto-detect via % !TEX root, \\startcomponent\u2192\\product, or the active file."
         },
         "context.digestif.enabled": {
           "type": "boolean",
@@ -96,7 +96,6 @@
     "compile": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
     "test": "npm run compile && node --test dist/test/**/*.test.js",
-    "handshake": "node scripts/digestif-handshake.mjs",
     "lint": "tsc -p . --noEmit"
   },
   "devDependencies": {

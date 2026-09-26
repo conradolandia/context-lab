@@ -19,17 +19,17 @@ Then open this folder in VS Code / Cursor and press **F5** (launch config **Run 
 After the Extension Development Host starts, open the **ConTeXt** output channel. You should see:
 
 ```text
-ConTeXt SyncTeX activated  version=0.1.13  BUILD_ID=digestif-lsp-v7
+ConTeXt SyncTeX activated  version=0.1.14  BUILD_ID=digestif-lsp-v8
 …
-[digestif] BUILD_ID=digestif-lsp-v7 source=luarocks   (or path / override / checkout-bootstrap)
+[digestif] BUILD_ID=digestif-lsp-v8 source=luarocks   (or override / path)
 [digestif] launch method=direct — …
 ```
 
 Or, on DigestiF failure (build still works immediately):
 
 ```text
-[digestif] BUILD_ID=digestif-lsp-v7 failed to start: …
-[digestif] BUILD_ID=digestif-lsp-v7 giving up for this window: …
+[digestif] BUILD_ID=digestif-lsp-v8 failed to start: …
+[digestif] BUILD_ID=digestif-lsp-v8 giving up for this window: …
 ```
 
 Every **Build and Preview** reprints `BUILD_ID=…` (Output clear wipes earlier lines). DigestiF starts fire-and-forget and **never** blocks, delays, or is awaited by build/preview/SyncTeX. After one DigestiF failure it stays off until you change `context.digestif*` or reload the window.
@@ -90,60 +90,37 @@ Resolution order:
 
 ### Digestif LSP (completion / hover)
 
-Optional. DigestiF startup never blocks build or SyncTeX. TexLab is not used. DigestiF is **not** vendored.
+Optional. DigestiF never blocks build or SyncTeX. DigestiF logs go to the **ConTeXt DigestiF** output channel; build logs stay on **ConTeXt**.
 
-**Recommended for LMTX users (LuaRocks + system Lua)** — DigestiF needs `lpeg`/`lfs`; luarocks installs them. Needs Lua 5.4 **dev headers** to build lpeg (`liblua5.4-dev` / equivalent):
+**Recommended (LuaRocks)** — DigestiF needs `lpeg`/`lfs`:
 
 ```bash
-# Ensure ~/.luarocks/bin is on PATH (luarocks path --bin)
-luarocks --local --lua-version 5.4 install digestif
-# Or, inside an existing ~/.digestif git checkout:
-#   luarocks --local --lua-version 5.4 make
+luarocks --local install digestif
+# Ensure ~/.luarocks/bin is early on PATH, or set:
+#   "context.digestifPath": "/home/andi/.luarocks/bin/digestif"
 ```
-
-Then either leave `context.digestifPath` empty (PATH / `~/.luarocks/bin`) or set it to that script.
 
 **Launch order**
 
-1. `context.digestifPath` set → run that executable as-is (no luametatex wrap).
-2. Else `digestif` on `PATH` or `~/.luarocks/bin/digestif` → run as-is.
-3. Else last resort: `luametatex --luaonly …/resources/digestif-lmtx-bootstrap.lua` against a `~/.digestif` checkout (`DIGESTIF_HOME`, `DIGESTIF_DATA`, `package.path`). Bare `luametatex --luaonly ~/.digestif/bin/digestif` does **not** work under LMTX.
+1. `context.digestifPath` if set (as-is).
+2. `~/.luarocks/bin/digestif` (preferred over TeX Live).
+3. `digestif` on `PATH`.
 
-**LMTX / interface XML**
-
-```json
-{
-  "context.root": "/home/andi/Apps/lmtx"
-}
-```
-
-- XML: `/home/andi/Apps/lmtx/tex/texmf-context/tex/context/interface/mkiv/context-en.xml`
-- `DIGESTIF_TEXMF`: `/home/andi/Apps/lmtx/tex/texmf-context`
+Spawn env is the user environment plus `DIGESTIF_TEXMF` only (for ConTeXt interface XML). We do **not** prepend LMTX to `PATH` and do **not** set `TEXMFCNF` / `TEXMF*` / `TEXLUA` (that made TeX Live DigestiF read LMTX `texmf.cnf`).
 
 **Verify**
 
-1. Install DigestiF via luarocks (above) or set `context.digestifPath`.
-2. Set `context.root` to `/home/andi/Apps/lmtx`.
-3. Prefer disabling Marketplace DigestiF while testing our client (or disable ours with `context.digestif.enabled=false` and use Marketplace).
-4. F5 → Output must show `BUILD_ID=digestif-lsp-v7` at activation. Build must start immediately and reprint `BUILD_ID`.
-5. DigestiF: `launch method=direct` (luarocks/path) then `language client started`, or a single give-up line — not a 30s stall before compile.
-
-**Marketplace DigestiF**
-
-Our client id is `contextSyncTeX.digestif`. To use Marketplace DigestiF only: set `context.digestif.enabled` to `false`.
+1. F5 → ConTeXt channel: `BUILD_ID=digestif-lsp-v8`. Build must print ConTeXt output after `cwd:` immediately.
+2. DigestiF channel: `source=luarocks` (or `override` / `path`) and `language client started`, or a single give-up line.
+3. To use Marketplace DigestiF only: `"context.digestif.enabled": false`.
 
 **Troubleshooting**
 
 | Symptom | What to check |
 | --- | --- |
-| Build waits ~30s | Not on v7; Output must show `BUILD_ID=digestif-lsp-v7`. Rebuild + F5. |
-| No BUILD_ID line | Stale `dist/`; run `npm run compile` then F5. Build also reprints BUILD_ID. |
-| DigestiF failed once, stays off | Intended. Change `context.digestifPath` / reload to retry. |
-| `module 'lpeg' not found` | Use luarocks DigestiF (builds lpeg), not bare system lua on a git checkout. |
-| Bare `luametatex --luaonly ~/.digestif/bin/digestif` hangs / module not found | Expected; use luarocks (preferred) or bootstrap fallback. |
-| Two DigestiF servers | Disable one of Marketplace DigestiF or `context.digestif.enabled`. |
-
-DigestiF maps LSP language id `context` to ConTeXt and `tex` to LaTeX. Prefer the **context** language mode for ConTeXt sources when a grammar extension provides it.
+| Build waits / no ConTeXt output | Confirm `BUILD_ID=digestif-lsp-v8`; DigestiF must not share the ConTeXt channel |
+| kpathsea / texmf.cnf on DigestiF stderr | TeX Live DigestiF + LMTX pollution; prefer luarocks or set `context.digestifPath` to `~/.luarocks/bin/digestif` |
+| DigestiF failed once, stays off | Intended until settings change / reload |
 
 ### Main (root) file resolution
 
@@ -202,8 +179,6 @@ src/toolchain/discover.ts
 src/lsp/digestifEnv.ts
 src/lsp/digestifClient.ts
 src/lsp/digestifLaunch.ts
-resources/digestif-lmtx-bootstrap.lua
-scripts/digestif-handshake.mjs
 src/build/compiler.ts
 src/build/artifactGate.ts
 src/synctex/mtxSynctex.ts

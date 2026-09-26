@@ -24,19 +24,20 @@ describe('withTimeout', () => {
 });
 
 describe('preferDigestifError', () => {
-  it('prefers DigestiF stderr over stream-destroyed', () => {
+  it('keeps LanguageClient error; stderr is ignored', () => {
     const msg = preferDigestifError(new Error('Cannot call write after a stream was destroyed'), {
       stdout: '',
       stderr: 'Error: could not find data files\n',
     });
-    assert.match(msg, /data files/);
+    assert.match(msg, /stream was destroyed/);
+    assert.doesNotMatch(msg, /data files/);
   });
 
-  it('annotates stream-destroyed when stderr empty', () => {
-    const msg = preferDigestifError(new Error('Cannot call write after a stream was destroyed'), {
+  it('returns LanguageClient message when stderr empty', () => {
+    const msg = preferDigestifError(new Error('could not create connection to server'), {
       stdout: '',
       stderr: '',
     });
-    assert.match(msg, /last stderr/);
+    assert.match(msg, /could not create connection/);
   });
 });

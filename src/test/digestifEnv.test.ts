@@ -138,12 +138,12 @@ describe('Sir LMTX layout: Digestif XML + DIGESTIF_TEXMF', () => {
     assert.equal(texmfRootFromInterfaceXml(xmlPath!), path.join(root, 'tex', 'texmf-context'));
   });
 
-  it('buildDigestifEnv with correct context.root', async () => {
-    const { root, xmlPath, contextBin, digestifFake } = await makeSirLmtxLayout();
+  it('buildDigestifEnv with correct context.root uses clean env', async () => {
+    const { root, xmlPath, digestifFake } = await makeSirLmtxLayout();
     const result = buildDigestifEnv({
       root,
       digestifPath: digestifFake,
-      baseEnv: { PATH: '/usr/bin' },
+      baseEnv: { PATH: '/usr/bin', HOME: '/home/andi' },
     });
     assert.equal(result.ok, true);
     if (!result.ok) {
@@ -151,11 +151,22 @@ describe('Sir LMTX layout: Digestif XML + DIGESTIF_TEXMF', () => {
     }
     assert.equal(result.root, root);
     assert.equal(result.interfaceXmlPath, xmlPath);
-    assert.equal(
-      result.interfaceXmlPath,
-      path.join(root, 'tex', 'texmf-context', 'tex', 'context', 'interface', 'mkiv', 'context-en.xml'),
-    );
-    assert.ok(result.env.PATH?.includes(path.dirname(contextBin)));
+    assert.equal(result.env.PATH, '/usr/bin');
+    assert.equal(result.env.TEXLUA, undefined);
+    assert.ok(result.env.DIGESTIF_TEXMF?.includes(path.join(root, 'tex', 'texmf-context')));
+  });
+
+  it('prefers luarocks over PATH digestif', async () => {
+    const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'luarocks-pref-'));
+    const rocks = path.join(tmp, '.luarocks', 'bin', 'digestif');
+    fs.mkdirSync(path.dirname(rocks), { recursive: true });
+    fs.writeFileSync(rocks, '#!/bin/sh\n');
+    fs.chmodSync(rocks, 0o755);
+    const got = resolveDigestifExecutable('', () => '/usr/local/bin/digestif', {
+      findLuarocks: () => rocks,
+    });
+    assert.equal(got?.path, rocks);
+    assert.equal(got?.source, 'luarocks');
   });
 });
 
@@ -167,7 +178,7 @@ describe('resolveDigestifExecutable', () => {
     assert.equal(got?.source, 'override');
   });
 
-  it('falls back to which() when override empty', async () => {
+  it('falls back to which() when override and luarocks empty', async () => {
     const got = resolveDigestifExecutable('', () => '/mock/bin/digestif', {
       findLuarocks: () => undefined,
       homedir: path.join(os.tmpdir(), 'no-digestif-home-' + process.pid),

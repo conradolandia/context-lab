@@ -10,9 +10,10 @@ import { resolveRootFile, type RootResolution } from './project/rootFile';
 import { createDigestifClient, type DigestifClientHandle } from './lsp/digestifClient';
 
 /** Bump when shipping a SyncTeX/viewer/LSP behavior change Sir must verify in Output. */
-export const BUILD_ID = 'digestif-lsp-v7';
+export const BUILD_ID = 'digestif-lsp-v8';
 
 let output: vscode.OutputChannel;
+let digestifOutput: vscode.OutputChannel;
 let pdfPanel: PdfPanel;
 let rootStatus: vscode.StatusBarItem;
 let snapshot: JobSnapshot | undefined;
@@ -353,6 +354,8 @@ async function handlePdfClick(
 
 export function activate(context: vscode.ExtensionContext): void {
   output = vscode.window.createOutputChannel('ConTeXt');
+  // Separate channel so DigestiF stderr/LSP noise never interleaves with build logs.
+  digestifOutput = vscode.window.createOutputChannel('ConTeXt DigestiF');
 
   rootStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   rootStatus.command = 'context.pickRootFile';
@@ -369,13 +372,13 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   digestif = createDigestifClient({
-    output,
-    extensionPath: context.extensionPath,
+    output: digestifOutput,
     buildId: BUILD_ID,
   });
 
   context.subscriptions.push(
     output,
+    digestifOutput,
     rootStatus,
     { dispose: () => pdfPanel.dispose() },
     { dispose: () => digestif?.dispose() },
@@ -405,7 +408,6 @@ export function activate(context: vscode.ExtensionContext): void {
         e.affectsConfiguration('context.digestif.enabled') ||
         e.affectsConfiguration('context.digestifPath')
       ) {
-        // Fire-and-forget; never await DigestiF from config/build paths.
         digestif?.onSettingsChanged();
       }
     }),
@@ -423,12 +425,14 @@ export function activate(context: vscode.ExtensionContext): void {
     `ConTeXt SyncTeX activated  version=${version}  BUILD_ID=${BUILD_ID}`,
   );
   output.appendLine(`extensionPath=${context.extensionPath}`);
+  digestifOutput.appendLine(
+    `ConTeXt DigestiF channel  BUILD_ID=${BUILD_ID} (build uses the ConTeXt channel only)`,
+  );
   updateRootStatus();
   const r = lastRootResolution;
   if (r) {
     output.appendLine(`[root] ${r.rootFile} (rule=${r.rule})`);
   }
-  // DigestiF is optional and must not delay activation or build.
   digestif.scheduleStart();
   output.show(true);
 }

@@ -32,8 +32,8 @@ const testOptions = {
     join(__dirname, 'src/test/digestifEnv.test.ts'),
     join(__dirname, 'src/test/digestifProbe.test.ts'),
     join(__dirname, 'src/test/digestifLaunch.test.ts'),
-    join(__dirname, 'src/test/digestifHandshake.test.ts'),
     join(__dirname, 'src/test/digestifLifecycle.test.ts'),
+    join(__dirname, 'src/test/buildDigestifIsolation.test.ts'),
   ],
   bundle: true,
   outdir: join(__dirname, 'dist/test'),
@@ -75,24 +75,11 @@ function copyTestFixtures() {
   cpSync(src, dest, { recursive: true });
 }
 
-/** Ship DigestiF LMTX bootstrap next to the extension entry. */
-function copyDigestifResources() {
-  const src = join(__dirname, 'resources');
-  const dest = join(__dirname, 'dist/resources');
-  if (!existsSync(src)) {
-    console.warn('resources/ missing; DigestiF LMTX bootstrap will not be packaged');
-    return;
-  }
-  mkdirSync(dest, { recursive: true });
-  cpSync(src, dest, { recursive: true });
-}
-
 async function buildOnce() {
   await esbuild.build(extensionOptions);
   await esbuild.build(testOptions);
   copyPdfJsAssets();
   copyTestFixtures();
-  copyDigestifResources();
 }
 
 if (watch) {
@@ -101,7 +88,6 @@ if (watch) {
   await Promise.all([extCtx.watch(), testCtx.watch()]);
   copyPdfJsAssets();
   copyTestFixtures();
-  copyDigestifResources();
   console.log('watching…');
 } else {
   await buildOnce();

@@ -11,7 +11,7 @@ import {
 } from 'vscode-languageclient/node';
 import { resolveToolchain, ToolchainError } from '../toolchain/discover';
 import { buildDigestifEnv, type DigestifEnvOk } from './digestifEnv';
-import { resolveBootstrapPath, resolveDigestifLaunch } from './digestifLaunch';
+import { resolveDigestifLaunch } from './digestifLaunch';
 import {
   afterDigestifFailure,
   afterDigestifSettingsChange,
@@ -21,15 +21,12 @@ import {
 import {
   DIGESTIF_START_TIMEOUT_MS,
   preferDigestifError,
-  spawnDigestifServer,
   withTimeout,
 } from './digestifProcess';
 
-/** Distinct from Marketplace `digestif` (phil.red) client ids. */
 export const DIGESTIF_CLIENT_ID = 'contextSyncTeX.digestif';
 export const DIGESTIF_CLIENT_NAME = 'ConTeXt SyncTeX Digestif';
 
-/** Document selectors aligned with extension activation (context + tex). */
 export const DIGESTIF_DOCUMENT_SELECTOR: DocumentSelector = [
   { scheme: 'file', language: 'context' },
   { scheme: 'file', language: 'tex' },
@@ -38,21 +35,13 @@ export const DIGESTIF_DOCUMENT_SELECTOR: DocumentSelector = [
 ];
 
 export interface DigestifClientHandle {
-  /**
-   * Fire-and-forget start. Never await this from build/preview/SyncTeX.
-   * After one failure, stays off until digestif settings change or reload.
-   */
   scheduleStart(): void;
-  /** Settings changed: clear give-up and schedule again (still fire-and-forget). */
   onSettingsChanged(): void;
   stop(): Promise<void>;
   dispose(): void;
   lastEnv(): DigestifEnvOk | undefined;
 }
 
-/**
- * LanguageClient that never throws from stop()/dispose() when not Running.
- */
 class SafeLanguageClient extends LanguageClient {
   override stop(timeout?: number): Promise<void> {
     if (this.state !== State.Running) {
@@ -74,17 +63,15 @@ class SafeLanguageClient extends LanguageClient {
 }
 
 /**
- * DigestiF LanguageClient manager. Startup is always fire-and-forget and must
- * never delay build, preview, or SyncTeX. One failed attempt disables further
- * retries until settings change or the window reloads.
+ * DigestiF manager. Fire-and-forget; never blocks build.
+ * Uses its own OutputChannel (never the ConTeXt build channel).
+ * LanguageClient owns the child process so stderr is logged once.
  */
 export function createDigestifClient(options: {
   output: vscode.OutputChannel;
-  extensionPath: string;
-  /** BUILD_ID string for logs (so Sir can see which build is running). */
   buildId: string;
 }): DigestifClientHandle {
-  const { output, extensionPath, buildId } = options;
+  const { output, buildId } = options;
   const log = (line: string) => {
     output.appendLine(line);
   };
@@ -92,14 +79,13 @@ export function createDigestifClient(options: {
   let lastOk: DigestifEnvOk | undefined;
   let starting = false;
   let generation = 0;
+  let startSucceeded = false;
   let policy: DigestifStartPolicy = { enabled: true, failedOnce: false };
-  const bufferRef: { current: { stdout: string; stderr: string } | undefined } = {
-    current: undefined,
-  };
 
   async function stopClient(): Promise<void> {
     const c = client;
     client = undefined;
+    startSucceeded = false;
     if (!c) {
       return;
     }
@@ -116,9 +102,8 @@ export function createDigestifClient(options: {
     policy = afterDigestifFailure(policy);
     log(`[digestif] BUILD_ID=${buildId} giving up for this window: ${reason}`);
     log(
-      '[digestif] Build/SyncTeX are unaffected. Fix DigestiF (prefer luarocks), ' +
-        'change context.digestifPath / context.digestif.enabled, or reload the window to retry. ' +
-        'Or disable our client and use Marketplace DigestiF.',
+      '[digestif] Build/SyncTeX are unaffected. Prefer ~/.luarocks/bin/digestif, ' +
+        'set context.digestifPath, disable context.digestif.enabled, or use Marketplace DigestiF.',
     );
   }
 
@@ -130,8 +115,8 @@ export function createDigestifClient(options: {
       return;
     }
     starting = true;
+    startSucceeded = false;
     const gen = ++generation;
-    bufferRef.current = undefined;
     try {
       const cfg = vscode.workspace.getConfiguration('context');
       const enabled = cfg.get<boolean>('digestif.enabled', true);
@@ -160,11 +145,9 @@ export function createDigestifClient(options: {
       }
 
       const digestifPathSetting = (cfg.get<string>('digestifPath', '') ?? '').trim();
-      const bootstrapPath = resolveBootstrapPath(extensionPath);
       const resolved = buildDigestifEnv({
         root,
         digestifPath: digestifPathSetting || undefined,
-        bootstrapPath,
       });
 
       if (!resolved.ok) {
@@ -193,34 +176,24 @@ export function createDigestifClient(options: {
         `[digestif] xml=${resolved.interfaceXmlPath}  ` +
           `DIGESTIF_TEXMF=${resolved.texmfDirs.join(process.platform === 'win32' ? ';' : ':')}`,
       );
-      if (resolved.luametatex) {
-        log(`[digestif] luametatex=${resolved.luametatex}`);
-      }
 
       const launch = resolveDigestifLaunch({
         digestifPath: resolved.digestifPath,
         source: resolved.source,
-        root: resolved.root,
-        luametatex: resolved.luametatex,
-        texlua: resolved.texlua,
-        bootstrapPath,
-        digestifHome: resolved.digestifHome,
       });
+      const spawnArgs = [...launch.args, '--verbose'];
       log(`[digestif] launch method=${launch.method} — ${launch.detail}`);
-      log(
-        `[digestif] spawn argv: ${JSON.stringify([launch.command, ...launch.args, '--verbose'])}`,
-      );
+      log(`[digestif] spawn argv: ${JSON.stringify([launch.command, ...spawnArgs])}`);
 
       await stopClient();
 
-      const serverOptions: ServerOptions = async () => {
-        const spawned = await spawnDigestifServer({
-          launch,
-          env: resolved.env,
-          log,
-        });
-        bufferRef.current = spawned.buffers;
-        return spawned.process;
+      // Let LanguageClient spawn the process so stderr is written once to our channel.
+      const serverOptions: ServerOptions = {
+        command: launch.command,
+        args: spawnArgs,
+        options: {
+          env: { ...resolved.env, ...launch.envOverrides },
+        },
       };
 
       const clientOptions: LanguageClientOptions = {
@@ -236,7 +209,7 @@ export function createDigestifClient(options: {
           }),
         },
         initializationFailedHandler: (error) => {
-          const msg = preferDigestifError(error, bufferRef.current);
+          const msg = preferDigestifError(error);
           log(`[digestif] BUILD_ID=${buildId} initialization failed: ${msg}`);
           return false;
         },
@@ -253,7 +226,7 @@ export function createDigestifClient(options: {
       try {
         log(
           `[digestif] BUILD_ID=${buildId} starting LanguageClient ` +
-            `(initialize timeout ${DIGESTIF_START_TIMEOUT_MS}ms; does not block build)…`,
+            `(timeout ${DIGESTIF_START_TIMEOUT_MS}ms; does not block build)…`,
         );
         await withTimeout(
           next.start(),
@@ -264,10 +237,20 @@ export function createDigestifClient(options: {
           await stopClient();
           return;
         }
+        if (next.state !== State.Running) {
+          const msg = `LanguageClient finished but state=${State[next.state] ?? next.state}`;
+          log(`[digestif] BUILD_ID=${buildId} failed to start: ${msg}`);
+          giveUp(msg);
+          client = undefined;
+          lastOk = undefined;
+          return;
+        }
+        startSucceeded = true;
         log(`[digestif] BUILD_ID=${buildId} language client started`);
       } catch (err) {
-        const msg = preferDigestifError(err, bufferRef.current);
+        const msg = preferDigestifError(err);
         log(`[digestif] BUILD_ID=${buildId} failed to start: ${msg}`);
+        startSucceeded = false;
         giveUp(msg.split(/\r?\n/)[0] ?? msg);
         void vscode.window.showWarningMessage(
           `DigestiF failed (BUILD_ID=${buildId}): ${msg.split(/\r?\n/)[0] ?? msg}. ` +
@@ -285,6 +268,9 @@ export function createDigestifClient(options: {
       }
     } finally {
       starting = false;
+      if (!startSucceeded && client && client.state !== State.Running) {
+        client = undefined;
+      }
     }
   }
 

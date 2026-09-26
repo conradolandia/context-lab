@@ -81,17 +81,8 @@ export function pipeLines(
   });
 }
 
-function mergeEnv(
-  base: NodeJS.ProcessEnv,
-  overrides: NodeJS.ProcessEnv,
-): NodeJS.ProcessEnv {
-  return { ...base, ...overrides };
-}
-
 /**
- * Race a promise against a timeout. DigestiF does not speak `--version` when
- * started as an LSP server (it waits on stdin); LanguageClient initialize is
- * the real readiness check.
+ * Race a promise against a timeout.
  */
 export function withTimeout<T>(
   promise: Promise<T>,
@@ -117,29 +108,24 @@ export function withTimeout<T>(
 
 export interface SpawnDigestifResult {
   process: ChildProcess;
-  /** Mutated as the process writes; read on exit/failure. */
   buffers: ProcessOutputBuffers;
   launch: DigestifLaunch;
 }
 
 /**
- * Spawn DigestiF as an LSP stdio server using the resolved launch.
- * Stderr is logged live and buffered; on exit the full buffer is re-logged.
- *
- * Note: DigestiF on stdio prints nothing until it receives LSP messages.
- * Running `luametatex --luaonly ~/.digestif/bin/digestif` by hand and seeing
- * silence is normal — it is waiting for initialize on stdin.
+ * Spawn DigestiF as an LSP stdio server.
+ * `env` must already be the clean DigestiF env (user env + DIGESTIF_* only).
+ * Stderr is log-only and must never be treated as an initialization failure.
  */
 export function spawnDigestifServer(options: {
   launch: DigestifLaunch;
   env: NodeJS.ProcessEnv;
   log: LineLogger;
-  /** Extra DigestiF CLI flags before the LSP loop (e.g. --verbose). */
   extraArgs?: string[];
 }): Promise<SpawnDigestifResult> {
   const { launch, env, log, extraArgs = ['--verbose'] } = options;
   return new Promise((resolve, reject) => {
-    const childEnv = mergeEnv(env, launch.envOverrides);
+    const childEnv = { ...env, ...launch.envOverrides };
     const args = [...launch.args, ...extraArgs];
     log(`[digestif] spawn: ${launch.command} ${args.join(' ')}`);
     log(`[digestif] launch method=${launch.method} — ${launch.detail}`);
@@ -161,8 +147,8 @@ export function spawnDigestifServer(options: {
     }
 
     const buffers: ProcessOutputBuffers = { stdout: '', stderr: '' };
-    log(`[digestif] spawned pid=${child.pid} (stdio LSP — silence until initialize is normal)`);
-    // Live stderr for DigestiF --verbose; do not pipe stdout (LSP framing).
+    log(`[digestif] spawned pid=${child.pid}`);
+    // Stderr is diagnostic only; do not treat it as LSP failure.
     pipeLines(child.stderr, 'stderr', log, buffers);
 
     child.on('error', (err) => {
@@ -172,39 +158,23 @@ export function spawnDigestifServer(options: {
 
     child.on('exit', (code, signal) => {
       logProcessOutput(log, buffers, { code, signal });
-      if (code && code !== 0) {
-        log(
-          '[digestif] hint: if stderr mentions texlua/lua/data files, see README ' +
-            '(LMTX needs luametatex --luaonly, or luarocks DigestiF + context.digestifPath).',
-        );
-      }
     });
 
     resolve({ process: child, buffers, launch });
   });
 }
 
-/** Prefer DigestiF stderr over generic LanguageClient pipe errors. */
+/**
+ * Format a LanguageClient / start error for logs.
+ * DigestiF stderr is intentionally ignored here — it is log-only.
+ */
 export function preferDigestifError(
   languageClientError: unknown,
-  buffers?: ProcessOutputBuffers,
+  _buffers?: ProcessOutputBuffers,
 ): string {
-  const stderr = buffers?.stderr?.trim();
-  const stdout = buffers?.stdout?.trim();
-  const digestiMsg = stderr || stdout;
-  const lcMsg =
-    languageClientError instanceof Error
-      ? languageClientError.message
-      : String(languageClientError);
-  if (digestiMsg) {
-    const first = digestiMsg.split(/\r?\n/).filter(Boolean).slice(0, 4).join(' | ');
-    return first;
+  void _buffers;
+  if (languageClientError instanceof Error) {
+    return languageClientError.message;
   }
-  if (/stream was destroyed|write after/i.test(lcMsg)) {
-    return (
-      `${lcMsg} (DigestiF exited before LSP initialize; check Output for ` +
-      `[digestif] --- last stderr ---)`
-    );
-  }
-  return lcMsg;
+  return String(languageClientError);
 }
