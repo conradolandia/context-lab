@@ -43,15 +43,40 @@ describe('digestifLaunch helpers', () => {
     );
   });
 
-  it('prefers luametatex-bootstrap for self-install wrapper', async () => {
-    const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'digestif-launch-'));
+  it('override / path / luarocks always launch direct (no luametatex wrap)', async () => {
+    const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'digestif-direct-'));
+    const main = path.join(tmp, 'digestif');
+    fs.writeFileSync(main, LUA_MAIN);
+    fs.chmodSync(main, 0o755);
+    const luametatex = path.join(tmp, 'luametatex');
+    fs.writeFileSync(luametatex, '#!/bin/sh\n');
+    fs.chmodSync(luametatex, 0o755);
+    const bootstrap = path.join(tmp, 'boot.lua');
+    fs.writeFileSync(bootstrap, '-- boot\n');
+
+    for (const source of ['override', 'path', 'luarocks'] as const) {
+      const launch = resolveDigestifLaunch({
+        digestifPath: main,
+        source,
+        luametatex,
+        bootstrapPath: bootstrap,
+        homedir: tmp,
+      });
+      assert.equal(launch.method, 'direct', source);
+      assert.equal(launch.command, main, source);
+      assert.deepEqual(launch.args, [], source);
+    }
+  });
+
+  it('checkout-bootstrap uses luametatex + bootstrap', async () => {
+    const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'digestif-boot-'));
     const home = path.join(tmp, '.digestif');
     const main = path.join(home, 'bin', 'digestif');
     fs.mkdirSync(path.dirname(main), { recursive: true });
+    fs.mkdirSync(path.join(home, 'digestif'), { recursive: true });
+    fs.writeFileSync(path.join(home, 'digestif', 'langserver.lua'), '-- ls\n');
+    fs.mkdirSync(path.join(home, 'data'), { recursive: true });
     fs.writeFileSync(main, LUA_MAIN);
-    const wrapper = path.join(tmp, 'digestif');
-    fs.writeFileSync(wrapper, WRAPPER);
-    fs.chmodSync(wrapper, 0o755);
     const luametatex = path.join(tmp, 'luametatex');
     fs.writeFileSync(luametatex, '#!/bin/sh\n');
     fs.chmodSync(luametatex, 0o755);
@@ -59,7 +84,8 @@ describe('digestifLaunch helpers', () => {
     fs.writeFileSync(bootstrap, '-- bootstrap\n');
 
     const launch = resolveDigestifLaunch({
-      digestifPath: wrapper,
+      digestifPath: main,
+      source: 'checkout-bootstrap',
       luametatex,
       digestifHome: home,
       homedir: tmp,
@@ -68,9 +94,8 @@ describe('digestifLaunch helpers', () => {
     assert.equal(launch.method, 'luametatex-bootstrap');
     assert.equal(launch.command, luametatex);
     assert.deepEqual(launch.args, ['--luaonly', bootstrap]);
-    assert.ok(launch.envOverrides.LUA_PATH?.includes(home));
     assert.equal(launch.envOverrides.DIGESTIF_HOME, home);
-    assert.equal(launch.bootstrapPath, bootstrap);
+    assert.equal(launch.envOverrides.DIGESTIF_DATA, path.join(home, 'data'));
   });
 
   it('writeTexluaLuaonlyShim prefers bootstrap when set', async () => {

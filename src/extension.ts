@@ -10,7 +10,7 @@ import { resolveRootFile, type RootResolution } from './project/rootFile';
 import { createDigestifClient, type DigestifClientHandle } from './lsp/digestifClient';
 
 /** Bump when shipping a SyncTeX/viewer/LSP behavior change Sir must verify in Output. */
-export const BUILD_ID = 'digestif-lsp-v6';
+export const BUILD_ID = 'digestif-lsp-v7';
 
 let output: vscode.OutputChannel;
 let pdfPanel: PdfPanel;
@@ -158,6 +158,9 @@ async function buildAndPreview(): Promise<void> {
   pdfPanel.setBuilding(true, 'Building…');
   output.clear();
   output.show(true);
+  // DigestiF must never be awaited here. Reprint BUILD_ID after clear so Sir
+  // can see which build is running even if DigestiF logs were wiped.
+  output.appendLine(`ConTeXt SyncTeX BUILD_ID=${BUILD_ID} (build does not wait on DigestiF)`);
   output.appendLine(
     `Building root=${root.rootFile} (rule=${root.rule})` +
       (active && active !== root.rootFile ? `; active=${active}` : ''),
@@ -365,7 +368,11 @@ export function activate(context: vscode.ExtensionContext): void {
     },
   );
 
-  digestif = createDigestifClient({ output, extensionPath: context.extensionPath });
+  digestif = createDigestifClient({
+    output,
+    extensionPath: context.extensionPath,
+    buildId: BUILD_ID,
+  });
 
   context.subscriptions.push(
     output,
@@ -398,7 +405,8 @@ export function activate(context: vscode.ExtensionContext): void {
         e.affectsConfiguration('context.digestif.enabled') ||
         e.affectsConfiguration('context.digestifPath')
       ) {
-        void digestif?.startOrRestart();
+        // Fire-and-forget; never await DigestiF from config/build paths.
+        digestif?.onSettingsChanged();
       }
     }),
   );
@@ -420,7 +428,8 @@ export function activate(context: vscode.ExtensionContext): void {
   if (r) {
     output.appendLine(`[root] ${r.rootFile} (rule=${r.rule})`);
   }
-  void digestif.startOrRestart();
+  // DigestiF is optional and must not delay activation or build.
+  digestif.scheduleStart();
   output.show(true);
 }
 

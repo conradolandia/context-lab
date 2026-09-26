@@ -19,15 +19,20 @@ Then open this folder in VS Code / Cursor and press **F5** (launch config **Run 
 After the Extension Development Host starts, open the **ConTeXt** output channel. You should see:
 
 ```text
-ConTeXt SyncTeX activated  version=0.1.12  BUILD_ID=digestif-lsp-v6
-[digestif] bootstrap=…/resources/digestif-lmtx-bootstrap.lua
-[digestif] root=/home/andi/Apps/lmtx  …
-[digestif] launch method=luametatex-bootstrap — … luametatex --luaonly …/digestif-lmtx-bootstrap.lua
-[digestif] spawn argv: ["…/luametatex","--luaonly","…/digestif-lmtx-bootstrap.lua","--verbose"]
-[digestif] language client started
+ConTeXt SyncTeX activated  version=0.1.13  BUILD_ID=digestif-lsp-v7
+…
+[digestif] BUILD_ID=digestif-lsp-v7 source=luarocks   (or path / override / checkout-bootstrap)
+[digestif] launch method=direct — …
 ```
 
-**Do not** expect bare `luametatex --luaonly ~/.digestif/bin/digestif` to work. LuaMetaTeX’s stock `package.searchers` do not load DigestiF from `package.path` (VM: module not found; some LMTX builds hang until killed). This extension ships `resources/digestif-lmtx-bootstrap.lua`, which installs a normal path searcher and then starts DigestiF. DigestiF is an LSP server on stdio: silence until `initialize` is normal. If startup fails, look for **`[digestif] --- last stderr ---`**. Build and SyncTeX still work.
+Or, on DigestiF failure (build still works immediately):
+
+```text
+[digestif] BUILD_ID=digestif-lsp-v7 failed to start: …
+[digestif] BUILD_ID=digestif-lsp-v7 giving up for this window: …
+```
+
+Every **Build and Preview** reprints `BUILD_ID=…` (Output clear wipes earlier lines). DigestiF starts fire-and-forget and **never** blocks, delays, or is awaited by build/preview/SyncTeX. After one DigestiF failure it stays off until you change `context.digestif*` or reload the window.
 
 Unit tests (no ConTeXt required):
 
@@ -85,18 +90,24 @@ Resolution order:
 
 ### Digestif LSP (completion / hover)
 
-This extension starts [Digestif](https://github.com/astoff/digestif) over stdio when `context.digestif.enabled` is true. TexLab is not used. Digestif is **not** vendored; install it yourself.
+Optional. DigestiF startup never blocks build or SyncTeX. TexLab is not used. DigestiF is **not** vendored.
 
-**Install DigestiF** (pick one):
+**Recommended for LMTX users (LuaRocks + system Lua)** — DigestiF needs `lpeg`/`lfs`; luarocks installs them. Needs Lua 5.4 **dev headers** to build lpeg (`liblua5.4-dev` / equivalent):
 
-1. **Self-install wrapper + LMTX (recommended for ConTeXt Standalone)**:
-   - Download [digestif](https://raw.githubusercontent.com/astoff/digestif/master/scripts/digestif) into `~/.local/bin`, `chmod +x`.
-   - First run clones into `~/.digestif`.
-   - DigestiF needs `lpeg`/`lfs`. LMTX’s `luametatex` provides them; plain system `lua5.4` does not unless you install the C modules.
-   - This extension launches DigestiF as:
-     `luametatex --luaonly <extension>/resources/digestif-lmtx-bootstrap.lua`
-     (not bare `--luaonly ~/.digestif/bin/digestif` — that never loads DigestiF modules under LMTX).
-2. **LuaRocks + system Lua** (alternative): `luarocks install --local digestif` (pulls `lpeg`/`luafilesystem`), put `~/.luarocks/bin` on `PATH`, or set `context.digestifPath`. Use when you prefer not to run DigestiF under LuaMetaTeX.
+```bash
+# Ensure ~/.luarocks/bin is on PATH (luarocks path --bin)
+luarocks --local --lua-version 5.4 install digestif
+# Or, inside an existing ~/.digestif git checkout:
+#   luarocks --local --lua-version 5.4 make
+```
+
+Then either leave `context.digestifPath` empty (PATH / `~/.luarocks/bin`) or set it to that script.
+
+**Launch order**
+
+1. `context.digestifPath` set → run that executable as-is (no luametatex wrap).
+2. Else `digestif` on `PATH` or `~/.luarocks/bin/digestif` → run as-is.
+3. Else last resort: `luametatex --luaonly …/resources/digestif-lmtx-bootstrap.lua` against a `~/.digestif` checkout (`DIGESTIF_HOME`, `DIGESTIF_DATA`, `package.path`). Bare `luametatex --luaonly ~/.digestif/bin/digestif` does **not** work under LMTX.
 
 **LMTX / interface XML**
 
@@ -106,48 +117,31 @@ This extension starts [Digestif](https://github.com/astoff/digestif) over stdio 
 }
 ```
 
-Derived paths (never under `bin/`):
-
 - XML: `/home/andi/Apps/lmtx/tex/texmf-context/tex/context/interface/mkiv/context-en.xml`
 - `DIGESTIF_TEXMF`: `/home/andi/Apps/lmtx/tex/texmf-context`
-- Launch (LMTX): `…/luametatex --luaonly …/resources/digestif-lmtx-bootstrap.lua`
 
-**Handshake outside VS Code** (expect DigestiF `serverInfo` JSON, not hang/`exit=124`):
+**Verify**
 
-```bash
-DIGESTIF_HOME="$HOME/.digestif" DIGESTIF_TEXMF="/home/andi/Apps/lmtx/tex/texmf-context" \
-  printf 'Content-Length: 92\r\n\r\n{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":null,"capabilities":{}}}' \
-  | timeout 10 /home/andi/Apps/lmtx/tex/texmf-linux-64/bin/luametatex --luaonly \
-      /path/to/ConTeXt-lab/resources/digestif-lmtx-bootstrap.lua --verbose
-```
-
-Or from this repo after compile: `LMTX_ROOT=/home/andi/Apps/lmtx npm run handshake`.
-
-**Verify completion / hover**
-
-1. Install DigestiF (wrapper or luarocks).
+1. Install DigestiF via luarocks (above) or set `context.digestifPath`.
 2. Set `context.root` to `/home/andi/Apps/lmtx`.
-3. Disable Marketplace **DigestiF** in the Extension Development Host while testing.
-4. F5 → Output: `BUILD_ID=digestif-lsp-v6`, `launch method=luametatex-bootstrap`, then **`[digestif] language client started`**.
-5. Open a ConTeXt buffer → try completion (`\setup` + Ctrl+Space) and hover on `\starttext`.
-6. If it fails: find **`[digestif] --- last stderr ---`**. Bare `luametatex --luaonly ~/.digestif/bin/digestif` hanging (`timeout` → exit 124) or exiting with `module 'digestif.langserver' not found` is expected — use the bootstrap launch.
+3. Prefer disabling Marketplace DigestiF while testing our client (or disable ours with `context.digestif.enabled=false` and use Marketplace).
+4. F5 → Output must show `BUILD_ID=digestif-lsp-v7` at activation. Build must start immediately and reprint `BUILD_ID`.
+5. DigestiF: `launch method=direct` (luarocks/path) then `language client started`, or a single give-up line — not a 30s stall before compile.
 
-**Marketplace DigestiF conflict**
+**Marketplace DigestiF**
 
-Disable Marketplace **DigestiF** (`phil.red` / similar) while testing. Our client id is `contextSyncTeX.digestif` / **ConTeXt SyncTeX Digestif**.
+Our client id is `contextSyncTeX.digestif`. To use Marketplace DigestiF only: set `context.digestif.enabled` to `false`.
 
 **Troubleshooting**
 
 | Symptom | What to check |
 | --- | --- |
-| Bare `luametatex --luaonly ~/.digestif/bin/digestif` hangs or module not found | Expected under LMTX; use bootstrap launch (`luametatex-bootstrap` in Output) |
-| Hand-run DigestiF prints nothing and waits | **Normal** if bootstrap is used — LSP waiting for stdin |
-| `process exited code=1` + stream destroyed | Scroll to `[digestif] --- last stderr ---` |
-| Initialize timed out after 30s | DigestiF never completed LSP handshake; confirm `launch method=luametatex-bootstrap` and spawn argv |
-| System `lua5.4` → `module 'lpeg' not found` | DigestiF needs lpeg/lfs; use LMTX bootstrap or luarocks DigestiF |
-| `could not find data files` | DigestiF home incomplete; re-run wrapper once, or set `DIGESTIF_DATA` |
-| XML under `/bin/tex/` | Wrong root; set install root (parent of `tex/`) |
-| Two DigestiF servers fighting | Disable Marketplace DigestiF |
+| Build waits ~30s | Not on v7; Output must show `BUILD_ID=digestif-lsp-v7`. Rebuild + F5. |
+| No BUILD_ID line | Stale `dist/`; run `npm run compile` then F5. Build also reprints BUILD_ID. |
+| DigestiF failed once, stays off | Intended. Change `context.digestifPath` / reload to retry. |
+| `module 'lpeg' not found` | Use luarocks DigestiF (builds lpeg), not bare system lua on a git checkout. |
+| Bare `luametatex --luaonly ~/.digestif/bin/digestif` hangs / module not found | Expected; use luarocks (preferred) or bootstrap fallback. |
+| Two DigestiF servers | Disable one of Marketplace DigestiF or `context.digestif.enabled`. |
 
 DigestiF maps LSP language id `context` to ConTeXt and `tex` to LaTeX. Prefer the **context** language mode for ConTeXt sources when a grammar extension provides it.
 

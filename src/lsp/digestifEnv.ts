@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as os from 'node:os';
 import { execFileSync } from 'node:child_process';
 import {
   candidateBinDirs,
@@ -7,13 +8,16 @@ import {
   resolveInstallRoot,
   TEXMF_CONTEXT_REL,
 } from '../toolchain/paths';
-import { writeTexluaLuaonlyShim } from './digestifLaunch';
+import { writeTexluaLuaonlyShim, findLuarocksDigestif, isDigestifCheckoutHome } from './digestifLaunch';
+import type { DigestifResolveSource } from './digestifLaunch';
 
 export { CONTEXT_INTERFACE_REL, TEXMF_CONTEXT_REL } from '../toolchain/paths';
 
 export type DigestifEnvOk = {
   ok: true;
   digestifPath: string;
+  /** How digestifPath was chosen (drives launch: direct vs bootstrap). */
+  source: DigestifResolveSource;
   interfaceXmlPath: string;
   /** Absolute texmf roots passed to DIGESTIF_TEXMF (colon/semicolon-separated). */
   texmfDirs: string[];
@@ -25,6 +29,8 @@ export type DigestifEnvOk = {
   luametatex?: string;
   /** Absolute texlua when found (real binary, not our shim). */
   texlua?: string;
+  /** DigestiF home for checkout / self-install. */
+  digestifHome?: string;
 };
 
 export type DigestifEnvFail = {
@@ -52,6 +58,10 @@ export interface BuildDigestifEnvOptions {
    * Passed into the texlua shim so wrapper launches use the path searcher.
    */
   bootstrapPath?: string;
+  /** Injected homedir for tests. */
+  homedir?: string;
+  /** Injected luarocks digestif finder for tests. */
+  findLuarocks?: () => string | undefined;
 }
 
 function isExecutable(filePath: string): boolean {
@@ -77,18 +87,50 @@ function which(binary: string): string | undefined {
   }
 }
 
+export type ResolvedDigestifExecutable = {
+  path: string;
+  source: DigestifResolveSource;
+  digestifHome?: string;
+};
+
 /**
- * Resolve the Digestif executable: optional absolute override, else PATH.
+ * Resolve DigestiF executable in Sir's order:
+ * 1. context.digestifPath override
+ * 2. `digestif` on PATH
+ * 3. ~/.luarocks/bin/digestif
+ * 4. ~/.digestif checkout (caller launches via LMTX bootstrap)
  */
 export function resolveDigestifExecutable(
   digestifPathSetting?: string,
   whichDigestif: () => string | undefined = () => which('digestif'),
-): string | undefined {
+  options?: {
+    homedir?: string;
+    findLuarocks?: () => string | undefined;
+  },
+): ResolvedDigestifExecutable | undefined {
   const override = digestifPathSetting?.trim();
   if (override) {
-    return isExecutable(override) ? override : undefined;
+    return isExecutable(override) ? { path: override, source: 'override' } : undefined;
   }
-  return whichDigestif();
+  const onPath = whichDigestif();
+  if (onPath) {
+    return { path: onPath, source: 'path' };
+  }
+  const luarocks =
+    options?.findLuarocks?.() ?? findLuarocksDigestif(options?.homedir);
+  if (luarocks) {
+    return { path: luarocks, source: 'luarocks' };
+  }
+  const home = path.join(options?.homedir ?? os.homedir(), '.digestif');
+  if (isDigestifCheckoutHome(home)) {
+    const bin = path.join(home, 'bin', 'digestif');
+    return {
+      path: fs.existsSync(bin) ? bin : home,
+      source: 'checkout-bootstrap',
+      digestifHome: home,
+    };
+  }
+  return undefined;
 }
 
 /**
@@ -241,21 +283,35 @@ function pathListJoin(dirs: string[]): string {
  * Does not start the process; callers check `ok` and surface `message` on failure.
  */
 export function buildDigestifEnv(options: BuildDigestifEnvOptions): DigestifEnvResult {
-  const digestifPath = resolveDigestifExecutable(
+  const resolvedExe = resolveDigestifExecutable(
     options.digestifPath,
     options.whichDigestif ?? (() => which('digestif')),
+    {
+      homedir: options.homedir,
+      findLuarocks: options.findLuarocks,
+    },
   );
 
-  if (!digestifPath) {
+  if (!resolvedExe) {
     const hint = options.digestifPath?.trim()
       ? `context.digestifPath is set but not executable: ${options.digestifPath.trim()}`
-      : 'Digestif executable not found on PATH. Install the Digestif wrapper script or `luarocks install digestif`, or set context.digestifPath.';
+      : 'Digestif not found. Prefer: luarocks --local --lua-version 5.4 install digestif ' +
+        '(and put ~/.luarocks/bin on PATH), or set context.digestifPath. ' +
+        'Fallback: a ~/.digestif checkout with LMTX bootstrap.';
     return {
       ok: false,
       kind: 'digestif-missing',
       message: hint,
     };
   }
+
+  const digestifPath = resolvedExe.path;
+  const source = resolvedExe.source;
+  const digestifHome =
+    resolvedExe.digestifHome ??
+    (isDigestifCheckoutHome(path.join(options.homedir ?? os.homedir(), '.digestif'))
+      ? path.join(options.homedir ?? os.homedir(), '.digestif')
+      : undefined);
 
   const candidate = options.root?.trim() || undefined;
   if (!candidate) {
@@ -318,16 +374,15 @@ export function buildDigestifEnv(options: BuildDigestifEnvOptions): DigestifEnvR
   const pathSep = process.platform === 'win32' ? ';' : ':';
   const existingPath = base.PATH ?? base.Path ?? '';
 
-  // DigestiF's self-install wrapper runs `texlua`. LMTX ships `luametatex`, which
-  // is NOT a drop-in texlua: without --luaonly it treats extension-less scripts as TeX.
   const texluaName = process.platform === 'win32' ? 'texlua.exe' : 'texlua';
   const luametaName = process.platform === 'win32' ? 'luametatex.exe' : 'luametatex';
   const realTexlua = binDirs.map((d) => path.join(d, texluaName)).find((p) => isExecutable(p));
   const luametatex = binDirs.map((d) => path.join(d, luametaName)).find((p) => isExecutable(p));
 
+  // Only install texlua→luametatex shim when we may fall back to checkout bootstrap.
   const pathPrefix = [...binDirs];
   let texluaShimDir: string | undefined;
-  if (!realTexlua && luametatex) {
+  if (source === 'checkout-bootstrap' && !realTexlua && luametatex) {
     const shim = writeTexluaLuaonlyShim(
       luametatex,
       undefined,
@@ -347,6 +402,14 @@ export function buildDigestifEnv(options: BuildDigestifEnvOptions): DigestifEnvR
     DIGESTIF_TEXMF: pathListJoin(texmfDirs),
   };
 
+  if (digestifHome) {
+    env.DIGESTIF_HOME = digestifHome;
+    const data = path.join(digestifHome, 'data');
+    if (fs.existsSync(data)) {
+      env.DIGESTIF_DATA = data;
+    }
+  }
+
   if (luametatex) {
     env.TEXLUA = realTexlua ?? (texluaShimDir
       ? path.join(texluaShimDir, process.platform === 'win32' ? 'texlua.cmd' : 'texlua')
@@ -358,11 +421,13 @@ export function buildDigestifEnv(options: BuildDigestifEnvOptions): DigestifEnvR
   return {
     ok: true,
     digestifPath,
+    source,
     interfaceXmlPath,
     texmfDirs,
     env,
     root,
     luametatex,
     texlua: realTexlua,
+    digestifHome,
   };
 }

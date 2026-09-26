@@ -162,35 +162,59 @@ describe('Sir LMTX layout: Digestif XML + DIGESTIF_TEXMF', () => {
 describe('resolveDigestifExecutable', () => {
   it('prefers absolute override when executable', async () => {
     const { digestifFake } = await makeSirLmtxLayout({ withXml: false });
-    assert.equal(resolveDigestifExecutable(digestifFake, () => '/usr/bin/digestif'), digestifFake);
+    const got = resolveDigestifExecutable(digestifFake, () => '/usr/bin/digestif');
+    assert.equal(got?.path, digestifFake);
+    assert.equal(got?.source, 'override');
   });
 
   it('falls back to which() when override empty', async () => {
-    assert.equal(
-      resolveDigestifExecutable('', () => '/mock/bin/digestif'),
-      '/mock/bin/digestif',
-    );
+    const got = resolveDigestifExecutable('', () => '/mock/bin/digestif', {
+      findLuarocks: () => undefined,
+      homedir: path.join(os.tmpdir(), 'no-digestif-home-' + process.pid),
+    });
+    assert.equal(got?.path, '/mock/bin/digestif');
+    assert.equal(got?.source, 'path');
   });
 
   it('returns undefined when override is not executable', async () => {
     const missing = path.join(os.tmpdir(), 'no-such-digestif-bin');
-    assert.equal(resolveDigestifExecutable(missing, () => '/mock/bin/digestif'), undefined);
+    assert.equal(
+      resolveDigestifExecutable(missing, () => '/mock/bin/digestif'),
+      undefined,
+    );
+  });
+
+  it('finds luarocks digestif when PATH empty', async () => {
+    const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'luarocks-d-'));
+    const bin = path.join(tmp, '.luarocks', 'bin', 'digestif');
+    fs.mkdirSync(path.dirname(bin), { recursive: true });
+    fs.writeFileSync(bin, '#!/bin/sh\n');
+    fs.chmodSync(bin, 0o755);
+    const got = resolveDigestifExecutable('', () => undefined, {
+      homedir: tmp,
+      findLuarocks: () => bin,
+    });
+    assert.equal(got?.path, bin);
+    assert.equal(got?.source, 'luarocks');
   });
 });
 
 describe('buildDigestifEnv errors', () => {
   it('fails clearly when Digestif is missing', async () => {
     const { root } = await makeSirLmtxLayout();
+    const emptyHome = await fsp.mkdtemp(path.join(os.tmpdir(), 'no-digestif-'));
     const result = buildDigestifEnv({
       root,
       whichDigestif: () => undefined,
+      findLuarocks: () => undefined,
+      homedir: emptyHome,
     });
     assert.equal(result.ok, false);
     if (result.ok) {
       return;
     }
     assert.equal(result.kind, 'digestif-missing');
-    assert.match(result.message, /Digestif/i);
+    assert.match(result.message, /Digestif|luarocks/i);
   });
 
   it('fails clearly when interface XML is missing', async () => {

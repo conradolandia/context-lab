@@ -1,14 +1,13 @@
--- DigestiF bootstrap for LuaMetaTeX (LMTX).
+-- DigestiF bootstrap for LuaMetaTeX (LMTX) — last-resort fallback when no
+-- luarocks/PATH digestif is available.
 --
 -- LuaMetaTeX's stock package.searchers[2] does not load modules from
--- package.path (package.searchpath finds files, but the searcher ignores them).
--- Without this shim, `require "digestif.langserver"` fails with
--- "no file 'digestif.langserver'" or DigestiF never starts correctly.
+-- package.path. This shim installs a normal searcher, then starts DigestiF.
 --
--- Usage (env DIGESTIF_HOME required; DIGESTIF_TEXMF recommended):
+-- Env: DIGESTIF_HOME required (e.g. ~/.digestif checkout). DIGESTIF_TEXMF and
+-- DIGESTIF_DATA recommended (Node launcher sets DIGESTIF_DATA when home/data exists).
+--
 --   luametatex --luaonly digestif-lmtx-bootstrap.lua [--verbose]
---
--- DigestiF is an LSP server on stdio: silence until initialize is normal.
 
 local home = os.getenv("DIGESTIF_HOME")
 if not home or home == "" then
@@ -37,7 +36,6 @@ local function lua_path_searcher(modname)
   return chunk, filename
 end
 
--- Keep preload searcher at [1]; replace the broken path searcher.
 package.searchers[2] = lua_path_searcher
 
 require("digestif.langserver").main(arg)

@@ -3,22 +3,30 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 
 export type DigestifLaunchMethod =
+  | 'direct'
   | 'luametatex-bootstrap'
   | 'texlua'
-  | 'wrapper-path'
-  | 'direct';
+  | 'wrapper-path';
+
+export type DigestifResolveSource =
+  | 'override'
+  | 'path'
+  | 'luarocks'
+  | 'checkout-bootstrap';
 
 export interface DigestifLaunch {
-  /** Executable to spawn (luametatex, texlua, or digestif wrapper). */
+  /** Executable to spawn (digestif binary, lua, or luametatex). */
   command: string;
   /** Args including DigestiF main/bootstrap script when using a Lua interpreter. */
   args: string[];
   /** Env overrides merged on top of the caller env (e.g. LUA_PATH, DIGESTIF_HOME). */
   envOverrides: NodeJS.ProcessEnv;
   method: DigestifLaunchMethod;
+  /** How the executable was chosen. */
+  source: DigestifResolveSource;
   /** Human-readable explanation for Output. */
   detail: string;
-  /** DigestiF home when known (self-install ~/.digestif). */
+  /** DigestiF home when known (self-install / git checkout ~/.digestif). */
   digestifHome?: string;
   /** Absolute path to DigestiF's Lua entry script when known. */
   mainScript?: string;
@@ -27,16 +35,18 @@ export interface DigestifLaunch {
 }
 
 export interface ResolveDigestifLaunchOptions {
-  /** Path to `digestif` on PATH or context.digestifPath. */
+  /** Path to `digestif` (override, PATH, luarocks, or checkout bin). */
   digestifPath: string;
-  /** LMTX install root (optional; used to find luametatex). */
+  /** How digestifPath was resolved. */
+  source: DigestifResolveSource;
+  /** LMTX install root (optional). */
   root?: string;
   /** Already-resolved Lua interpreters from buildDigestifEnv. */
   luametatex?: string;
   texlua?: string;
   /**
    * Absolute path to resources/digestif-lmtx-bootstrap.lua.
-   * Required for reliable DigestiF under LuaMetaTeX (broken package.searchers).
+   * Used only for checkout-bootstrap fallback under LMTX.
    */
   bootstrapPath?: string;
   /** Override DIGESTIF_HOME for tests. */
@@ -99,6 +109,34 @@ export function resolveDigestifHome(options: {
   return path.join(options.homedir ?? os.homedir(), '.digestif');
 }
 
+/** True when ~/.digestif looks like a DigestiF git checkout / self-install. */
+export function isDigestifCheckoutHome(home: string): boolean {
+  return (
+    fs.existsSync(path.join(home, 'digestif', 'langserver.lua')) ||
+    fs.existsSync(path.join(home, 'bin', 'digestif'))
+  );
+}
+
+export function digestifDataDir(home: string): string | undefined {
+  const data = path.join(home, 'data');
+  return fs.existsSync(data) ? data : undefined;
+}
+
+function checkoutEnvOverrides(home: string, bootstrapPath?: string): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
+    LUA_PATH: `${home}/?.lua;${home}/?/init.lua;;`,
+    DIGESTIF_HOME: home,
+  };
+  const data = digestifDataDir(home);
+  if (data) {
+    env.DIGESTIF_DATA = data;
+  }
+  if (bootstrapPath) {
+    env.CONTEXT_SYNCTEX_DIGESTIF_BOOTSTRAP = bootstrapPath;
+  }
+  return env;
+}
+
 function lmtxBootstrapLaunch(
   luametatex: string,
   home: string,
@@ -109,27 +147,51 @@ function lmtxBootstrapLaunch(
   return {
     command: luametatex,
     args: ['--luaonly', bootstrapPath],
-    envOverrides: {
-      LUA_PATH: `${home}/?.lua;${home}/?/init.lua;;`,
-      DIGESTIF_HOME: home,
-      CONTEXT_SYNCTEX_DIGESTIF_BOOTSTRAP: bootstrapPath,
-    },
+    envOverrides: checkoutEnvOverrides(home, bootstrapPath),
     method: 'luametatex-bootstrap',
+    source: 'checkout-bootstrap',
     detail:
       `${why} → ${path.basename(luametatex)} --luaonly ${bootstrapPath} ` +
-      `(LMTX package.searchers cannot load DigestiF from package.path without bootstrap)`,
+      `(fallback when no digestif on PATH/luarocks; LMTX needs path-searcher bootstrap)`,
     digestifHome: home,
     mainScript,
     bootstrapPath,
   };
 }
 
+function directLaunch(
+  digestifPath: string,
+  source: DigestifResolveSource,
+  detail: string,
+  home?: string,
+): DigestifLaunch {
+  const envOverrides: NodeJS.ProcessEnv = {};
+  if (home) {
+    envOverrides.DIGESTIF_HOME = home;
+    const data = digestifDataDir(home);
+    if (data) {
+      envOverrides.DIGESTIF_DATA = data;
+    }
+  }
+  return {
+    command: digestifPath,
+    args: [],
+    envOverrides,
+    method: 'direct',
+    source,
+    detail,
+    digestifHome: home,
+    mainScript: isDigestifLuaMain(readText(digestifPath) ?? '') ? digestifPath : undefined,
+  };
+}
+
 /**
- * Decide how to spawn DigestiF under LMTX.
+ * Decide how to spawn DigestiF.
  *
- * LuaMetaTeX needs `--luaonly` and a bootstrap that installs a normal
- * package.path searcher — stock searchers[2] does not load from package.path,
- * so `require "digestif.langserver"` fails or DigestiF never answers initialize.
+ * Launch order (Sir / LMTX):
+ * 1. context.digestifPath set → run as-is (no luametatex wrap)
+ * 2. digestif on PATH or ~/.luarocks/bin → run as-is (luarocks supplies lpeg/lfs)
+ * 3. Else luametatex + bootstrap against ~/.digestif checkout
  */
 export function resolveDigestifLaunch(options: ResolveDigestifLaunchOptions): DigestifLaunch {
   const digestifPath = options.digestifPath;
@@ -139,102 +201,73 @@ export function resolveDigestifLaunch(options: ResolveDigestifLaunchOptions): Di
     digestifHome: options.digestifHome,
     homedir: options.homedir,
   });
-  const mainFromHome = path.join(home, 'bin', 'digestif');
   const luametatex = options.luametatex;
-  const texlua = options.texlua;
   const bootstrap =
     options.bootstrapPath && fs.existsSync(options.bootstrapPath)
       ? options.bootstrapPath
       : undefined;
 
-  // Case A: PATH entry is the self-install wrapper
-  if (text.startsWith('#!') && isSelfInstallWrapper(text)) {
-    const mainScript = fs.existsSync(mainFromHome) ? mainFromHome : undefined;
-    if (luametatex && bootstrap && (mainScript || fs.existsSync(home))) {
+  // 1–2: override / PATH / luarocks → always direct (shebang → system lua, or luarocks bin)
+  if (options.source === 'override') {
+    return directLaunch(
+      digestifPath,
+      'override',
+      `context.digestifPath → direct exec ${digestifPath} (no luametatex wrap)`,
+      isDigestifCheckoutHome(home) ? home : undefined,
+    );
+  }
+  if (options.source === 'path' || options.source === 'luarocks') {
+    return directLaunch(
+      digestifPath,
+      options.source,
+      `${options.source} → direct exec ${digestifPath}`,
+      isDigestifCheckoutHome(home) ? home : undefined,
+    );
+  }
+
+  // 3: checkout-bootstrap fallback under LMTX
+  if (options.source === 'checkout-bootstrap') {
+    const mainScript = fs.existsSync(path.join(home, 'bin', 'digestif'))
+      ? path.join(home, 'bin', 'digestif')
+      : isDigestifLuaMain(text)
+        ? digestifPath
+        : undefined;
+    if (luametatex && bootstrap && isDigestifCheckoutHome(home)) {
       return lmtxBootstrapLaunch(
         luametatex,
         home,
         bootstrap,
         mainScript,
-        'self-install wrapper',
+        '~/.digestif checkout',
       );
     }
-    if (texlua && mainScript && texlua !== luametatex) {
-      return {
-        command: texlua,
-        args: [mainScript],
-        envOverrides: {
-          LUA_PATH: `${home}/?.lua;${home}/?/init.lua;;`,
-          DIGESTIF_HOME: home,
-        },
-        method: 'texlua',
-        detail: `self-install wrapper → texlua ${mainScript}`,
-        digestifHome: home,
+    // Last resort: run checkout bin via shebang if present
+    if (mainScript) {
+      return directLaunch(
         mainScript,
-      };
-    }
-    return {
-      command: digestifPath,
-      args: [],
-      envOverrides: bootstrap
-        ? { CONTEXT_SYNCTEX_DIGESTIF_BOOTSTRAP: bootstrap, DIGESTIF_HOME: home }
-        : {},
-      method: 'wrapper-path',
-      detail:
-        `running wrapper ${digestifPath} on PATH` +
-        (luametatex
-          ? bootstrap
-            ? ' (texlua shim should redirect to LMTX bootstrap)'
-            : ' (no bootstrap path — DigestiF may fail under LMTX)'
-          : ' (no luametatex found)'),
-      digestifHome: home,
-      mainScript: mainScript && fs.existsSync(mainScript) ? mainScript : undefined,
-      bootstrapPath: bootstrap,
-    };
-  }
-
-  // Case B: digestifPath is already the Lua main script
-  if (isDigestifLuaMain(text)) {
-    const mainScript = digestifPath;
-    const digestifHome = path.dirname(path.dirname(mainScript));
-    if (luametatex && bootstrap) {
-      return lmtxBootstrapLaunch(
-        luametatex,
-        digestifHome,
-        bootstrap,
-        mainScript,
-        'Lua main',
+        'checkout-bootstrap',
+        `checkout bin without luametatex/bootstrap → direct ${mainScript}`,
+        home,
       );
-    }
-    if (texlua) {
-      return {
-        command: texlua,
-        args: [mainScript],
-        envOverrides: {
-          LUA_PATH: `${digestifHome}/?.lua;${digestifHome}/?/init.lua;;`,
-          DIGESTIF_HOME: digestifHome,
-        },
-        method: 'texlua',
-        detail: `Lua main → texlua ${mainScript}`,
-        digestifHome,
-        mainScript,
-      };
     }
   }
 
-  // Case C: luarocks / other — run executable directly
-  return {
-    command: digestifPath,
-    args: [],
-    envOverrides: {},
-    method: 'direct',
-    detail: `direct exec ${digestifPath}`,
-  };
+  // Legacy: wrapper on PATH that we somehow classified oddly — still prefer direct
+  if (text.startsWith('#!') && isSelfInstallWrapper(text)) {
+    return directLaunch(
+      digestifPath,
+      options.source,
+      `wrapper → direct exec ${digestifPath}`,
+      home,
+    );
+  }
+
+  return directLaunch(digestifPath, options.source, `direct exec ${digestifPath}`, home);
 }
 
 /**
  * Write a `texlua` shim that prefers the LMTX DigestiF bootstrap when available.
- * Falls back to `luametatex --luaonly "$@"`.
+ * Only used when DigestiF's self-install wrapper is invoked and needs a texlua.
  */
 export function writeTexluaLuaonlyShim(
   luametatexPath: string,
@@ -263,7 +296,6 @@ export function writeTexluaLuaonlyShim(
         `# context-synctex: DigestiF under LMTX needs luametatex --luaonly + path-searcher bootstrap\n` +
         `BOOT="\${CONTEXT_SYNCTEX_DIGESTIF_BOOTSTRAP:-${boot}}"\n` +
         `if [ -n "$BOOT" ] && [ -f "$BOOT" ]; then\n` +
-        `  # DigestiF wrapper passes $DIGESTIF_HOME/bin/digestif as $1; drop it.\n` +
         `  case "$1" in *digestif*) shift ;; esac\n` +
         `  exec "${luametatexPath}" --luaonly "$BOOT" "$@"\n` +
         `fi\n` +
@@ -298,7 +330,7 @@ export function findLuametatexUnderRoot(root: string): string | undefined {
   return undefined;
 }
 
-/** Resolve bootstrap.lua next to the extension (dev: resources/, built: dist/../resources or resources/). */
+/** Resolve bootstrap.lua next to the extension. */
 export function resolveBootstrapPath(extensionPath: string): string | undefined {
   const candidates = [
     path.join(extensionPath, 'resources', 'digestif-lmtx-bootstrap.lua'),
@@ -311,4 +343,14 @@ export function resolveBootstrapPath(extensionPath: string): string | undefined 
     }
   }
   return undefined;
+}
+
+/** ~/.luarocks/bin/digestif when present. */
+export function findLuarocksDigestif(homedir?: string): string | undefined {
+  const home = homedir ?? os.homedir();
+  const candidates = [
+    path.join(home, '.luarocks', 'bin', 'digestif'),
+    path.join(home, '.luarocks', 'bin', 'digestif.bat'),
+  ];
+  return candidates.find(isExecutable);
 }

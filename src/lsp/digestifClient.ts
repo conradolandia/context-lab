@@ -13,6 +13,12 @@ import { resolveToolchain, ToolchainError } from '../toolchain/discover';
 import { buildDigestifEnv, type DigestifEnvOk } from './digestifEnv';
 import { resolveBootstrapPath, resolveDigestifLaunch } from './digestifLaunch';
 import {
+  afterDigestifFailure,
+  afterDigestifSettingsChange,
+  shouldAttemptDigestifStart,
+  type DigestifStartPolicy,
+} from './digestifLifecycle';
+import {
   DIGESTIF_START_TIMEOUT_MS,
   preferDigestifError,
   spawnDigestifServer,
@@ -32,18 +38,20 @@ export const DIGESTIF_DOCUMENT_SELECTOR: DocumentSelector = [
 ];
 
 export interface DigestifClientHandle {
-  /** Start or restart the client from current settings. Safe if Digestif is missing. */
-  startOrRestart(): Promise<void>;
+  /**
+   * Fire-and-forget start. Never await this from build/preview/SyncTeX.
+   * After one failure, stays off until digestif settings change or reload.
+   */
+  scheduleStart(): void;
+  /** Settings changed: clear give-up and schedule again (still fire-and-forget). */
+  onSettingsChanged(): void;
   stop(): Promise<void>;
   dispose(): void;
-  /** Last successful resolved env, if any. */
   lastEnv(): DigestifEnvOk | undefined;
 }
 
 /**
  * LanguageClient that never throws from stop()/dispose() when not Running.
- * vscode-languageclient calls `void this.stop()` on init failure while state is
- * still Starting/StartFailed, which otherwise becomes uncaught Extension Host errors.
  */
 class SafeLanguageClient extends LanguageClient {
   override stop(timeout?: number): Promise<void> {
@@ -66,20 +74,17 @@ class SafeLanguageClient extends LanguageClient {
 }
 
 /**
- * Create a Digestif LanguageClient manager. Does not start until startOrRestart().
- * Missing Digestif / XML must not break build or SyncTeX — only log + warn.
- *
- * DigestiF is an LSP server on stdio: it prints nothing until initialize.
- * Do not preflight with `--version` (that hangs under `luametatex --luaonly`).
- * Under LMTX, launch via `luametatex --luaonly` + path-searcher bootstrap
- * (bare `--luaonly ~/.digestif/bin/digestif` never loads DigestiF modules).
+ * DigestiF LanguageClient manager. Startup is always fire-and-forget and must
+ * never delay build, preview, or SyncTeX. One failed attempt disables further
+ * retries until settings change or the window reloads.
  */
 export function createDigestifClient(options: {
   output: vscode.OutputChannel;
-  /** Extension install root (for resources/digestif-lmtx-bootstrap.lua). */
   extensionPath: string;
+  /** BUILD_ID string for logs (so Sir can see which build is running). */
+  buildId: string;
 }): DigestifClientHandle {
-  const { output, extensionPath } = options;
+  const { output, extensionPath, buildId } = options;
   const log = (line: string) => {
     output.appendLine(line);
   };
@@ -87,6 +92,7 @@ export function createDigestifClient(options: {
   let lastOk: DigestifEnvOk | undefined;
   let starting = false;
   let generation = 0;
+  let policy: DigestifStartPolicy = { enabled: true, failedOnce: false };
   const bufferRef: { current: { stdout: string; stderr: string } | undefined } = {
     current: undefined,
   };
@@ -106,9 +112,21 @@ export function createDigestifClient(options: {
     }
   }
 
-  async function startOrRestart(): Promise<void> {
+  function giveUp(reason: string): void {
+    policy = afterDigestifFailure(policy);
+    log(`[digestif] BUILD_ID=${buildId} giving up for this window: ${reason}`);
+    log(
+      '[digestif] Build/SyncTeX are unaffected. Fix DigestiF (prefer luarocks), ' +
+        'change context.digestifPath / context.digestif.enabled, or reload the window to retry. ' +
+        'Or disable our client and use Marketplace DigestiF.',
+    );
+  }
+
+  async function startOnce(): Promise<void> {
     if (starting) {
-      log('[digestif] start already in progress; skipping concurrent restart');
+      return;
+    }
+    if (!shouldAttemptDigestifStart(policy)) {
       return;
     }
     starting = true;
@@ -117,8 +135,9 @@ export function createDigestifClient(options: {
     try {
       const cfg = vscode.workspace.getConfiguration('context');
       const enabled = cfg.get<boolean>('digestif.enabled', true);
+      policy = { ...policy, enabled };
       if (!enabled) {
-        log('[digestif] disabled (context.digestif.enabled=false)');
+        log(`[digestif] BUILD_ID=${buildId} disabled (context.digestif.enabled=false)`);
         await stopClient();
         lastOk = undefined;
         return;
@@ -142,14 +161,6 @@ export function createDigestifClient(options: {
 
       const digestifPathSetting = (cfg.get<string>('digestifPath', '') ?? '').trim();
       const bootstrapPath = resolveBootstrapPath(extensionPath);
-      if (bootstrapPath) {
-        log(`[digestif] bootstrap=${bootstrapPath}`);
-      } else {
-        log(
-          '[digestif] WARNING: resources/digestif-lmtx-bootstrap.lua not found; ' +
-            'LMTX DigestiF may fail to load modules',
-        );
-      }
       const resolved = buildDigestifEnv({
         root,
         digestifPath: digestifPathSetting || undefined,
@@ -159,8 +170,12 @@ export function createDigestifClient(options: {
       if (!resolved.ok) {
         lastOk = undefined;
         await stopClient();
-        log(`[digestif] ${resolved.message}`);
-        void vscode.window.showWarningMessage(resolved.message);
+        log(`[digestif] BUILD_ID=${buildId} ${resolved.message}`);
+        giveUp(resolved.message);
+        void vscode.window.showWarningMessage(
+          `DigestiF unavailable (BUILD_ID=${buildId}): ${resolved.message.split(/\r?\n/)[0]}. ` +
+            `Build and SyncTeX still work.`,
+        );
         return;
       }
 
@@ -169,6 +184,7 @@ export function createDigestifClient(options: {
       }
 
       lastOk = resolved;
+      log(`[digestif] BUILD_ID=${buildId} source=${resolved.source}`);
       log(
         `[digestif] root=${resolved.root}  context=${contextBin || '(n/a)'}  ` +
           `mtxrun=${mtxrunBin || '(n/a)'}  digestif=${resolved.digestifPath}`,
@@ -180,16 +196,15 @@ export function createDigestifClient(options: {
       if (resolved.luametatex) {
         log(`[digestif] luametatex=${resolved.luametatex}`);
       }
-      if (resolved.env.TEXLUA) {
-        log(`[digestif] TEXLUA=${resolved.env.TEXLUA}`);
-      }
 
       const launch = resolveDigestifLaunch({
         digestifPath: resolved.digestifPath,
+        source: resolved.source,
         root: resolved.root,
         luametatex: resolved.luametatex,
         texlua: resolved.texlua,
         bootstrapPath,
+        digestifHome: resolved.digestifHome,
       });
       log(`[digestif] launch method=${launch.method} — ${launch.detail}`);
       log(
@@ -222,7 +237,7 @@ export function createDigestifClient(options: {
         },
         initializationFailedHandler: (error) => {
           const msg = preferDigestifError(error, bufferRef.current);
-          log(`[digestif] initialization failed: ${msg}`);
+          log(`[digestif] BUILD_ID=${buildId} initialization failed: ${msg}`);
           return false;
         },
       };
@@ -237,28 +252,26 @@ export function createDigestifClient(options: {
       client = next;
       try {
         log(
-          `[digestif] starting LanguageClient (initialize timeout ${DIGESTIF_START_TIMEOUT_MS}ms)…`,
+          `[digestif] BUILD_ID=${buildId} starting LanguageClient ` +
+            `(initialize timeout ${DIGESTIF_START_TIMEOUT_MS}ms; does not block build)…`,
         );
         await withTimeout(
           next.start(),
           DIGESTIF_START_TIMEOUT_MS,
-          `DigestiF LSP initialize timed out after ${DIGESTIF_START_TIMEOUT_MS}ms. ` +
-            `Check Output for stderr; silence when run by hand is normal (DigestiF waits for LSP on stdin).`,
+          `DigestiF LSP initialize timed out after ${DIGESTIF_START_TIMEOUT_MS}ms`,
         );
         if (gen !== generation) {
           await stopClient();
           return;
         }
-        log('[digestif] language client started');
+        log(`[digestif] BUILD_ID=${buildId} language client started`);
       } catch (err) {
         const msg = preferDigestifError(err, bufferRef.current);
-        log(`[digestif] failed to start: ${msg}`);
-        log(
-          '[digestif] if DigestiF exited, scroll up for "[digestif] --- last stderr ---". ' +
-            'Running `luametatex --luaonly ~/.digestif/bin/digestif` by hand with no output is normal — it waits for LSP.',
-        );
+        log(`[digestif] BUILD_ID=${buildId} failed to start: ${msg}`);
+        giveUp(msg.split(/\r?\n/)[0] ?? msg);
         void vscode.window.showWarningMessage(
-          `DigestiF failed to start: ${msg.split(/\r?\n/)[0] ?? msg}. Build and SyncTeX remain available.`,
+          `DigestiF failed (BUILD_ID=${buildId}): ${msg.split(/\r?\n/)[0] ?? msg}. ` +
+            `Build and SyncTeX remain available.`,
         );
         client = undefined;
         lastOk = undefined;
@@ -275,11 +288,30 @@ export function createDigestifClient(options: {
     }
   }
 
+  function scheduleStart(): void {
+    if (!shouldAttemptDigestifStart(policy)) {
+      return;
+    }
+    void startOnce();
+  }
+
+  function onSettingsChanged(): void {
+    const cfg = vscode.workspace.getConfiguration('context');
+    const enabled = cfg.get<boolean>('digestif.enabled', true);
+    policy = afterDigestifSettingsChange(policy, enabled);
+    generation += 1;
+    void stopClient().then(() => {
+      scheduleStart();
+    });
+  }
+
   return {
-    startOrRestart,
+    scheduleStart,
+    onSettingsChanged,
     stop: stopClient,
     dispose: () => {
       generation += 1;
+      policy = afterDigestifFailure(policy);
       void stopClient();
     },
     lastEnv: () => lastOk,
