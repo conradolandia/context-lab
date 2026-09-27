@@ -129,7 +129,7 @@ export function resolveToolchain(
       .join(' and ');
     throw new ToolchainError(
       `Could not find ${missing}. Set context.root to your LMTX install root ` +
-        `(the directory that contains tex/, example: /home/andi/Apps/lmtx), ` +
+        `(the directory that contains tex/, example: /path/to/lmtx), ` +
         `set context.contextPath / context.mtxrunPath, or ensure both binaries are on PATH.`,
     );
   }
