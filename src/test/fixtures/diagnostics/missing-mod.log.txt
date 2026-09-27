@@ -1,0 +1,4 @@
+16:modules         > 'totally-bogus-module-xyz' is not found
+55:modules         > start used modules
+56:modules         >   missing: *-totally-bogus-module-xyz
+57:modules         > stop used modules

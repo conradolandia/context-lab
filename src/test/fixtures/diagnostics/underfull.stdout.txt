@@ -1,0 +1,12 @@
+2:resolvers       | formats | executing runner 'run luametatex format': /home/ubuntu/context/tex/texmf-linux-64/bin/luametatex --interaction="batchmode" --jobname="underfull" --socket --shell-escape --fmt=/home/ubuntu/context/tex/texmf-cache/luametatex-cache/context/5fe67e0bfe781ce0dde776fb1556f32e/formats/luametatex/cont-en.fmt --lua=/home/ubuntu/context/tex/texmf-cache/luametatex-cache/context/5fe67e0bfe781ce0dde776fb1556f32e/formats/luametatex/cont-en.lui cont-yes.mkiv --c:batchmode --c:currentrun=1 --c:fulljobname="./underfull.tex" --c:input="./underfull.tex" --c:kindofrun=1 --c:maxnofruns=9 --c:texmfbinpath="/home/ubuntu/context/tex/texmf-linux-64/bin"
+12:system          > files > jobname './underfull', input './underfull.tex', result './underfull'
+15:open source     > level 2, order 3, name './underfull.tex'
+18:pack quality    > loose hbox at line 2 in file './underfull.tex': x (badness 10000)
+20:close source    > level 2, order 3, name './underfull.tex'
+40:mkxl run stats  > result saved in file: underfull.pdf, compresslevel 1, objectcompresslevel 3, 5 streams, 0 uncompressed, 4 compressed, 1 not compressed, threshold 40
+48:resolvers       | formats | executing runner 'run luametatex format': /home/ubuntu/context/tex/texmf-linux-64/bin/luametatex --interaction="batchmode" --jobname="underfull" --socket --shell-escape --fmt=/home/ubuntu/context/tex/texmf-cache/luametatex-cache/context/5fe67e0bfe781ce0dde776fb1556f32e/formats/luametatex/cont-en.fmt --lua=/home/ubuntu/context/tex/texmf-cache/luametatex-cache/context/5fe67e0bfe781ce0dde776fb1556f32e/formats/luametatex/cont-en.lui cont-yes.mkiv --c:batchmode --c:currentrun=2 --c:fulljobname="./underfull.tex" --c:input="./underfull.tex" --c:kindofrun=2 --c:maxnofruns=9 --c:texmfbinpath="/home/ubuntu/context/tex/texmf-linux-64/bin"
+58:system          > files > jobname './underfull', input './underfull.tex', result './underfull'
+61:open source     > level 2, order 3, name './underfull.tex'
+64:pack quality    > loose hbox at line 2 in file './underfull.tex': x (badness 10000)
+66:close source    > level 2, order 3, name './underfull.tex'
+86:mkxl run stats  > result saved in file: underfull.pdf, compresslevel 1, objectcompresslevel 3, 5 streams, 0 uncompressed, 4 compressed, 1 not compressed, threshold 40

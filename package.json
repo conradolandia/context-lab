@@ -2,7 +2,7 @@
   "name": "context-synctex",
   "displayName": "ConTeXt SyncTeX",
   "description": "ConTeXt build, PDF.js viewer, and SyncTeX forward/backward navigation",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "publisher": "context-lab",
   "engines": {
     "vscode": "^1.85.0"
@@ -106,6 +106,11 @@
           },
           "default": [],
           "description": "Extra arguments appended after --synctex=repeat when building."
+        },
+        "context.build.onSave": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, save of a ConTeXt/TeX file starts a build. While a build runs, further saves queue one follow-up build (rapid saves coalesce)."
         },
         "context.rootFile": {
           "type": "string",

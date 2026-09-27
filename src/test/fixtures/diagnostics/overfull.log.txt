@@ -1,0 +1,12 @@
+10:system          > files > jobname './overfull', input './overfull.tex', result './overfull'
+13:open source     > level 2, order 3, name './overfull.tex'
+16:pack quality    > overfull hbox at line 2 in file './overfull.tex': ThisIsAVeryLongWordWithoutSpacesThatWillOverfull (260.58839pt)
+18:close source    > level 2, order 3, name './overfull.tex'
+25:system          > text: overfull
+33:system          >    6: filename=/home/ubuntu/context-fixtures/overfull.tex format=tex foundname=/home/ubuntu/context-fixtures/overfull.tex fullname=/home/ubuntu/context-fixtures/overfull.tex usedmethod=direct
+47:system          >   fulljobname="./overfull.tex"
+48:system          >   input="./overfull.tex"
+54:system          >    1: ./overfull.tex
+56:modules         > start used modules
+57:modules         > stop used modules
+140:mkxl run stats  > result saved in file: overfull.pdf, compresslevel 1, objectcompresslevel 3, 5 streams, 0 uncompressed, 4 compressed, 1 not compressed, threshold 40

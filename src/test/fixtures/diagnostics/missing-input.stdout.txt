@@ -1,0 +1,18 @@
+
+resolvers       | formats | executing runner 'run luametatex format': /home/ubuntu/context/tex/texmf-linux-64/bin/luametatex --interaction="batchmode" --jobname="missing-input" --socket --shell-escape --fmt=/home/ubuntu/context/tex/texmf-cache/luametatex-cache/context/5fe67e0bfe781ce0dde776fb1556f32e/formats/luametatex/cont-en.fmt --lua=/home/ubuntu/context/tex/texmf-cache/luametatex-cache/context/5fe67e0bfe781ce0dde776fb1556f32e/formats/luametatex/cont-en.lui cont-yes.mkiv --c:batchmode --c:currentrun=1 --c:fulljobname="./missing-input.tex" --c:input="./missing-input.tex" --c:kindofrun=1 --c:maxnofruns=9 --c:texmfbinpath="/home/ubuntu/context/tex/texmf-linux-64/bin"
+open source     > level 1, order 1, name 'cont-yes.mkiv'
+system          > 
+system          > ConTeXt  ver: 2026.09.22 16:20 LMTX  fmt: 2026.9.27  int: english/english
+system          > 
+system          > 'cont-new.mkxl' loaded
+open source     > level 2, order 2, name '/home/ubuntu/context/tex/texmf-context/tex/context/base/mkxl/cont-new.mkxl'
+system          > beware: some patches loaded from cont-new.mkxl
+close source    > level 2, order 2, name '/home/ubuntu/context/tex/texmf-context/tex/context/base/mkxl/cont-new.mkxl'
+
+system          > files > jobname './missing-input', input './missing-input.tex', result './missing-input'
+fonts           > latin modern fonts are not preloaded
+languages       > language 'en' is active
+open source     > level 2, order 3, name './missing-input.tex'
+fonts           > preloading latin modern fonts (second stage)
+fonts           > 'fallback modern rm 12pt' is loaded
+mtx-context     | fatal error: return code: 1

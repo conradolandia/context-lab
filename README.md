@@ -8,8 +8,8 @@ Checkout the PR branch and rebuild before launching so the Extension Host cannot
 
 ```bash
 git fetch origin
-git checkout cursor/digestif-lsp-bc94
-git pull origin cursor/digestif-lsp-bc94
+git checkout cursor/diagnostics-links-folding-onsave-abc1
+git pull origin cursor/diagnostics-links-folding-onsave-abc1
 npm install
 npm run compile
 ```
@@ -19,17 +19,17 @@ Then open this folder in VS Code / Cursor and press **F5** (launch config **Run 
 After the Extension Development Host starts, open the **ConTeXt** output channel. You should see:
 
 ```text
-ConTeXt SyncTeX activated  version=0.1.15  BUILD_ID=digestif-lsp-v9
+ConTeXt SyncTeX activated  version=0.1.16  BUILD_ID=diagnostics-links-fold-onsave-v1
 …
-[digestif] BUILD_ID=digestif-lsp-v9 source=luarocks   (or override / path)
+[digestif] BUILD_ID=diagnostics-links-fold-onsave-v1 source=luarocks   (or override / path)
 [digestif] launch method=direct — …
 ```
 
 Or, on DigestiF failure (build still works immediately):
 
 ```text
-[digestif] BUILD_ID=digestif-lsp-v9 failed to start: …
-[digestif] BUILD_ID=digestif-lsp-v9 giving up for this window: …
+[digestif] BUILD_ID=diagnostics-links-fold-onsave-v1 failed to start: …
+[digestif] BUILD_ID=diagnostics-links-fold-onsave-v1 giving up for this window: …
 ```
 
 Every **Build and Preview** reprints `BUILD_ID=…` (Output clear wipes earlier lines). DigestiF starts fire-and-forget and **never** blocks, delays, or is awaited by build/preview/SyncTeX. After one DigestiF failure it stays off until you change `context.digestif*` or reload the window.
@@ -84,6 +84,7 @@ Resolution order:
 | `context.mtxrunPath` | `""` | Absolute `mtxrun` binary |
 | `context.synctex.enabled` | `true` | Toggle SyncTeX |
 | `context.build.args` | `[]` | Extra args after `--synctex=repeat` |
+| `context.build.onSave` | `false` | Save of a ConTeXt/TeX file starts a build; rapid saves coalesce to one follow-up |
 | `context.rootFile` | `""` | Main file to compile (workspace-relative or absolute). Empty = auto-detect |
 | `context.digestif.enabled` | `true` | Start Digestif LSP (completion / hover). Safe to leave on if Digestif is missing |
 | `context.digestifPath` | `""` | Absolute Digestif binary; empty = `digestif` on PATH |
@@ -175,11 +176,37 @@ Notes:
 - English interface only. Command names use ASCII letters; `\unprotect` names with `_`, `!` or `?` split at those characters. Environments defined with `\definetyping` are not recognized as verbatim.
 - A `[` in running text also opens an options region until the next `]`.
 
-**Folding.** `language-configuration.json` defines `folding.markers`: a line starting with `\start<name>` opens a region and a line starting with `\stop<name>` closes it; `%region` / `%endregion` (also `% #region`) do the same. VS Code uses these markers only when no folding range provider is registered for the document (neither this extension nor Digestif registers one). Limitations:
+**Folding.** This extension registers a folding range provider that stacks `\start<name>` / `\stop<name>` and matches names. A name mismatch (for example `\startsection` … `\stopsubsection`) is reported as a warning diagnostic (`context.folding`). Bodies of common typing / Lua / MetaPost regions are skipped. While the provider is active it replaces TextMate folding markers in `language-configuration.json`; those markers remain as a fallback when the provider is not registered. `%region` / `%endregion` markers are still available via language configuration when no provider applies.
+
+Limitations of the marker fallback (when the provider is off):
 
 - Start and stop names are not matched. The markers pair like a stack, so `\startsection … \stopsubsection` folds as one region.
 - Markers only count at the start of a line. A line that contains both `\start<name>` and `\stop<name>` (for example `\startitemize \item a \stopitemize`) is ignored.
 - Lines inside `\starttyping` or `\startluacode` that begin with `\start…` or `\stop…` also count as markers.
+
+## Build diagnostics
+
+After each build, stdout, stderr, and the job `.log` (when present) are parsed into the Problems panel (`context.build`). Previous build diagnostics are cleared at the start of the next build.
+
+Patterns (LMTX console / log):
+
+| Pattern | Severity |
+| --- | --- |
+| `tex error > tex error on line N in file PATH: …` | error |
+| `error (input): file {NAME} is not found` | error |
+| `modules > 'NAME' is not found` | error |
+| `pack quality > overfull … at line N in file …` | warning |
+| `pack quality > loose … at line N in file …` (LMTX underfull) | warning |
+
+Fixtures under `src/test/fixtures/diagnostics/` were captured from deliberate LMTX compiles (undefined csname, missing input, overfull/loose boxes, missing module) plus a clean compile that must produce zero errors.
+
+## Document links
+
+Ctrl/Cmd-click resolves file names in `\component`, `\product`, `\environment`, `\project`, `\input`, `\usemodule`, and `\externalfigure` (space, `[]`, and `{}` argument forms). `\usepath[...]` directories relative to the declaring file are searched. Path resolution lives in `src/project/pathResolve.ts` / `structureScan.ts` for reuse by a later project TreeView. Hover on `\externalfigure` shows an image preview for common raster/SVG paths when the file resolves.
+
+## Build on save
+
+`context.build.onSave` (default `false`) starts a build when a ConTeXt/TeX document is saved. While a build runs, further saves queue **one** follow-up build (rapid saves coalesce); the command path still shows “already running” if you invoke Build and Preview during a build. A status bar item shows build state and the last duration.
 
 **LaTeX Workshop conflict.** LaTeX Workshop 10.19.0 also contributes language id `context` (for `.ctx`) and maps it to its LaTeX grammar `text.tex.latex`. VS Code keeps one grammar per language id, and the last one registered wins. Tested with `_workbench.captureSyntaxTokens`:
 
@@ -241,12 +268,21 @@ src/lsp/digestifEnv.ts
 src/lsp/digestifClient.ts
 src/lsp/digestifLaunch.ts
 src/build/compiler.ts
+src/build/buildController.ts
+src/build/parseLog.ts
+src/build/buildDiagnostics.ts
 src/build/artifactGate.ts
+src/project/pathResolve.ts
+src/project/structureScan.ts
+src/project/verbatimRegions.ts
+src/links/documentLinks.ts
+src/folding/startStopFolding.ts
 src/synctex/mtxSynctex.ts
 src/viewer/pdfPanel.ts
 media/viewer/
 syntaxes/context.tmLanguage.json
 src/test/grammar/
+src/test/fixtures/diagnostics/
 ```
 
-Phase 2b (later): tree-sitter-context for semantic tokens and name-aware folding.
+Stacked on the TextMate grammar branch (`cursor/textmate-baseline-grammar-64f0` / PR #5). Tree-sitter remains on hold; project TreeView is a separate plan that reuses `pathResolve` / `structureScan`.
