@@ -25,8 +25,8 @@ import {
 } from './digestifProcess';
 import { normalizeOutlineSymbols } from './normalizeOutlineTitle';
 
-export const DIGESTIF_CLIENT_ID = 'contextSyncTeX.digestif';
-export const DIGESTIF_CLIENT_NAME = 'ConTeXt SyncTeX Digestif';
+export const DIGESTIF_CLIENT_ID = 'contextTools.digestif';
+export const DIGESTIF_CLIENT_NAME = 'ConTeXt Tools DigestiF';
 
 export const DIGESTIF_DOCUMENT_SELECTOR: DocumentSelector = [
   { scheme: 'file', language: 'context' },

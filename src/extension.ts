@@ -26,7 +26,7 @@ import {
 } from './folding/startStopFolding';
 
 /** Bump when shipping a SyncTeX/viewer/LSP/diagnostics behavior change Sir must verify in Output. */
-export const BUILD_ID = 'synctex-image-empty-ux-v2';
+export const BUILD_ID = 'context-tools-rename-v1';
 
 let output: vscode.OutputChannel;
 let digestifOutput: vscode.OutputChannel;
@@ -487,7 +487,7 @@ export function activate(context: vscode.ExtensionContext): void {
     // keep unknown
   }
   output.appendLine(
-    `ConTeXt SyncTeX activated  version=${version}  BUILD_ID=${BUILD_ID}`,
+    `ConTeXt Tools activated  version=${version}  BUILD_ID=${BUILD_ID}`,
   );
   output.appendLine(`extensionPath=${context.extensionPath}`);
   digestifOutput.appendLine(

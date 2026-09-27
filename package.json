@@ -1,7 +1,7 @@
 {
-  "name": "context-synctex",
-  "displayName": "ConTeXt SyncTeX",
-  "description": "ConTeXt build, PDF.js viewer, and SyncTeX forward/backward navigation",
+  "name": "context-tools",
+  "displayName": "ConTeXt Tools",
+  "description": "ConTeXt SyncTeX PDF preview, DigestiF language server, and TextMate grammar",
   "version": "0.1.19",
   "publisher": "context-lab",
   "engines": {
@@ -77,7 +77,7 @@
       }
     ],
     "configuration": {
-      "title": "ConTeXt SyncTeX",
+      "title": "ConTeXt Tools",
       "properties": {
         "context.root": {
           "type": "string",

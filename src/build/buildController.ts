@@ -115,7 +115,7 @@ export class BuildController {
       output.show(true);
     }
     output.appendLine(
-      `ConTeXt SyncTeX BUILD_ID=${this.deps.buildId} (build does not wait on DigestiF)`,
+      `ConTeXt Tools BUILD_ID=${this.deps.buildId} (build does not wait on DigestiF)`,
     );
     output.appendLine(
       `Building root=${root.rootFile} (rule=${root.rule}) trigger=${trigger}` +
