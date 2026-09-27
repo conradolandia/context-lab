@@ -27,9 +27,10 @@ import {
 import { registerProjectView } from './project/projectTree';
 import type { ProjectNode } from './project/projectModel';
 import { refreshCommandKeywords } from './syntax/refreshKeywords';
+import { maybeWarnLatexWorkshopConflict } from './compat/latexWorkshopConflict';
 
 /** Bump when shipping a SyncTeX/viewer/LSP/diagnostics/project-view behavior change Sir must verify in Output. */
-export const BUILD_ID = 'command-colours-v1';
+export const BUILD_ID = 'latex-workshop-warn-v1';
 
 let output: vscode.OutputChannel;
 let digestifOutput: vscode.OutputChannel;
@@ -570,6 +571,12 @@ export function activate(context: vscode.ExtensionContext): void {
         digestif?.onSettingsChanged();
       }
     }),
+    vscode.workspace.onDidOpenTextDocument((doc) => {
+      if (!isContextLike(doc)) {
+        return;
+      }
+      void maybeWarnLatexWorkshopConflict(context, (line) => output.appendLine(line));
+    }),
   );
 
   registerProjectView(context, {
@@ -606,6 +613,7 @@ export function activate(context: vscode.ExtensionContext): void {
     output.appendLine(`[root] ${r.rootFile} (rule=${r.rule})`);
   }
   digestif.scheduleStart();
+  void maybeWarnLatexWorkshopConflict(context, (line) => output.appendLine(line));
   output.show(true);
 }
 

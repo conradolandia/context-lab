@@ -21,9 +21,9 @@ Then open this folder in VS Code / Cursor and press **F5** (launch config **Run 
 After the Extension Development Host starts, open the **ConTeXt** output channel. You should see:
 
 ```text
-ConTeXt Tools activated  version=0.1.21  BUILD_ID=project-view-v2
+ConTeXt Tools activated  version=0.1.22  BUILD_ID=latex-workshop-warn-v1
 …
-[digestif] BUILD_ID=project-view-v2 source=luarocks   (or override / path)
+[digestif] BUILD_ID=latex-workshop-warn-v1 source=luarocks   (or override / path)
 [digestif] launch method=direct — …
 ```
 
@@ -253,7 +253,9 @@ Ctrl/Cmd-click resolves file names in `\component`, `\product`, `\environment`, 
 
 `context.build.onSave` (default `false`) starts a build when a ConTeXt/TeX document is saved. While a build runs, further saves queue **one** follow-up build (rapid saves coalesce); the command path still shows “already running” if you invoke Build and Preview during a build. A status bar item shows build state and the last duration.
 
-**LaTeX Workshop conflict.** LaTeX Workshop 10.19.0 also contributes language id `context` (for `.ctx`) and maps it to its LaTeX grammar `text.tex.latex`. VS Code keeps one grammar per language id, and the last one registered wins. Tested with `_workbench.captureSyntaxTokens`:
+### LaTeX Workshop language-id conflict
+
+LaTeX Workshop (`James-Yu.latex-workshop`) from 10.x also contributes language id `context` (for `.ctx`) and maps it to its LaTeX grammar `text.tex.latex`. VS Code keeps one grammar per language id, and the last one registered wins. ConTeXt Tools does **not** change the language id; use workspace disable instead.
 
 | VS Code | Installed | Grammar used for `.mkiv` |
 | --- | --- | --- |
@@ -262,7 +264,27 @@ Ctrl/Cmd-click resolves file names in `\component`, `\product`, `\environment`, 
 | 1.139.1 | same, LaTeX Workshop disabled | `text.tex.context` |
 | 1.85.2 | this extension + LaTeX Workshop 9.20.1 (newest for 1.85) | `text.tex.context` (9.20.1 has no `context` language) |
 
-With both extensions installed, disable LaTeX Workshop for ConTeXt workspaces (**Extensions → LaTeX Workshop → Disable (Workspace)**). When this extension runs from F5 (Extension Development Host), its grammar is registered last and wins, so F5 sessions do not show the conflict.
+**Installed (Marketplace / VSIX).** On activate (and when a ConTeXt-associated document opens), if LaTeX Workshop is enabled and its `package.json` contributes language id `context`, ConTeXt Tools shows a one-shot warning with:
+
+- **Disable LaTeX Workshop for this workspace** — calls `workbench.extensions.disableExtension` when the host supports it; otherwise opens the Extensions view so you can choose **Disable (Workspace)**.
+- **Add workspace recommendation** — writes `James-Yu.latex-workshop` into `.vscode/extensions.json` `unwantedRecommendations` (suppresses recommending LW for that folder; does not uninstall or disable by itself).
+- **Don't show again** — sets global state / `context.latexWorkshopConflict.dontAsk`.
+
+Nothing is auto-disabled without that prompt.
+
+**F5 (Extension Development Host).** The under-development grammar is registered last and wins, so the conflict does not appear under F5. The warning is skipped in `ExtensionMode.Development`; Output still logs that LW contributes `context` if it is present.
+
+**Workspace `extensions.json`.** For ConTeXt projects (and this repo), prefer:
+
+```json
+{
+  "unwantedRecommendations": [
+    "James-Yu.latex-workshop"
+  ]
+}
+```
+
+`unwantedRecommendations` only affects Marketplace recommendations. If LaTeX Workshop is already installed, still use **Disable (Workspace)** (or the warning action above).
 
 **Tests.** `npm test` runs the grammar tests (`npm run test:grammar`) after the unit tests. Assertion fixtures (`vscode-tmgrammar-test`) are `src/test/grammar/*.test.mkiv`; a snapshot of a sample document is in `src/test/grammar/snap/`. `src/test/grammar/stubs/` has minimal `source.lua` and `text.xml` grammars that use the scope names of the VS Code built-in grammars. After an intended grammar change, regenerate the snapshot with `npx vscode-tmgrammar-snap -u -g src/test/grammar/stubs/lua.tmLanguage.json -g src/test/grammar/stubs/xml.tmLanguage.json "src/test/grammar/snap/*.mkiv"` and review the diff.
 
@@ -315,6 +337,8 @@ Build uses: `context --synctex=repeat` plus `context.build.args`.
 
 ```
 src/extension.ts
+src/compat/latexWorkshopConflict.ts
+src/compat/latexWorkshopConflictPolicy.ts
 src/toolchain/discover.ts
 src/lsp/digestifEnv.ts
 src/lsp/digestifClient.ts
