@@ -2,28 +2,40 @@ import * as vscode from 'vscode';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { resolveToolchain, ToolchainError, type Toolchain } from './toolchain/discover';
-import { runContextBuild } from './build/compiler';
+import type { BuildResult } from './build/compiler';
 import { gateJobArtifacts, type JobSnapshot } from './build/artifactGate';
+import { BuildController } from './build/buildController';
 import { forwardSync, backwardSync, SynctexError } from './synctex/mtxSynctex';
 import { PdfPanel } from './viewer/pdfPanel';
 import { resolveRootFile, type RootResolution } from './project/rootFile';
 import { createDigestifClient, type DigestifClientHandle } from './lsp/digestifClient';
 import { maybeOfferTexContextAssociation } from './project/texAssociation';
+import {
+  ContextDocumentLinkProvider,
+  ContextFigureHoverProvider,
+} from './links/documentLinks';
+import {
+  ContextFoldingRangeProvider,
+  publishFoldDiagnostics,
+} from './folding/startStopFolding';
 
-/** Bump when shipping a SyncTeX/viewer/LSP behavior change Sir must verify in Output. */
-export const BUILD_ID = 'digestif-lsp-v9';
+/** Bump when shipping a SyncTeX/viewer/LSP/diagnostics behavior change Sir must verify in Output. */
+export const BUILD_ID = 'diagnostics-links-fold-onsave-v1';
 
 let output: vscode.OutputChannel;
 let digestifOutput: vscode.OutputChannel;
 let pdfPanel: PdfPanel;
 let rootStatus: vscode.StatusBarItem;
+let buildStatus: vscode.StatusBarItem;
 let snapshot: JobSnapshot | undefined;
 let generation = 0;
-let building = false;
 let lastRootResolution: RootResolution | undefined;
 let backwardInFlight = false;
 let digestif: DigestifClientHandle | undefined;
 let extensionContext: vscode.ExtensionContext | undefined;
+let buildController: BuildController | undefined;
+let buildDiagnostics: vscode.DiagnosticCollection;
+let foldDiagnostics: vscode.DiagnosticCollection;
 
 function getToolchain(): Toolchain {
   return resolveToolchain();
@@ -133,85 +145,23 @@ async function pickRootFile(): Promise<void> {
   updateRootStatus();
 }
 
-async function buildAndPreview(): Promise<void> {
-  if (building) {
-    void vscode.window.showInformationMessage('A ConTeXt build is already running.');
-    return;
-  }
-
-  const active = activeTexPath();
-  const root = resolveCurrentRoot(active);
-  if (!root) {
-    void vscode.window.showErrorMessage('Open a ConTeXt / TeX source file to build.');
-    return;
-  }
-  updateRootStatus();
-
-  let toolchain: Toolchain;
+async function afterSuccessfulBuild(result: BuildResult): Promise<void> {
+  generation += 1;
   try {
-    toolchain = getToolchain();
-  } catch (err) {
-    const msg = err instanceof ToolchainError ? err.message : String(err);
-    void vscode.window.showErrorMessage(msg);
-    output.appendLine(msg);
+    snapshot = await gateJobArtifacts(result.pdfPath, generation);
+  } catch (gateErr) {
+    const msg = gateErr instanceof Error ? gateErr.message : String(gateErr);
+    output.appendLine(`[artifact gate] ${msg}`);
+    void vscode.window.showErrorMessage(`Build succeeded but PDF gate failed: ${msg}`);
     return;
   }
 
-  building = true;
-  pdfPanel.setBuilding(true, 'Building…');
-  output.clear();
-  output.show(true);
-  // DigestiF must never be awaited here. Reprint BUILD_ID after clear so Sir
-  // can see which build is running even if DigestiF logs were wiped.
-  output.appendLine(`ConTeXt SyncTeX BUILD_ID=${BUILD_ID} (build does not wait on DigestiF)`);
   output.appendLine(
-    `Building root=${root.rootFile} (rule=${root.rule})` +
-      (active && active !== root.rootFile ? `; active=${active}` : ''),
+    `[gate] PDF → ${snapshot.pdfPath}` +
+      (snapshot.synctexPath ? `; synctex → ${snapshot.synctexPath}` : '') +
+      `; jobDir=${snapshot.jobDir}`,
   );
-
-  if (extensionContext) {
-    const openDoc = vscode.workspace.textDocuments.find((d) => d.uri.fsPath === root.rootFile);
-    void maybeOfferTexContextAssociation(
-      extensionContext,
-      root.rootFile,
-      openDoc?.languageId,
-      (line) => output.appendLine(line),
-    );
-  }
-
-  try {
-    const result = await runContextBuild(toolchain, root.rootFile, { output });
-    if (result.exitCode !== 0) {
-      void vscode.window.showErrorMessage(
-        `ConTeXt build failed (exit ${result.exitCode}). See ConTeXt output.`,
-      );
-      return;
-    }
-
-    generation += 1;
-    try {
-      snapshot = await gateJobArtifacts(result.pdfPath, generation);
-    } catch (gateErr) {
-      const msg = gateErr instanceof Error ? gateErr.message : String(gateErr);
-      output.appendLine(`[artifact gate] ${msg}`);
-      void vscode.window.showErrorMessage(`Build succeeded but PDF gate failed: ${msg}`);
-      return;
-    }
-
-    output.appendLine(
-      `[gate] PDF → ${snapshot.pdfPath}` +
-        (snapshot.synctexPath ? `; synctex → ${snapshot.synctexPath}` : '') +
-        `; jobDir=${snapshot.jobDir}`,
-    );
-    await pdfPanel.showJobPdf(snapshot.pdfPath, snapshot.jobDir);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    output.appendLine(msg);
-    void vscode.window.showErrorMessage(`Build error: ${msg}`);
-  } finally {
-    building = false;
-    pdfPanel.setBuilding(false);
-  }
+  await pdfPanel.showJobPdf(snapshot.pdfPath, snapshot.jobDir);
 }
 
 async function showPdf(): Promise<void> {
@@ -276,7 +226,6 @@ async function doForwardSync(): Promise<void> {
     return;
   }
 
-  // Forward still uses the active file+line as --file (not the root).
   const file = editor.document.uri.fsPath;
   const line = editor.selection.active.line + 1;
   output.appendLine(
@@ -331,7 +280,6 @@ async function handlePdfClick(
   }
 
   backwardInFlight = true;
-  // y is already mtx top-down from the viewer.
   output.appendLine(
     `[synctex report] page=${page} x=${x} y=${y}` +
       (meta?.pdfY != null ? ` pdfY=${meta.pdfY}` : '') +
@@ -373,15 +321,29 @@ async function handlePdfClick(
   }
 }
 
+function isContextLike(doc: vscode.TextDocument): boolean {
+  return (
+    doc.languageId === 'context' ||
+    doc.languageId === 'tex' ||
+    doc.languageId === 'latex' ||
+    /\.(tex|mkiv|mkxl|mkvi|mklx|mkii|ctx)$/i.test(doc.uri.fsPath)
+  );
+}
+
 export function activate(context: vscode.ExtensionContext): void {
   extensionContext = context;
   output = vscode.window.createOutputChannel('ConTeXt');
-  // Separate channel so DigestiF stderr/LSP noise never interleaves with build logs.
   digestifOutput = vscode.window.createOutputChannel('ConTeXt DigestiF');
 
   rootStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   rootStatus.command = 'context.pickRootFile';
   rootStatus.show();
+
+  buildStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 99);
+  buildStatus.show();
+
+  buildDiagnostics = vscode.languages.createDiagnosticCollection('context.build');
+  foldDiagnostics = vscode.languages.createDiagnosticCollection('context.folding');
 
   pdfPanel = new PdfPanel(
     context.extensionUri,
@@ -398,14 +360,55 @@ export function activate(context: vscode.ExtensionContext): void {
     buildId: BUILD_ID,
   });
 
+  buildController = new BuildController({
+    output,
+    buildDiagnostics,
+    resolveToolchain: getToolchain,
+    resolveRoot: resolveCurrentRoot,
+    activeTexPath,
+    buildId: BUILD_ID,
+    buildStatus,
+    onBuildStart: () => {
+      pdfPanel.setBuilding(true, 'Building…');
+      updateRootStatus();
+      const root = lastRootResolution;
+      if (extensionContext && root) {
+        const openDoc = vscode.workspace.textDocuments.find((d) => d.uri.fsPath === root.rootFile);
+        void maybeOfferTexContextAssociation(
+          extensionContext,
+          root.rootFile,
+          openDoc?.languageId,
+          (line) => output.appendLine(line),
+        );
+      }
+    },
+    onBuildEnd: () => {
+      pdfPanel.setBuilding(false);
+    },
+    onBuildSuccess: afterSuccessfulBuild,
+  });
+
+  const foldProvider = new ContextFoldingRangeProvider(foldDiagnostics);
+  const linkProvider = new ContextDocumentLinkProvider();
+  const figureHover = new ContextFigureHoverProvider();
+  const contextSelector: vscode.DocumentSelector = [
+    { language: 'context' },
+    { language: 'tex' },
+    { pattern: '**/*.{mkiv,mkxl,mkvi,mklx,mkii,tex,ctx}' },
+  ];
+
   context.subscriptions.push(
     output,
     digestifOutput,
     rootStatus,
+    buildStatus,
+    buildDiagnostics,
+    foldDiagnostics,
     { dispose: () => pdfPanel.dispose() },
     { dispose: () => digestif?.dispose() },
+    { dispose: () => buildController?.dispose() },
     vscode.commands.registerCommand('context.buildAndPreview', () => {
-      void buildAndPreview();
+      buildController?.requestCommandBuild();
     }),
     vscode.commands.registerCommand('context.forwardSyncTeX', () => {
       void doForwardSync();
@@ -416,8 +419,26 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('context.pickRootFile', () => {
       void pickRootFile();
     }),
+    vscode.languages.registerFoldingRangeProvider(contextSelector, foldProvider),
+    vscode.languages.registerDocumentLinkProvider(contextSelector, linkProvider),
+    vscode.languages.registerHoverProvider(contextSelector, figureHover),
     vscode.window.onDidChangeActiveTextEditor(() => {
       updateRootStatus();
+    }),
+    vscode.workspace.onDidSaveTextDocument((doc) => {
+      if (!isContextLike(doc)) {
+        return;
+      }
+      const onSave = vscode.workspace.getConfiguration('context').get<boolean>('build.onSave', false);
+      if (onSave) {
+        buildController?.requestSaveBuild();
+      }
+    }),
+    vscode.workspace.onDidChangeTextDocument((e) => {
+      if (!isContextLike(e.document)) {
+        return;
+      }
+      publishFoldDiagnostics(e.document, foldDiagnostics);
     }),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('context.rootFile')) {
@@ -462,4 +483,5 @@ export function activate(context: vscode.ExtensionContext): void {
 export function deactivate(): void {
   void digestif?.stop();
   pdfPanel?.dispose();
+  buildController?.dispose();
 }

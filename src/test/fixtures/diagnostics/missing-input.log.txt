@@ -1,0 +1,16 @@
+open source     > level 1, order 1, name 'cont-yes.mkiv'
+system          > 
+system          > ConTeXt  ver: 2026.09.22 16:20 LMTX  fmt: 2026.9.27  int: english/english
+system          > 
+system          > 'cont-new.mkxl' loaded
+open source     > level 2, order 2, name '/home/ubuntu/context/tex/texmf-context/tex/context/base/mkxl/cont-new.mkxl'
+system          > beware: some patches loaded from cont-new.mkxl
+close source    > level 2, order 2, name '/home/ubuntu/context/tex/texmf-context/tex/context/base/mkxl/cont-new.mkxl'
+
+system          > files > jobname './missing-input', input './missing-input.tex', result './missing-input'
+fonts           > latin modern fonts are not preloaded
+languages       > language 'en' is active
+open source     > level 2, order 3, name './missing-input.tex'
+fonts           > preloading latin modern fonts (second stage)
+fonts           > 'fallback modern rm 12pt' is loaded
+error (input): file {does-not-exist-xyz.tex} is not found, quitting

@@ -1,0 +1,15 @@
+# LMTX clean compile stdout excerpt (no diagnostic matches)
+
+resolvers       | formats | executing runner 'run luametatex format': /home/ubuntu/context/tex/texmf-linux-64/bin/luametatex --interaction="batchmode" --jobname="clean" --socket --shell-escape --fmt=/home/ubuntu/context/tex/texmf-cache/luametatex-cache/context/5fe67e0bfe781ce0dde776fb1556f32e/formats/luametatex/cont-en.fmt --lua=/home/ubuntu/context/tex/texmf-cache/luametatex-cache/context/5fe67e0bfe781ce0dde776fb1556f32e/formats/luametatex/cont-en.lui cont-yes.mkiv --c:batchmode --c:currentrun=1 --c:fulljobname="./clean.tex" --c:input="./clean.tex" --c:kindofrun=1 --c:maxnofruns=9 --c:texmfbinpath="/home/ubuntu/context/tex/texmf-linux-64/bin"
+open source     > level 1, order 1, name 'cont-yes.mkiv'
+system          > 
+system          > ConTeXt  ver: 2026.09.22 16:20 LMTX  fmt: 2026.9.27  int: english/english
+...
+mkxl run stats  > positions: 4 collected, 0 deltas, 0 shared partials, 0 partial entries
+mkxl run stats  > used platform: linux-64, type: unix, binary subtree: texmf-linux-64
+mkxl run stats  > used engine: luametatex version: 2.11.10, functionality level: 20260922, format id: 736, memory mode: 1, compiler: gcc, cversion: 23
+mkxl run stats  > tex properties: 495867 eqtb slots used of 2097152, 54268 control sequences, 262144 hash slots, 5331 misses, approximate memory usage: 112 MB
+mkxl run stats  > lua properties: engine: lua 5.5, format 6, used memory: 49 MB, ctx: 47 MB, max: 59 MB, symbol mask: utf (τεχ)
+mkxl run stats  > runtime: 0.214 seconds, 1 processed pages, 1 shipped pages, 4.681 pages/second
+system          | total runtime: 0.431 seconds of 0.459 seconds
+

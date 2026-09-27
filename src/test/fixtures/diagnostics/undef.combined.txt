@@ -1,0 +1,98 @@
+===STDOUT===
+
+resolvers       | formats | executing runner 'run luametatex format': /home/ubuntu/context/tex/texmf-linux-64/bin/luametatex --interaction="batchmode" --jobname="undef" --socket --shell-escape --fmt=/home/ubuntu/context/tex/texmf-cache/luametatex-cache/context/5fe67e0bfe781ce0dde776fb1556f32e/formats/luametatex/cont-en.fmt --lua=/home/ubuntu/context/tex/texmf-cache/luametatex-cache/context/5fe67e0bfe781ce0dde776fb1556f32e/formats/luametatex/cont-en.lui cont-yes.mkiv --c:batchmode --c:currentrun=1 --c:fulljobname="./undef.tex" --c:input="./undef.tex" --c:kindofrun=1 --c:maxnofruns=9 --c:texmfbinpath="/home/ubuntu/context/tex/texmf-linux-64/bin"
+open source     > level 1, order 1, name 'cont-yes.mkiv'
+system          > 
+system          > ConTeXt  ver: 2026.09.22 16:20 LMTX  fmt: 2026.9.27  int: english/english
+system          > 
+system          > 'cont-new.mkxl' loaded
+open source     > level 2, order 2, name '/home/ubuntu/context/tex/texmf-context/tex/context/base/mkxl/cont-new.mkxl'
+system          > beware: some patches loaded from cont-new.mkxl
+close source    > level 2, order 2, name '/home/ubuntu/context/tex/texmf-context/tex/context/base/mkxl/cont-new.mkxl'
+
+system          > files > jobname './undef', input './undef.tex', result './undef'
+fonts           > latin modern fonts are not preloaded
+languages       > language 'en' is active
+open source     > level 2, order 3, name './undef.tex'
+fonts           > preloading latin modern fonts (second stage)
+fonts           > otf loading > loading '/home/ubuntu/context/tex/texmf/fonts/data/gust/lm/lmroman10-regular.otf', hash 'lmroman10-regular'
+fonts           > otf loading > loading done
+fonts           > otf loading > saving '/home/ubuntu/context/tex/texmf/fonts/data/gust/lm/lmroman10-regular.otf' in cache
+system          > lua > compiling '/home/ubuntu/context/tex/texmf-cache/luametatex-cache/context/5fe67e0bfe781ce0dde776fb1556f32e/fonts/otl/lmroman10-regular.tma' into '/home/ubuntu/context/tex/texmf-cache/luametatex-cache/context/5fe67e0bfe781ce0dde776fb1556f32e/fonts/otl/lmroman10-regular.tmd'
+system          > lua > dumping '/home/ubuntu/context/tex/texmf-cache/luametatex-cache/context/5fe67e0bfe781ce0dde776fb1556f32e/fonts/otl/lmroman10-regular.tma' into '/home/ubuntu/context/tex/texmf-cache/luametatex-cache/context/5fe67e0bfe781ce0dde776fb1556f32e/fonts/otl/lmroman10-regular.tmd' stripped
+fonts           > otf loading > loading, optimizing, packing and caching time 0.036
+fonts           > otf loading > loading '/home/ubuntu/context/tex/texmf/fonts/data/gust/lm/latinmodern-math.otf', hash 'latinmodern-math'
+otf reader      > discarding 82 self referencing horizontal variant entries
+otf reader      > discarding 94 self referencing vertical variant entries
+fonts           > otf loading > loading done
+fonts           > otf loading > saving '/home/ubuntu/context/tex/texmf/fonts/data/gust/lm/latinmodern-math.otf' in cache
+system          > lua > compiling '/home/ubuntu/context/tex/texmf-cache/luametatex-cache/context/5fe67e0bfe781ce0dde776fb1556f32e/fonts/otl/latinmodern-math.tma' into '/home/ubuntu/context/tex/texmf-cache/luametatex-cache/context/5fe67e0bfe781ce0dde776fb1556f32e/fonts/otl/latinmodern-math.tmd'
+system          > lua > dumping '/home/ubuntu/context/tex/texmf-cache/luametatex-cache/context/5fe67e0bfe781ce0dde776fb1556f32e/fonts/otl/latinmodern-math.tma' into '/home/ubuntu/context/tex/texmf-cache/luametatex-cache/context/5fe67e0bfe781ce0dde776fb1556f32e/fonts/otl/latinmodern-math.tmd' stripped
+fonts           > otf loading > loading, optimizing, packing and caching time 0.102
+fonts           > otf loading > loading '/home/ubuntu/context/tex/texmf/fonts/data/cms/companion/LatinModernMathCompanion-Regular.otf', hash 'latinmodernmathcompanion-regular'
+otf reader      > discarding 43 self referencing vertical variant entries
+fonts           > otf loading > loading done
+fonts           > otf loading > saving '/home/ubuntu/context/tex/texmf/fonts/data/cms/companion/LatinModernMathCompanion-Regular.otf' in cache
+system          > lua > compiling '/home/ubuntu/context/tex/texmf-cache/luametatex-cache/context/5fe67e0bfe781ce0dde776fb1556f32e/fonts/otl/latinmodernmathcompanion-regular.tma' into '/home/ubuntu/context/tex/texmf-cache/luametatex-cache/context/5fe67e0bfe781ce0dde776fb1556f32e/fonts/otl/latinmodernmathcompanion-regular.tmd'
+system          > lua > dumping '/home/ubuntu/context/tex/texmf-cache/luametatex-cache/context/5fe67e0bfe781ce0dde776fb1556f32e/fonts/otl/latinmodernmathcompanion-regular.tma' into '/home/ubuntu/context/tex/texmf-cache/luametatex-cache/context/5fe67e0bfe781ce0dde776fb1556f32e/fonts/otl/latinmodernmathcompanion-regular.tmd' stripped
+fonts           > otf loading > loading, optimizing, packing and caching time 0.008
+fonts           > 'fallback modern rm 12pt' is loaded
+tex error       > tex error on line 2 in file ./undef.tex: Undefined control sequence
+<line 4.2> 
+    Hello \xyzzyUndefined
+1     \starttext
+2 >>  Hello \xyzzyUndefined
+3     \stoptext
+4     
+The control sequence at the end of the top line of your error message was never
+\def'ed. You can just continue as I'll forget about whatever was undefined.
+
+mtx-context     | fatal error: return code: 1
+===LOG===
+open source     > level 1, order 1, name 'cont-yes.mkiv'
+system          > 
+system          > ConTeXt  ver: 2026.09.22 16:20 LMTX  fmt: 2026.9.27  int: english/english
+system          > 
+system          > 'cont-new.mkxl' loaded
+open source     > level 2, order 2, name '/home/ubuntu/context/tex/texmf-context/tex/context/base/mkxl/cont-new.mkxl'
+system          > beware: some patches loaded from cont-new.mkxl
+close source    > level 2, order 2, name '/home/ubuntu/context/tex/texmf-context/tex/context/base/mkxl/cont-new.mkxl'
+
+system          > files > jobname './undef', input './undef.tex', result './undef'
+fonts           > latin modern fonts are not preloaded
+languages       > language 'en' is active
+open source     > level 2, order 3, name './undef.tex'
+fonts           > preloading latin modern fonts (second stage)
+fonts           > otf loading > loading '/home/ubuntu/context/tex/texmf/fonts/data/gust/lm/lmroman10-regular.otf', hash 'lmroman10-regular'
+fonts           > otf loading > loading done
+fonts           > otf loading > saving '/home/ubuntu/context/tex/texmf/fonts/data/gust/lm/lmroman10-regular.otf' in cache
+system          > lua > compiling '/home/ubuntu/context/tex/texmf-cache/luametatex-cache/context/5fe67e0bfe781ce0dde776fb1556f32e/fonts/otl/lmroman10-regular.tma' into '/home/ubuntu/context/tex/texmf-cache/luametatex-cache/context/5fe67e0bfe781ce0dde776fb1556f32e/fonts/otl/lmroman10-regular.tmd'
+system          > lua > dumping '/home/ubuntu/context/tex/texmf-cache/luametatex-cache/context/5fe67e0bfe781ce0dde776fb1556f32e/fonts/otl/lmroman10-regular.tma' into '/home/ubuntu/context/tex/texmf-cache/luametatex-cache/context/5fe67e0bfe781ce0dde776fb1556f32e/fonts/otl/lmroman10-regular.tmd' stripped
+fonts           > otf loading > loading, optimizing, packing and caching time 0.036
+fonts           > otf loading > loading '/home/ubuntu/context/tex/texmf/fonts/data/gust/lm/latinmodern-math.otf', hash 'latinmodern-math'
+otf reader      > discarding 82 self referencing horizontal variant entries
+otf reader      > discarding 94 self referencing vertical variant entries
+fonts           > otf loading > loading done
+fonts           > otf loading > saving '/home/ubuntu/context/tex/texmf/fonts/data/gust/lm/latinmodern-math.otf' in cache
+system          > lua > compiling '/home/ubuntu/context/tex/texmf-cache/luametatex-cache/context/5fe67e0bfe781ce0dde776fb1556f32e/fonts/otl/latinmodern-math.tma' into '/home/ubuntu/context/tex/texmf-cache/luametatex-cache/context/5fe67e0bfe781ce0dde776fb1556f32e/fonts/otl/latinmodern-math.tmd'
+system          > lua > dumping '/home/ubuntu/context/tex/texmf-cache/luametatex-cache/context/5fe67e0bfe781ce0dde776fb1556f32e/fonts/otl/latinmodern-math.tma' into '/home/ubuntu/context/tex/texmf-cache/luametatex-cache/context/5fe67e0bfe781ce0dde776fb1556f32e/fonts/otl/latinmodern-math.tmd' stripped
+fonts           > otf loading > loading, optimizing, packing and caching time 0.102
+fonts           > otf loading > loading '/home/ubuntu/context/tex/texmf/fonts/data/cms/companion/LatinModernMathCompanion-Regular.otf', hash 'latinmodernmathcompanion-regular'
+otf reader      > discarding 43 self referencing vertical variant entries
+fonts           > otf loading > loading done
+fonts           > otf loading > saving '/home/ubuntu/context/tex/texmf/fonts/data/cms/companion/LatinModernMathCompanion-Regular.otf' in cache
+system          > lua > compiling '/home/ubuntu/context/tex/texmf-cache/luametatex-cache/context/5fe67e0bfe781ce0dde776fb1556f32e/fonts/otl/latinmodernmathcompanion-regular.tma' into '/home/ubuntu/context/tex/texmf-cache/luametatex-cache/context/5fe67e0bfe781ce0dde776fb1556f32e/fonts/otl/latinmodernmathcompanion-regular.tmd'
+system          > lua > dumping '/home/ubuntu/context/tex/texmf-cache/luametatex-cache/context/5fe67e0bfe781ce0dde776fb1556f32e/fonts/otl/latinmodernmathcompanion-regular.tma' into '/home/ubuntu/context/tex/texmf-cache/luametatex-cache/context/5fe67e0bfe781ce0dde776fb1556f32e/fonts/otl/latinmodernmathcompanion-regular.tmd' stripped
+fonts           > otf loading > loading, optimizing, packing and caching time 0.008
+fonts           > 'fallback modern rm 12pt' is loaded
+tex error       > tex error on line 2 in file ./undef.tex: Undefined control sequence
+<line 4.2> 
+    Hello \xyzzyUndefined
+1     \starttext
+2 >>  Hello \xyzzyUndefined
+3     \stoptext
+4     
+The control sequence at the end of the top line of your error message was never
+\def'ed. You can just continue as I'll forget about whatever was undefined.
+
+===STDERR===

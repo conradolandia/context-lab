@@ -1,0 +1,12 @@
+10:system          > files > jobname './underfull', input './underfull.tex', result './underfull'
+13:open source     > level 2, order 3, name './underfull.tex'
+16:pack quality    > loose hbox at line 2 in file './underfull.tex': x (badness 10000)
+18:close source    > level 2, order 3, name './underfull.tex'
+25:system          > text: underfull
+33:system          >    6: filename=/home/ubuntu/context-fixtures/underfull.tex format=tex foundname=/home/ubuntu/context-fixtures/underfull.tex fullname=/home/ubuntu/context-fixtures/underfull.tex usedmethod=direct
+47:system          >   fulljobname="./underfull.tex"
+48:system          >   input="./underfull.tex"
+54:system          >    1: ./underfull.tex
+56:modules         > start used modules
+57:modules         > stop used modules
+138:mkxl run stats  > result saved in file: underfull.pdf, compresslevel 1, objectcompresslevel 3, 5 streams, 0 uncompressed, 4 compressed, 1 not compressed, threshold 40
