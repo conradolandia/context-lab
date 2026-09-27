@@ -2,7 +2,7 @@
   "name": "context-tools",
   "displayName": "ConTeXt Tools",
   "description": "ConTeXt SyncTeX PDF preview, DigestiF language server, and TextMate grammar",
-  "version": "0.1.19",
+  "version": "0.1.20",
   "publisher": "context-lab",
   "engines": {
     "vscode": "^1.85.0"
@@ -11,7 +11,9 @@
     "Other"
   ],
   "activationEvents": [
-    "onLanguage:tex"
+    "onLanguage:tex",
+    "onLanguage:context",
+    "onView:context.projectView"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -50,6 +52,24 @@
         ]
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "context-lab",
+          "title": "ConTeXt",
+          "icon": "media/context-activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "context-lab": [
+        {
+          "id": "context.projectView",
+          "name": "Project",
+          "contextualTitle": "ConTeXt Project"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "context.buildAndPreview",
@@ -66,8 +86,67 @@
       {
         "command": "context.pickRootFile",
         "title": "ConTeXt: Set Main (Root) File"
+      },
+      {
+        "command": "context.projectView.refresh",
+        "title": "ConTeXt: Refresh Project View",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "context.projectView.revealActive",
+        "title": "ConTeXt: Reveal Active File in Project View"
+      },
+      {
+        "command": "context.projectView.buildNode",
+        "title": "Build",
+        "icon": "$(play)"
+      },
+      {
+        "command": "context.projectView.forwardSyncNode",
+        "title": "Forward SyncTeX",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "context.projectView.setRootFromNode",
+        "title": "Set as Main (Root) File"
       }
     ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "context.projectView.refresh",
+          "when": "view == context.projectView",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "context.projectView.buildNode",
+          "when": "view == context.projectView && viewItem =~ /context\\.projectNode\\.(product|component|document)/",
+          "group": "inline@1"
+        },
+        {
+          "command": "context.projectView.forwardSyncNode",
+          "when": "view == context.projectView && viewItem =~ /context\\.projectNode\\.(product|component|document|environment|input)/",
+          "group": "inline@2"
+        },
+        {
+          "command": "context.projectView.buildNode",
+          "when": "view == context.projectView && viewItem =~ /context\\.projectNode\\.(product|component|document|project)/",
+          "group": "context@1"
+        },
+        {
+          "command": "context.projectView.forwardSyncNode",
+          "when": "view == context.projectView && viewItem =~ /context\\.projectNode\\.(product|component|document|environment|input)/",
+          "group": "context@2"
+        },
+        {
+          "command": "context.projectView.setRootFromNode",
+          "when": "view == context.projectView && viewItem =~ /context\\.projectNode\\.(product|component|document|project)/",
+          "group": "context@3"
+        }
+      ]
+    },
     "keybindings": [
       {
         "command": "context.forwardSyncTeX",
@@ -115,7 +194,7 @@
         "context.rootFile": {
           "type": "string",
           "default": "",
-          "description": "Main ConTeXt file to compile (workspace-relative or absolute). Empty = auto-detect via % !TEX root, \\startcomponent\u2192\\product, or the active file."
+          "description": "Main ConTeXt file to compile (workspace-relative or absolute). Empty = auto-detect via % !TEX root, \\startcomponent->\\product, or the active file."
         },
         "context.digestif.enabled": {
           "type": "boolean",
@@ -131,6 +210,33 @@
           "type": "boolean",
           "default": false,
           "description": "If true, never prompt to associate *.tex with the ConTeXt language for DigestiF. Also set via the prompt's Don't ask again action (workspace state)."
+        },
+        "context.projectView.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the ConTeXt Project TreeView in the ConTeXt activity-bar container."
+        },
+        "context.projectView.includeInputs": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, show \\input children under products in the Project view."
+        },
+        "context.projectView.includeModules": {
+          "type": "boolean",
+          "default": false,
+          "description": "Reserved. \\usemodule / \\externalfigure are not shown in the Project tree (document links cover them)."
+        },
+        "context.projectView.maxFiles": {
+          "type": "number",
+          "default": 500,
+          "minimum": 1,
+          "description": "Stop expanding the project graph after this many files; remaining includes are truncated."
+        },
+        "context.projectView.refreshDebounceMs": {
+          "type": "number",
+          "default": 300,
+          "minimum": 0,
+          "description": "Debounce interval (ms) before rescanning the project graph after edits or saves."
         }
       }
     }
