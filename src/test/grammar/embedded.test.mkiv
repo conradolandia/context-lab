@@ -1,0 +1,86 @@
+% SYNTAX TEST "text.tex.context" "Lua, XML and MetaPost regions"
+\startluacode
+% <------------- keyword.control.start.context
+local n = 1 -- lua comment
+% <----- meta.embedded.block.lua keyword.local.lua
+%           ^^^^^^^^^^^^^^ meta.embedded.block.lua comment.line.double-dash.lua - comment.line.percentage.context
+context("% not a TeX comment \\stoptext")
+%        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ meta.embedded.block.lua string.quoted.double.lua - comment.line.percentage.context
+\stopluacode after
+% <------------ keyword.control.stop.context - meta.embedded.block.lua
+%           ^^^^^^ - meta.embedded.block.lua
+\startluasetups[demo]
+% <--------------- keyword.control.start.context
+%               ^^^^ meta.options.context
+for i = 1, 3 do end
+% <--- meta.embedded.block.lua keyword.control.lua
+\stopluasetups
+% <-------------- keyword.control.stop.context
+\startctxfunction MyFunction
+% <----------------- keyword.control.start.context
+%                 ^^^^^^^^^^ entity.name.function.context
+  return 1
+% ^^^^^^ meta.embedded.block.lua keyword.control.lua
+\stopctxfunction
+% <---------------- keyword.control.stop.context
+Value \ctxlua{context({"a"}[1])} and \directlua{tex.print("x")}.
+%     ^^^^^^^ support.function.context
+%             ^^^^^^^^ meta.embedded.inline.lua
+%                     ^ meta.embedded.inline.lua
+%                      ^^^ meta.embedded.inline.lua string.quoted.double.lua
+%                          ^^^^ meta.embedded.inline.lua
+%                              ^ punctuation.definition.group.end.context - meta.embedded.inline.lua
+%                               ^^^^^ - meta.embedded.inline.lua
+%                                    ^^^^^^^^^^ support.function.context
+%                                                         ^^^ meta.embedded.inline.lua string.quoted.double.lua
+%                                                              ^ - meta.embedded.inline.lua
+\luaexpr{1 + 2} \ctxcommand{foo()} \latelua{x()}
+%        ^^^^^ meta.embedded.inline.lua
+%                           ^^^^^ meta.embedded.inline.lua
+%                                           ^^^ meta.embedded.inline.lua
+\startXML
+% <--------- keyword.control.start.context
+<doc><p>Text % here</p><!-- note --></doc>
+%^^^ meta.embedded.block.xml entity.name.tag.localname.xml
+%       ^^^^^^^^^^^ meta.embedded.block.xml - comment.line.percentage.context
+%                      ^^^^^^^^^^^^^ meta.embedded.block.xml comment.block.xml
+\stopXML
+% <-------- keyword.control.stop.context - meta.embedded.block.xml
+\startPARSEDXML
+% <--------------- keyword.control.start.context
+<a/>
+%^ meta.embedded.block.xml entity.name.tag.localname.xml
+\stopPARSEDXML
+% <-------------- keyword.control.stop.context
+\startxmlsetups xml:doc
+% <--------------- keyword.control.start.context
+  \xmlflush{#1}
+% ^^^^^^^^^ support.function.context - meta.embedded.block.xml
+%           ^^ variable.parameter.context
+\stopxmlsetups
+% <-------------- keyword.control.stop.context
+\startMPcode{doublefun}
+% <------------ keyword.control.start.context
+%            ^^^^^^^^^ meta.group.braces.context
+  draw fullcircle ; % \bold{x} $y$
+% <---------------------------------- meta.embedded.block.metapost - comment.line.percentage.context support.function.context meta.math.inline.context
+\stopMPcode after
+% <----------- keyword.control.stop.context - meta.embedded.block.metapost
+%          ^^^^^^ - meta.embedded.block.metapost
+\startuseMPgraphic{name}{a,b}
+% <------------------ keyword.control.start.context
+%                  ^^^^ meta.group.braces.context
+  \stopMPcode fill unitsquare ;
+% ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ meta.embedded.block.metapost
+\stopuseMPgraphic
+% <----------------- keyword.control.stop.context
+\startMPpage[offset=1pt]
+% <------------ keyword.control.start.context
+%            ^^^^^^ entity.other.attribute-name.context
+  draw origin ;
+% ^^^^^^^^^^^^^ meta.embedded.block.metapost
+\stopMPpage
+% <----------- keyword.control.stop.context
+\startSAMPLE x \stopSAMPLE
+% <------------ keyword.control.start.context - meta.embedded.block.metapost
+%           ^^^ - meta.embedded.block.metapost

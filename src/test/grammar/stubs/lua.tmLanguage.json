@@ -1,0 +1,23 @@
+{
+  "name": "Lua (test stub)",
+  "scopeName": "source.lua",
+  "patterns": [
+    {
+      "match": "--.*$",
+      "name": "comment.line.double-dash.lua"
+    },
+    {
+      "begin": "\"",
+      "end": "\"",
+      "name": "string.quoted.double.lua"
+    },
+    {
+      "match": "\\blocal\\b",
+      "name": "keyword.local.lua"
+    },
+    {
+      "match": "\\b(?:function|end|if|then|else|for|in|do|return)\\b",
+      "name": "keyword.control.lua"
+    }
+  ]
+}

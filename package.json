@@ -31,6 +31,25 @@
         "configuration": "./language-configuration.json"
       }
     ],
+    "grammars": [
+      {
+        "language": "context",
+        "scopeName": "text.tex.context",
+        "path": "./syntaxes/context.tmLanguage.json",
+        "embeddedLanguages": {
+          "meta.embedded.block.lua": "lua",
+          "meta.embedded.inline.lua": "lua",
+          "meta.embedded.block.xml": "xml"
+        },
+        "tokenTypes": {
+          "string.unquoted.value.context": "other"
+        },
+        "unbalancedBracketScopes": [
+          "markup.inline.raw.context",
+          "markup.raw.block.context"
+        ]
+      }
+    ],
     "commands": [
       {
         "command": "context.buildAndPreview",
@@ -115,7 +134,8 @@
     "vscode:prepublish": "npm run compile",
     "compile": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
-    "test": "npm run compile && node --test dist/test/**/*.test.js",
+    "test": "npm run compile && node --test dist/test/**/*.test.js && npm run test:grammar",
+    "test:grammar": "vscode-tmgrammar-test -g src/test/grammar/stubs/lua.tmLanguage.json -g src/test/grammar/stubs/xml.tmLanguage.json \"src/test/grammar/*.test.mkiv\" && vscode-tmgrammar-snap -g src/test/grammar/stubs/lua.tmLanguage.json -g src/test/grammar/stubs/xml.tmLanguage.json \"src/test/grammar/snap/*.mkiv\"",
     "handshake:context": "node scripts/digestif-context-handshake.mjs",
     "lint": "tsc -p . --noEmit"
   },
@@ -123,7 +143,8 @@
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
     "esbuild": "^0.25.0",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "vscode-tmgrammar-test": "0.1.3"
   },
   "dependencies": {
     "pdfjs-dist": "^4.10.38",

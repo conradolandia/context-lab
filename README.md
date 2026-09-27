@@ -143,6 +143,57 @@ Order (first match wins):
 
 The status bar shows `ConTeXt: <rootname>`; click it to set or clear `context.rootFile` for the workspace. Build / Show PDF use the resolved root’s PDF and synctex; Forward SyncTeX still passes the **active** file+line to `--file`.
 
+## Syntax highlighting and folding
+
+`syntaxes/context.tmLanguage.json` is a hand-written TextMate grammar (scope `text.tex.context`) for the `context` language. It uses standard scope names, so ordinary themes color it; it does not use the `context.*` scopes of the stock `mtx-vscode` grammar.
+
+| Construct | Scope |
+| --- | --- |
+| `% comment` (not `\%`) | `comment.line.percentage.context` |
+| `\start…` / `\stop…` | `keyword.control.start.context` / `keyword.control.stop.context` |
+| Other control sequences (`\[a-zA-Z]+`) | `support.function.context` |
+| `\%`, `\$`, `\{`, `\\`, `\,` … | `constant.character.escape.context` |
+| `#1` … `#9`, `##1` | `variable.parameter.context` |
+| `[...]` | `meta.options.context` |
+| `key=value` inside `[...]` | `entity.other.attribute-name.context`, value text `string.unquoted.value.context` |
+| `{...}` | `meta.group.braces.context` |
+| `$…$`, `\m{}`, `\math{}`, `\mathematics{}` | `meta.math.inline.context`, body `support.class.math.context` |
+| `$$…$$`, `\startformula … \stopformula` | `meta.math.display.context`, body `support.class.math.context` |
+| `\type{}`, `\type<<…>>`, `\type\|…\|`, `\typ` | `markup.inline.raw.context` |
+| `\starttyping`, `\startTEX`, `\startMP`, `\startHTML`, `\startCSS` | body `markup.raw.block.context` |
+| `\startluacode`, `\startluasetups`, `\startlua`, `\startLUA`, `\startctxfunction`, `\startctxfunctiondefinition` | body `meta.embedded.block.lua` (built-in `source.lua`) |
+| `\ctxlua{}`, `\directlua{}`, `\luaexpr{}`, `\ctxcommand{}`, `\latelua{}` | body `meta.embedded.inline.lua` (built-in `source.lua`) |
+| `\startXML`, `\startPARSEDXML` | body `meta.embedded.block.xml` (built-in `text.xml`) |
+| `\start…MP…` (`\startMPcode`, `\startuseMPgraphic`, `\startMPpage`, …) | body `meta.embedded.block.metapost`, not highlighted |
+
+Notes:
+
+- Lua and XML bodies map to the `lua` and `xml` languages (`embeddedLanguages`), so comment toggling uses `--` and `<!-- -->` there.
+- Value text in `key=value` has token type `other` (`tokenTypes`), not `string`, so the default `editor.quickSuggestions` setting (off in strings) does not suppress completion there.
+- Brackets inside verbatim bodies are excluded from bracket matching and colorization (`unbalancedBracketScopes`).
+- `\startxmlsetups` and `\startbuffer` bodies are highlighted as TeX: setups contain TeX, and buffer contents are not known in advance.
+- English interface only. Command names use ASCII letters; `\unprotect` names with `_`, `!` or `?` split at those characters. Environments defined with `\definetyping` are not recognized as verbatim.
+- A `[` in running text also opens an options region until the next `]`.
+
+**Folding.** `language-configuration.json` defines `folding.markers`: a line starting with `\start<name>` opens a region and a line starting with `\stop<name>` closes it; `%region` / `%endregion` (also `% #region`) do the same. VS Code uses these markers only when no folding range provider is registered for the document (neither this extension nor Digestif registers one). Limitations:
+
+- Start and stop names are not matched. The markers pair like a stack, so `\startsection … \stopsubsection` folds as one region.
+- Markers only count at the start of a line. A line that contains both `\start<name>` and `\stop<name>` (for example `\startitemize \item a \stopitemize`) is ignored.
+- Lines inside `\starttyping` or `\startluacode` that begin with `\start…` or `\stop…` also count as markers.
+
+**LaTeX Workshop conflict.** LaTeX Workshop 10.19.0 also contributes language id `context` (for `.ctx`) and maps it to its LaTeX grammar `text.tex.latex`. VS Code keeps one grammar per language id, and the last one registered wins. Tested with `_workbench.captureSyntaxTokens`:
+
+| VS Code | Installed | Grammar used for `.mkiv` |
+| --- | --- | --- |
+| 1.139.1 | this extension only | `text.tex.context` |
+| 1.139.1 | this extension + LaTeX Workshop 10.19.0 (either install order) | `text.tex.latex` |
+| 1.139.1 | same, LaTeX Workshop disabled | `text.tex.context` |
+| 1.85.2 | this extension + LaTeX Workshop 9.20.1 (newest for 1.85) | `text.tex.context` (9.20.1 has no `context` language) |
+
+With both extensions installed, disable LaTeX Workshop for ConTeXt workspaces (**Extensions → LaTeX Workshop → Disable (Workspace)**). When this extension runs from F5 (Extension Development Host), its grammar is registered last and wins, so F5 sessions do not show the conflict.
+
+**Tests.** `npm test` runs the grammar tests (`npm run test:grammar`) after the unit tests. Assertion fixtures (`vscode-tmgrammar-test`) are `src/test/grammar/*.test.mkiv`; a snapshot of a sample document is in `src/test/grammar/snap/`. `src/test/grammar/stubs/` has minimal `source.lua` and `text.xml` grammars that use the scope names of the VS Code built-in grammars. After an intended grammar change, regenerate the snapshot with `npx vscode-tmgrammar-snap -u -g src/test/grammar/stubs/lua.tmLanguage.json -g src/test/grammar/stubs/xml.tmLanguage.json "src/test/grammar/snap/*.mkiv"` and review the diff.
+
 ## SyncTeX coordinates
 
 mtxrun `--script synctex` exchanges **y top-down** (origin at the page top). The viewer converts PDF.js bottom-up click y with `pageHeight - pdfY` before `--report`, and maps forward `lly`/`ury` as top-down when highlighting.
@@ -194,6 +245,8 @@ src/build/artifactGate.ts
 src/synctex/mtxSynctex.ts
 src/viewer/pdfPanel.ts
 media/viewer/
+syntaxes/context.tmLanguage.json
+src/test/grammar/
 ```
 
-Phase 2b (later): tree-sitter-context for folding/highlighting.
+Phase 2b (later): tree-sitter-context for semantic tokens and name-aware folding.

@@ -1,0 +1,73 @@
+% !TEX root = sample.mkiv
+\setuppapersize[A5]
+\setuphead
+  [section]
+  [style=\bfb,
+   before={\blank[big]},
+   color=darkred]
+
+\starttext
+
+\startchapter[title={Uso de \ConTeXt}, reference=ch:uso]
+
+Véase p.~5 y la figura~\in[fig:x]. Texto con … y ĥ, Żółw.
+Precio: 10\% % comentario al final
+
+\startsection[title=Fórmulas]
+  La energía es $E = mc^2$ y \m{a_1 + b_1}.
+  \startformula
+    \int_0^1 x^2 \, dx = \frac{1}{3} % comentario
+  \stopformula
+
+  \startsubsection[title=Tablas]
+    \starttabulate[|l|r|]
+      \NC uno \NC 1 \NR
+      \NC dos \NC 2 \NR
+    \stoptabulate
+
+    \bTABLE
+      \bTR \bTD a & b \eTD \bTD $|x|$ \eTD \eTR
+    \eTABLE
+  \stopsubsection
+\stopsection
+
+\startsection[title=Código]
+  Inline: \type{\starttext{}} and \type|a{b| and \type<<x>>.
+  \starttyping[option=TEX]
+  \stoptext % not a comment here
+  \stoptyping
+
+  \startluacode
+    local n = 1 -- comment
+    context("\\stoptext")
+  \stopluacode
+
+  \ctxlua{context({"a"}[1])} and \directlua{tex.print("x")}.
+
+  \startctxfunction MyFunction
+    context("ok")
+  \stopctxfunction
+
+  \startXML
+  <doc><p>Texto</p><!-- nota --></doc>
+  \stopXML
+
+  \startMPcode{doublefun}
+    draw fullcircle scaled 2cm ; % \bold{not TeX}
+  \stopMPcode
+
+  \startuseMPgraphic{name}{a,b}
+    fill unitsquare ;
+  \stopuseMPgraphic
+\stopsection
+
+%region Macros
+\define[2]\Pair{(#1, #2)}
+\startsetups[demo]
+  \setupbodyfont[12pt]
+\stopsetups
+%endregion
+
+\stopchapter
+
+\stoptext

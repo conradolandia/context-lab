@@ -1,0 +1,43 @@
+% SYNTAX TEST "text.tex.context" "options, key=value pairs, brace groups"
+\setupbodyfont[palatino,12pt]
+%             ^ punctuation.definition.options.begin.context
+%              ^^^^^^^^ meta.options.context - entity.other.attribute-name.context string.unquoted.value.context
+%                      ^ punctuation.separator.comma.context
+%                           ^ punctuation.definition.options.end.context
+\setuphead[section][style=bold, color=darkred]
+%          ^^^^^^^ meta.options.context - entity.other.attribute-name.context
+%                   ^^^^^ meta.options.context entity.other.attribute-name.context
+%                        ^ punctuation.separator.key-value.context
+%                         ^^^^ meta.options.context string.unquoted.value.context
+%                               ^^^^^ entity.other.attribute-name.context
+%                                     ^^^^^^^ string.unquoted.value.context
+\startsection[title={A, B and \TeX}, reference=sec:a]
+%             ^^^^^ entity.other.attribute-name.context
+%                   ^ meta.group.braces.context punctuation.definition.group.begin.context
+%                    ^^^^^^^^^ meta.group.braces.context string.unquoted.value.context
+%                             ^^^^ meta.group.braces.context support.function.context
+%                                    ^^^^^^^^^ entity.other.attribute-name.context
+%                                              ^^^^^ string.unquoted.value.context
+\setupwhitespace
+% <---------------- support.function.context
+  [before={\blank[big]},
+%  ^^^^^^ entity.other.attribute-name.context
+%          ^^^^^^ support.function.context
+%                ^ meta.group.braces.context meta.options.context punctuation.definition.options.begin.context
+%                 ^^^ meta.group.braces.context meta.options.context - string.unquoted.value.context
+   after=\blank, % comment in options
+%  ^^^^^ entity.other.attribute-name.context
+%        ^^^^^^ support.function.context
+%                ^^^^^^^^^^^^^^^^^^^^ comment.line.percentage.context
+   n=2]
+%  ^ entity.other.attribute-name.context
+%    ^ string.unquoted.value.context
+%     ^ punctuation.definition.options.end.context
+Plain text after options.
+% <------------------------- - meta.options.context
+\framed[width=2cm]{\bold{nested {deep}} text}
+%       ^^^^^ entity.other.attribute-name.context
+%             ^^^ string.unquoted.value.context
+%                               ^^^^^^ meta.group.braces.context meta.group.braces.context meta.group.braces.context
+%                                      ^^^^^ meta.group.braces.context - string
+%                                           ^ punctuation.definition.group.end.context

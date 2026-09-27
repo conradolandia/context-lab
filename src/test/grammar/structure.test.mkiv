@@ -1,0 +1,45 @@
+% SYNTAX TEST "text.tex.context" "start/stop, nested sections, tables"
+\starttext
+% <- keyword.control.start.context punctuation.definition.keyword.context
+%^^^^^^^^^ keyword.control.start.context
+\startchapter[title=One]
+% <------------- keyword.control.start.context
+%             ^^^^^ entity.other.attribute-name.context
+  \startsection[title=Two]
+% ^^^^^^^^^^^^^ keyword.control.start.context
+    \startsubsection[title=Three]
+%   ^^^^^^^^^^^^^^^^ keyword.control.start.context
+      \starttabulate[|l|r|]
+%     ^^^^^^^^^^^^^^ keyword.control.start.context
+%                    ^^^^^ meta.options.context - entity.other.attribute-name.context
+        \NC a \NC 1 \NR
+%       ^^^ support.function.context
+%                   ^^^ support.function.context
+      \stoptabulate
+%     ^^^^^^^^^^^^^ keyword.control.stop.context
+      \bTABLE \bTR \bTD x & y \eTD \eTR \eTABLE
+%     ^^^^^^^ support.function.context
+%                  ^^^^ support.function.context
+%                      ^^^^^^^ - support.function.context
+%                                       ^^^^^^^ support.function.context
+      \startxtable \startxrow \startxcell a \stopxcell \stopxrow \stopxtable
+%     ^^^^^^^^^^^^ keyword.control.start.context
+%                             ^^^^^^^^^^^ keyword.control.start.context
+%                                           ^^^^^^^^^^ keyword.control.stop.context
+%                                                                ^^^^^^^^^^^ keyword.control.stop.context
+    \stopsubsection
+%   ^^^^^^^^^^^^^^^ keyword.control.stop.context
+  \stopsection
+% ^^^^^^^^^^^^ keyword.control.stop.context
+\stopchapter
+% <------------ keyword.control.stop.context
+\startitemize \item one \stopitemize
+% <------------- keyword.control.start.context
+%             ^^^^^ support.function.context
+%                       ^^^^^^^^^^^^ keyword.control.stop.context
+\start \bf grouped \stop
+% <------ keyword.control.start.context
+%      ^^^ support.function.context
+%                  ^^^^^ keyword.control.stop.context
+\stoptext
+% <--------- keyword.control.stop.context
