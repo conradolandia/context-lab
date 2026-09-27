@@ -19,17 +19,17 @@ Then open this folder in VS Code / Cursor and press **F5** (launch config **Run 
 After the Extension Development Host starts, open the **ConTeXt** output channel. You should see:
 
 ```text
-ConTeXt Tools activated  version=0.1.20  BUILD_ID=project-view-v1
+ConTeXt Tools activated  version=0.1.21  BUILD_ID=project-view-v2
 …
-[digestif] BUILD_ID=project-view-v1 source=luarocks   (or override / path)
+[digestif] BUILD_ID=project-view-v2 source=luarocks   (or override / path)
 [digestif] launch method=direct — …
 ```
 
 Or, on DigestiF failure (build still works immediately):
 
 ```text
-[digestif] BUILD_ID=project-view-v1 failed to start: …
-[digestif] BUILD_ID=project-view-v1 giving up for this window: …
+[digestif] BUILD_ID=project-view-v2 failed to start: …
+[digestif] BUILD_ID=project-view-v2 giving up for this window: …
 ```
 
 Every **Build and Preview** reprints `BUILD_ID=…` (Output clear wipes earlier lines). DigestiF starts fire-and-forget and **never** blocks, delays, or is awaited by build/preview/SyncTeX. After one DigestiF failure it stays off until you change `context.digestif*` or reload the window.
@@ -162,9 +162,11 @@ Activity-bar container **ConTeXt** → **Project** TreeView. Scans English struc
 | environment | no | Loaded into a product; build action not offered |
 | project | refused | Shows a message; offers the first listed product if any |
 
-Repeated `\component` names collapse to one node (tooltip/description shows include count). Multi-product projects expand the product tied to the active file / `context.rootFile`; sibling products stay collapsed. Click a node to open the file. Inline/context actions: Build, Forward SyncTeX (active selection if that file is open, else line 1), Set as Main (Root) File. Refresh is on the view title bar.
+Repeated `\component` names collapse to one node (tooltip/description shows include count). Multi-product projects expand the product tied to the active file / `context.rootFile`; sibling products stay collapsed. Click a node to open the file. Inline/context actions: Build, Forward SyncTeX (active selection if that file is open, else line 1), Set as Main (Root) File. Title bar: **Reveal Active** and **Refresh**.
 
-Empty / missing-root / no-structure states show a short message pointing at opening a `.tex` / `.mkiv` file or setting `context.rootFile`. Output logs `[projectView] entry=… files=… unresolved=… …ms` on each rebuild.
+The tree is anchored to the resolved product/project (`context.rootFile` or the last discovered product/project). Opening a component only reveals/highlights that node; it does not re-root the tree to a lone component. An unrelated active file keeps the last good model and shows a short “outside this project” message on the view.
+
+Empty / missing-root / no-structure states show a short message pointing at opening a `.tex` / `.mkiv` file or setting `context.rootFile`. Output logs `[projectView] entry=… files=… unresolved=… reason=… …ms` on each rebuild.
 
 English interface command names only. Non-English structure aliases (`\inicio…`, etc.) are not matched; add them later only if a book needs them and the cost stays small.
 

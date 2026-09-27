@@ -28,7 +28,7 @@ import { registerProjectView } from './project/projectTree';
 import type { ProjectNode } from './project/projectModel';
 
 /** Bump when shipping a SyncTeX/viewer/LSP/diagnostics/project-view behavior change Sir must verify in Output. */
-export const BUILD_ID = 'project-view-v1';
+export const BUILD_ID = 'project-view-v2';
 
 let output: vscode.OutputChannel;
 let digestifOutput: vscode.OutputChannel;

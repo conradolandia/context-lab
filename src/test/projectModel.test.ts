@@ -5,6 +5,10 @@ import * as fsp from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { buildProjectModel, type ProjectNode } from '../project/projectModel';
+import {
+  collectGraphPaths,
+  resolveProjectAnchor,
+} from '../project/projectAnchor';
 import { scanStructure } from '../project/structureScan';
 
 async function tempDir(): Promise<string> {
@@ -219,5 +223,117 @@ describe('buildProjectModel', () => {
     assert.equal(off.roots[0].children.filter((c) => c.kind === 'input').length, 0);
     const on = buildProjectModel({ entryFile: product, includeInputs: true });
     assert.equal(on.roots[0].children.filter((c) => c.kind === 'input').length, 1);
+  });
+
+  it('active editor = component still returns full product tree (no re-root stub)', async () => {
+    // Mirrors ConTeXt test layout: product lists components; component files
+    // are plain \\startcomponent without \\product / \\project (common in the wild).
+    const dir = await tempDir();
+    write(dir, 'env.tex', '\\startenvironment\n\\stopenvironment\n');
+    const chap1 = write(
+      dir,
+      'chapters/one.tex',
+      '\\startcomponent one\nHello\n\\stopcomponent\n',
+    );
+    const chap2 = write(
+      dir,
+      'chapters/two.tex',
+      '\\startcomponent two\nWorld\n\\stopcomponent\n',
+    );
+    const product = write(
+      dir,
+      'product.tex',
+      [
+        '\\startproduct demo',
+        '\\environment env',
+        '\\usepath[chapters]',
+        '\\component one',
+        '\\component two',
+        '\\stopproduct',
+        '',
+      ].join('\n'),
+    );
+
+    const fromProduct = buildProjectModel({
+      entryFile: product,
+      activeFile: chap1,
+      workspaceFolders: [dir],
+    });
+    assert.equal(fromProduct.roots[0].kind, 'product');
+    const comps = fromProduct.roots[0].children.filter((c) => c.kind === 'component');
+    assert.equal(comps.length, 2);
+    assert.ok(comps.some((c) => c.fsPath === chap1));
+    assert.ok(comps.some((c) => c.fsPath === chap2));
+
+    const graph = collectGraphPaths(fromProduct.roots);
+    const anchor = resolveProjectAnchor({
+      activeFile: chap1,
+      activeText: fs.readFileSync(chap1, 'utf8'),
+      lastEntryFile: product,
+      lastGraphPaths: graph,
+      workspaceFolders: [dir],
+    });
+    assert.ok(anchor);
+    assert.equal(anchor!.entryFile, product);
+    assert.equal(anchor!.outsideGraph, false);
+
+    // Simulate the TreeView rebuild path: entry stays the product, active is the component.
+    const afterFocus = buildProjectModel({
+      entryFile: anchor!.entryFile,
+      activeFile: chap1,
+      workspaceFolders: [dir],
+    });
+    assert.equal(afterFocus.roots[0].kind, 'product');
+    assert.equal(
+      afterFocus.roots[0].children.filter((c) => c.kind === 'component').length,
+      2,
+    );
+  });
+});
+
+describe('resolveProjectAnchor', () => {
+  it('keeps last product when active is an unrelated file', async () => {
+    const dir = await tempDir();
+    const chap = write(dir, 'c.tex', '\\startcomponent\n\\stopcomponent\n');
+    const product = write(
+      dir,
+      'book.tex',
+      '\\startproduct book\n\\component c\n\\stopproduct\n',
+    );
+    const other = write(dir, 'notes.tex', '\\starttext\nnotes\n\\stoptext\n');
+    const model = buildProjectModel({ entryFile: product, workspaceFolders: [dir] });
+    const graph = collectGraphPaths(model.roots);
+    assert.ok(graph.has(chap));
+
+    const anchor = resolveProjectAnchor({
+      activeFile: other,
+      activeText: fs.readFileSync(other, 'utf8'),
+      lastEntryFile: product,
+      lastGraphPaths: graph,
+      workspaceFolders: [dir],
+    });
+    assert.ok(anchor);
+    assert.equal(anchor!.entryFile, product);
+    assert.equal(anchor!.outsideGraph, true);
+  });
+
+  it('prefers context.rootFile over active component', async () => {
+    const dir = await tempDir();
+    write(dir, 'c.tex', '\\startcomponent\n\\stopcomponent\n');
+    const product = write(
+      dir,
+      'book.tex',
+      '\\startproduct book\n\\component c\n\\stopproduct\n',
+    );
+    const chap = path.join(dir, 'c.tex');
+    const anchor = resolveProjectAnchor({
+      activeFile: chap,
+      activeText: fs.readFileSync(chap, 'utf8'),
+      rootFileSetting: product,
+      workspaceFolders: [dir],
+    });
+    assert.ok(anchor);
+    assert.equal(anchor!.entryFile, product);
+    assert.equal(anchor!.reason, 'setting:context.rootFile');
   });
 });

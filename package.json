@@ -2,7 +2,7 @@
   "name": "context-tools",
   "displayName": "ConTeXt Tools",
   "description": "ConTeXt SyncTeX PDF preview, DigestiF language server, and TextMate grammar",
-  "version": "0.1.20",
+  "version": "0.1.21",
   "publisher": "context-lab",
   "engines": {
     "vscode": "^1.85.0"
@@ -94,7 +94,8 @@
       },
       {
         "command": "context.projectView.revealActive",
-        "title": "ConTeXt: Reveal Active File in Project View"
+        "title": "ConTeXt: Reveal Active File in Project View",
+        "icon": "$(target)"
       },
       {
         "command": "context.projectView.buildNode",
@@ -114,9 +115,14 @@
     "menus": {
       "view/title": [
         {
+          "command": "context.projectView.revealActive",
+          "when": "view == context.projectView",
+          "group": "navigation@1"
+        },
+        {
           "command": "context.projectView.refresh",
           "when": "view == context.projectView",
-          "group": "navigation"
+          "group": "navigation@2"
         }
       ],
       "view/item/context": [

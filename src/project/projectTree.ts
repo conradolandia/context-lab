@@ -5,7 +5,12 @@ import {
   type ProjectModelResult,
   type ProjectNode,
 } from './projectModel';
-import { resolveRootFile } from './rootFile';
+import {
+  collectGraphPaths,
+  isStrongStructureRoot,
+  resolveProjectAnchor,
+} from './projectAnchor';
+import { scanStructure } from './structureScan';
 import * as fs from 'node:fs';
 
 export const PROJECT_VIEW_ID = 'context.projectView';
@@ -133,6 +138,22 @@ function collapsibleState(node: ProjectNode): vscode.TreeItemCollapsibleState {
   return vscode.TreeItemCollapsibleState.Collapsed;
 }
 
+function isWeakModel(model: ProjectModelResult): boolean {
+  if (model.roots.length === 0) {
+    return true;
+  }
+  if (model.roots.length === 1) {
+    const r = model.roots[0];
+    if (r.kind === 'message' || r.kind === 'document') {
+      return true;
+    }
+    if (r.kind === 'component' && r.children.length === 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export interface ProjectTreeProviderDeps {
   output: vscode.OutputChannel;
   workspaceFolderPaths: () => string[];
@@ -142,6 +163,10 @@ export interface ProjectTreeProviderDeps {
 
 /**
  * TreeDataProvider for the ConTeXt Project view.
+ *
+ * The tree is anchored to a product/project root (`context.rootFile` or the
+ * last discovered strong structure file). Focusing a component only reveals
+ * that node; it does not re-root the tree.
  */
 export class ProjectTreeProvider implements vscode.TreeDataProvider<ProjectTreeItem> {
   private readonly _onDidChangeTreeData = new vscode.EventEmitter<
@@ -150,6 +175,9 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<ProjectTreeI
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
   private model: ProjectModelResult | undefined;
+  /** Last non-weak model kept when the active file is outside the graph. */
+  private lastGoodModel: ProjectModelResult | undefined;
+  private anchoredEntry: string | undefined;
   private debounceTimer: ReturnType<typeof setTimeout> | undefined;
   private treeView: vscode.TreeView<ProjectTreeItem> | undefined;
   /** path/id → parent node for reveal */
@@ -161,6 +189,7 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<ProjectTreeI
     this.treeView = view;
   }
 
+  /** Full rescan from the current anchor (or rediscover). */
   refresh(): void {
     this.model = undefined;
     this.parentOf.clear();
@@ -177,6 +206,70 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<ProjectTreeI
       this.debounceTimer = undefined;
       this.refresh();
     }, Math.max(0, ms));
+  }
+
+  /**
+   * Active-editor change: keep the anchored tree; only rebuild when the
+   * resolved entry actually changes to a new strong product/project.
+   */
+  onActiveEditorChanged(): void {
+    const active = this.deps.activeTexPath();
+    const folders = this.deps.workspaceFolderPaths();
+    const graph = this.lastGoodModel
+      ? collectGraphPaths(this.lastGoodModel.roots)
+      : this.model
+        ? collectGraphPaths(this.model.roots)
+        : undefined;
+
+    let activeText = '';
+    if (active) {
+      try {
+        const open = vscode.workspace.textDocuments.find((d) => d.uri.fsPath === active);
+        activeText = open ? open.getText() : fs.readFileSync(active, 'utf8');
+      } catch {
+        activeText = '';
+      }
+    }
+
+    const anchor = resolveProjectAnchor({
+      activeFile: active,
+      activeText,
+      rootFileSetting: this.deps.getRootFileSetting(),
+      workspaceFolders: folders,
+      lastEntryFile: this.anchoredEntry ?? this.lastGoodModel?.entryFile,
+      lastGraphPaths: graph,
+    });
+
+    if (!anchor) {
+      void this.revealActive();
+      return;
+    }
+
+    const sameEntry =
+      this.anchoredEntry != null &&
+      path.resolve(anchor.entryFile) === path.resolve(this.anchoredEntry);
+
+    if (sameEntry || (this.model && !anchor.outsideGraph && graph?.has(path.resolve(active ?? '')))) {
+      this.applyOutsideMessage(anchor.outsideGraph, active);
+      void this.revealActive();
+      return;
+    }
+
+    // New strong root discovered (e.g. opened a different product) → rebuild.
+    if (!sameEntry) {
+      const text = readQuiet(anchor.entryFile);
+      const strong = text ? isStrongStructureRoot(scanStructure(text)) : false;
+      if (strong || this.deps.getRootFileSetting().trim()) {
+        this.anchoredEntry = path.resolve(anchor.entryFile);
+        this.refresh();
+        void this.revealActive();
+        return;
+      }
+    }
+
+    // Weak / unrelated: keep current tree.
+    this.applyOutsideMessage(true, active);
+    void this.revealActive();
   }
 
   getModel(): ProjectModelResult | undefined {
@@ -207,7 +300,6 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<ProjectTreeI
     if (!element) {
       const result = this.ensureModel();
       if (result.emptyMessage && result.roots.every((r) => r.kind === 'document' || r.kind === 'message')) {
-        // Show empty copy as a message node when only a lone document / message.
         if (result.roots.length === 1 && result.roots[0].kind === 'document') {
           return [
             new ProjectTreeItem(
@@ -283,6 +375,17 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<ProjectTreeI
     }
   }
 
+  private applyOutsideMessage(outside: boolean, active: string | undefined): void {
+    if (!this.treeView) {
+      return;
+    }
+    if (outside && active) {
+      this.treeView.message = `Active file is outside this project (${path.basename(active)}). Tree root unchanged.`;
+    } else {
+      this.treeView.message = undefined;
+    }
+  }
+
   private isEnabled(): boolean {
     return vscode.workspace.getConfiguration('context').get<boolean>('projectView.enabled', true);
   }
@@ -295,38 +398,30 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<ProjectTreeI
     const active = this.deps.activeTexPath();
     const folders = this.deps.workspaceFolderPaths();
 
-    if (!active && !this.deps.getRootFileSetting().trim() && folders.length === 0) {
-      this.model = {
-        roots: [],
-        entryFile: '',
-        truncated: false,
-        unresolvedCount: 0,
-        fileCount: 0,
-        timingsMs: { total: 0 },
-        emptyMessage:
-          'No ConTeXt product or project found. Open a .tex / .mkiv file or set context.rootFile.',
-      };
-      return this.model;
-    }
-
     let activeText = '';
-    const activePath = active ?? '';
-    if (activePath) {
+    if (active) {
       try {
-        const open = vscode.workspace.textDocuments.find((d) => d.uri.fsPath === activePath);
-        activeText = open ? open.getText() : fs.readFileSync(activePath, 'utf8');
+        const open = vscode.workspace.textDocuments.find((d) => d.uri.fsPath === active);
+        activeText = open ? open.getText() : fs.readFileSync(active, 'utf8');
       } catch {
         activeText = '';
       }
     }
 
-    const entryPath =
-      activePath ||
-      (this.deps.getRootFileSetting().trim()
-        ? resolveSettingPath(this.deps.getRootFileSetting(), folders)
-        : undefined);
+    const graph = this.lastGoodModel
+      ? collectGraphPaths(this.lastGoodModel.roots)
+      : undefined;
 
-    if (!entryPath) {
+    const anchor = resolveProjectAnchor({
+      activeFile: active,
+      activeText,
+      rootFileSetting: this.deps.getRootFileSetting(),
+      workspaceFolders: folders,
+      lastEntryFile: this.anchoredEntry ?? this.lastGoodModel?.entryFile,
+      lastGraphPaths: graph,
+    });
+
+    if (!anchor) {
       this.model = {
         roots: [],
         entryFile: '',
@@ -337,27 +432,36 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<ProjectTreeI
         emptyMessage:
           'No ConTeXt product or project found. Open a .tex / .mkiv file or set context.rootFile.',
       };
+      this.applyOutsideMessage(false, undefined);
       return this.model;
     }
-
-    const resolved = resolveRootFile({
-      activeFile: entryPath,
-      activeText: activeText || readQuiet(entryPath),
-      rootFileSetting: this.deps.getRootFileSetting(),
-      workspaceFolders: folders,
-    });
 
     const includeInputs = cfg.get<boolean>('projectView.includeInputs', false) ?? false;
     const maxFiles = cfg.get<number>('projectView.maxFiles', 500) ?? 500;
 
-    this.model = buildProjectModel({
-      entryFile: resolved.rootFile,
-      activeFile: activePath || undefined,
+    let built = buildProjectModel({
+      entryFile: anchor.entryFile,
+      activeFile: active || undefined,
       workspaceFolders: folders,
       includeInputs,
       maxFiles,
     });
 
+    // Never replace a strong tree with a lone-component stub.
+    if (isWeakModel(built) && this.lastGoodModel && !isWeakModel(this.lastGoodModel)) {
+      built = this.lastGoodModel;
+      this.applyOutsideMessage(true, active);
+    } else {
+      this.applyOutsideMessage(anchor.outsideGraph, active);
+      if (!isWeakModel(built)) {
+        this.lastGoodModel = built;
+        this.anchoredEntry = path.resolve(built.entryFile);
+      } else if (!this.anchoredEntry) {
+        this.anchoredEntry = path.resolve(anchor.entryFile);
+      }
+    }
+
+    this.model = built;
     this.parentOf.clear();
     indexParents(this.model.roots, undefined, this.parentOf);
 
@@ -365,24 +469,12 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<ProjectTreeI
     this.deps.output.appendLine(
       `[projectView] entry=${m.entryFile} files=${m.fileCount} unresolved=${m.unresolvedCount}` +
         (m.truncated ? ' truncated=1' : '') +
+        ` reason=${anchor.reason}` +
+        (anchor.outsideGraph ? ' outside=1' : '') +
         ` ${m.timingsMs.total}ms`,
     );
     return this.model;
   }
-}
-
-function resolveSettingPath(setting: string, folders: string[]): string | undefined {
-  const s = setting.trim();
-  if (!s) {
-    return undefined;
-  }
-  if (path.isAbsolute(s)) {
-    return s;
-  }
-  if (folders[0]) {
-    return path.resolve(folders[0], s);
-  }
-  return path.resolve(s);
 }
 
 function readQuiet(p: string): string {
@@ -469,8 +561,7 @@ export function registerProjectView(
       },
     ),
     vscode.window.onDidChangeActiveTextEditor(() => {
-      provider.scheduleRefresh();
-      void provider.revealActive();
+      provider.onActiveEditorChanged();
     }),
     vscode.workspace.onDidSaveTextDocument((doc) => {
       if (/\.(tex|mkiv|mkxl|mkvi|mklx|mkii|ctx)$/i.test(doc.uri.fsPath)) {
