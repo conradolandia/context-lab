@@ -18,5 +18,11 @@
     ["[", "]"],
     ["(", ")"],
     ["`", "'"]
-  ]
+  ],
+  "folding": {
+    "markers": {
+      "start": "^\\s*(?:\\\\start[a-zA-Z]+(?!.*\\\\stop[a-zA-Z])|%\\s*#?region\\b)",
+      "end": "^\\s*(?:\\\\stop[a-zA-Z]+|%\\s*#?endregion\\b)"
+    }
+  }
 }

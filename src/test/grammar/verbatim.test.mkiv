@@ -1,0 +1,37 @@
+% SYNTAX TEST "text.tex.context" "type and typing"
+\type{\starttext{}} after
+% <----- support.function.context
+%    ^ punctuation.definition.group.begin.context
+%     ^^^^^^^^^^^^ markup.inline.raw.context - keyword.control.start.context
+%                 ^ punctuation.definition.group.end.context
+%                  ^^^^^^ - markup.inline.raw.context
+\type|a{b%c| and \type<<x}>> and \typ+$y+
+%     ^^^^^ markup.inline.raw.context - comment.line.percentage.context
+%                     ^^ punctuation.definition.raw.begin.context
+%                       ^^ markup.inline.raw.context
+%                                     ^^ markup.inline.raw.context - meta.math.inline.context
+\type[option=TEX]{\bold{x}}
+%     ^^^^^^ entity.other.attribute-name.context
+%                 ^^^^^^^^ markup.inline.raw.context
+\typeface stays a command
+% <--------- support.function.context - markup.inline.raw.context
+\starttyping[option=TEX]
+% <------------ keyword.control.start.context
+%            ^^^^^^ entity.other.attribute-name.context
+\stoptext $x$ % not a comment
+% <----------------------------- markup.raw.block.context - keyword.control.stop.context comment.line.percentage.context meta.math.inline.context
+\stoptyping after
+% <----------- keyword.control.stop.context - markup.raw.block.context
+%          ^^^^^^ - markup.raw.block.context
+\startTEX
+% <--------- keyword.control.start.context
+\stoptyping inside TEX
+% <---------------------- markup.raw.block.context
+\stopTEX
+% <-------- keyword.control.stop.context
+\startMP
+% <-------- keyword.control.start.context
+draw p ;
+% <-------- markup.raw.block.context
+\stopMP
+% <------- keyword.control.stop.context

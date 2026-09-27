@@ -1,0 +1,401 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "ConTeXt",
+  "scopeName": "text.tex.context",
+  "patterns": [
+    { "include": "#content" }
+  ],
+  "repository": {
+    "content": {
+      "patterns": [
+        { "include": "#comment" },
+        { "include": "#type" },
+        { "include": "#typing" },
+        { "include": "#lua" },
+        { "include": "#xml" },
+        { "include": "#metapost" },
+        { "include": "#math" },
+        { "include": "#start-stop" },
+        { "include": "#control-sequence" },
+        { "include": "#escape" },
+        { "include": "#parameter" },
+        { "include": "#options" },
+        { "include": "#braces" }
+      ]
+    },
+    "comment": {
+      "match": "(%).*$",
+      "name": "comment.line.percentage.context",
+      "captures": {
+        "1": { "name": "punctuation.definition.comment.context" }
+      }
+    },
+    "escape": {
+      "match": "(\\\\)[^a-zA-Z]",
+      "name": "constant.character.escape.context",
+      "captures": {
+        "1": { "name": "punctuation.definition.escape.context" }
+      }
+    },
+    "control-sequence": {
+      "match": "(\\\\)[a-zA-Z]+",
+      "name": "support.function.context",
+      "captures": {
+        "1": { "name": "punctuation.definition.function.context" }
+      }
+    },
+    "start-stop": {
+      "patterns": [
+        {
+          "match": "(\\\\)start[a-zA-Z]*",
+          "name": "keyword.control.start.context",
+          "captures": {
+            "1": { "name": "punctuation.definition.keyword.context" }
+          }
+        },
+        {
+          "match": "(\\\\)stop[a-zA-Z]*",
+          "name": "keyword.control.stop.context",
+          "captures": {
+            "1": { "name": "punctuation.definition.keyword.context" }
+          }
+        }
+      ]
+    },
+    "parameter": {
+      "match": "#+[1-9]",
+      "name": "variable.parameter.context"
+    },
+    "braces": {
+      "begin": "\\{",
+      "end": "\\}",
+      "name": "meta.group.braces.context",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.group.begin.context" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.group.end.context" }
+      },
+      "patterns": [
+        { "include": "#content" }
+      ]
+    },
+    "options": {
+      "begin": "\\[",
+      "end": "\\]",
+      "name": "meta.options.context",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.options.begin.context" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.options.end.context" }
+      },
+      "patterns": [
+        { "include": "#comment" },
+        { "include": "#key-value" },
+        {
+          "match": ",",
+          "name": "punctuation.separator.comma.context"
+        },
+        { "include": "#content" }
+      ]
+    },
+    "key-value": {
+      "begin": "([a-zA-Z][a-zA-Z0-9:._-]*)\\s*(=)",
+      "end": "(?=[,\\]])",
+      "beginCaptures": {
+        "1": { "name": "entity.other.attribute-name.context" },
+        "2": { "name": "punctuation.separator.key-value.context" }
+      },
+      "patterns": [
+        { "include": "#comment" },
+        { "include": "#value-braces" },
+        {
+          "match": "[^,\\[\\]{}\\\\%$#\\n]+",
+          "name": "string.unquoted.value.context"
+        },
+        { "include": "#content" }
+      ]
+    },
+    "value-braces": {
+      "begin": "\\{",
+      "end": "\\}",
+      "name": "meta.group.braces.context",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.group.begin.context" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.group.end.context" }
+      },
+      "patterns": [
+        { "include": "#comment" },
+        { "include": "#value-braces" },
+        {
+          "match": "[^{}\\[\\]\\\\%$#\\n]+",
+          "name": "string.unquoted.value.context"
+        },
+        { "include": "#content" }
+      ]
+    },
+    "type": {
+      "patterns": [
+        {
+          "begin": "((\\\\)type?)(?![a-zA-Z])\\s*(\\[[^\\]]*\\])?\\s*(\\{)",
+          "end": "\\}",
+          "beginCaptures": {
+            "1": { "name": "support.function.context" },
+            "2": { "name": "punctuation.definition.function.context" },
+            "3": { "patterns": [{ "include": "#options" }] },
+            "4": { "name": "punctuation.definition.group.begin.context" }
+          },
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.group.end.context" }
+          },
+          "contentName": "markup.inline.raw.context",
+          "patterns": [
+            { "include": "#type-braces" }
+          ]
+        },
+        {
+          "begin": "((\\\\)type?)(?![a-zA-Z])\\s*(\\[[^\\]]*\\])?\\s*(<<)",
+          "end": ">>",
+          "beginCaptures": {
+            "1": { "name": "support.function.context" },
+            "2": { "name": "punctuation.definition.function.context" },
+            "3": { "patterns": [{ "include": "#options" }] },
+            "4": { "name": "punctuation.definition.raw.begin.context" }
+          },
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.raw.end.context" }
+          },
+          "contentName": "markup.inline.raw.context"
+        },
+        {
+          "match": "((\\\\)type?)(?![a-zA-Z])\\s*(\\[[^\\]]*\\])?\\s*([^\\s\\w{\\[\\\\<])(.*?)(\\4)",
+          "captures": {
+            "1": { "name": "support.function.context" },
+            "2": { "name": "punctuation.definition.function.context" },
+            "3": { "patterns": [{ "include": "#options" }] },
+            "4": { "name": "punctuation.definition.raw.begin.context" },
+            "5": { "name": "markup.inline.raw.context" },
+            "6": { "name": "punctuation.definition.raw.end.context" }
+          }
+        }
+      ]
+    },
+    "type-braces": {
+      "begin": "\\{",
+      "end": "\\}",
+      "patterns": [
+        { "include": "#type-braces" }
+      ]
+    },
+    "typing": {
+      "begin": "((\\\\)start(typing|TEX|MP|HTML|CSS))(?![a-zA-Z])(\\s*\\[[^\\]]*\\])?",
+      "end": "((\\\\)stop\\3)(?![a-zA-Z])",
+      "beginCaptures": {
+        "1": { "name": "keyword.control.start.context" },
+        "2": { "name": "punctuation.definition.keyword.context" },
+        "4": { "patterns": [{ "include": "#options" }] }
+      },
+      "endCaptures": {
+        "1": { "name": "keyword.control.stop.context" },
+        "2": { "name": "punctuation.definition.keyword.context" }
+      },
+      "contentName": "markup.raw.block.context"
+    },
+    "lua": {
+      "patterns": [
+        {
+          "begin": "((\\\\)start(luacode|luasetups|lua|LUA))(?![a-zA-Z])(\\s*\\[[^\\]]*\\])?",
+          "end": "((\\\\)stop\\3)(?![a-zA-Z])",
+          "beginCaptures": {
+            "1": { "name": "keyword.control.start.context" },
+            "2": { "name": "punctuation.definition.keyword.context" },
+            "4": { "patterns": [{ "include": "#options" }] }
+          },
+          "endCaptures": {
+            "1": { "name": "keyword.control.stop.context" },
+            "2": { "name": "punctuation.definition.keyword.context" }
+          },
+          "contentName": "meta.embedded.block.lua",
+          "patterns": [
+            { "include": "source.lua" }
+          ]
+        },
+        {
+          "begin": "((\\\\)start(ctxfunction|ctxfunctiondefinition))(?![a-zA-Z])(?:\\s+([a-zA-Z]+))?",
+          "end": "((\\\\)stop\\3)(?![a-zA-Z])",
+          "beginCaptures": {
+            "1": { "name": "keyword.control.start.context" },
+            "2": { "name": "punctuation.definition.keyword.context" },
+            "4": { "name": "entity.name.function.context" }
+          },
+          "endCaptures": {
+            "1": { "name": "keyword.control.stop.context" },
+            "2": { "name": "punctuation.definition.keyword.context" }
+          },
+          "contentName": "meta.embedded.block.lua",
+          "patterns": [
+            { "include": "source.lua" }
+          ]
+        },
+        {
+          "begin": "((\\\\)(ctxlua|directlua|luaexpr|ctxcommand|latelua))\\s*(\\{)",
+          "end": "\\}",
+          "beginCaptures": {
+            "1": { "name": "support.function.context" },
+            "2": { "name": "punctuation.definition.function.context" },
+            "4": { "name": "punctuation.definition.group.begin.context" }
+          },
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.group.end.context" }
+          },
+          "contentName": "meta.embedded.inline.lua",
+          "patterns": [
+            { "include": "#lua-braces" },
+            { "include": "source.lua" }
+          ]
+        }
+      ]
+    },
+    "lua-braces": {
+      "begin": "\\{",
+      "end": "\\}",
+      "patterns": [
+        { "include": "#lua-braces" },
+        { "include": "source.lua" }
+      ]
+    },
+    "xml": {
+      "begin": "((\\\\)start(XML|PARSEDXML))(?![a-zA-Z])(\\s*\\[[^\\]]*\\])?",
+      "end": "((\\\\)stop\\3)(?![a-zA-Z])",
+      "beginCaptures": {
+        "1": { "name": "keyword.control.start.context" },
+        "2": { "name": "punctuation.definition.keyword.context" },
+        "4": { "patterns": [{ "include": "#options" }] }
+      },
+      "endCaptures": {
+        "1": { "name": "keyword.control.stop.context" },
+        "2": { "name": "punctuation.definition.keyword.context" }
+      },
+      "contentName": "meta.embedded.block.xml",
+      "patterns": [
+        { "include": "text.xml" }
+      ]
+    },
+    "metapost": {
+      "begin": "((\\\\)start([a-z]*MP[a-z]+))(?![a-zA-Z])((?:\\s*(?:\\{[^{}]*\\}|\\[[^\\]]*\\]))*)",
+      "end": "((\\\\)stop\\3)(?![a-zA-Z])",
+      "beginCaptures": {
+        "1": { "name": "keyword.control.start.context" },
+        "2": { "name": "punctuation.definition.keyword.context" },
+        "4": {
+          "patterns": [
+            { "include": "#options" },
+            { "include": "#braces" }
+          ]
+        }
+      },
+      "endCaptures": {
+        "1": { "name": "keyword.control.stop.context" },
+        "2": { "name": "punctuation.definition.keyword.context" }
+      },
+      "contentName": "meta.embedded.block.metapost"
+    },
+    "math": {
+      "patterns": [
+        {
+          "begin": "((\\\\)startformula)(?![a-zA-Z])(\\s*\\[[^\\]]*\\])?",
+          "end": "((\\\\)stopformula)(?![a-zA-Z])",
+          "beginCaptures": {
+            "1": { "name": "keyword.control.start.context" },
+            "2": { "name": "punctuation.definition.keyword.context" },
+            "3": { "patterns": [{ "include": "#options" }] }
+          },
+          "endCaptures": {
+            "1": { "name": "keyword.control.stop.context" },
+            "2": { "name": "punctuation.definition.keyword.context" }
+          },
+          "name": "meta.math.display.context",
+          "contentName": "support.class.math.context",
+          "patterns": [
+            { "include": "#math-content" }
+          ]
+        },
+        {
+          "begin": "\\$\\$",
+          "end": "\\$\\$",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.math.begin.context" }
+          },
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.math.end.context" }
+          },
+          "name": "meta.math.display.context",
+          "contentName": "support.class.math.context",
+          "patterns": [
+            { "include": "#math-content" }
+          ]
+        },
+        {
+          "begin": "\\$",
+          "end": "\\$",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.math.begin.context" }
+          },
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.math.end.context" }
+          },
+          "name": "meta.math.inline.context",
+          "contentName": "support.class.math.context",
+          "patterns": [
+            { "include": "#math-content" }
+          ]
+        },
+        {
+          "begin": "((\\\\)(?:m|math|mathematics))(?![a-zA-Z])\\s*(\\[[^\\]]*\\])?\\s*(\\{)",
+          "end": "\\}",
+          "beginCaptures": {
+            "1": { "name": "support.function.context" },
+            "2": { "name": "punctuation.definition.function.context" },
+            "3": { "patterns": [{ "include": "#options" }] },
+            "4": { "name": "punctuation.definition.math.begin.context" }
+          },
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.math.end.context" }
+          },
+          "name": "meta.math.inline.context",
+          "contentName": "support.class.math.context",
+          "patterns": [
+            { "include": "#math-content" }
+          ]
+        }
+      ]
+    },
+    "math-content": {
+      "patterns": [
+        { "include": "#comment" },
+        { "include": "#math-braces" },
+        { "include": "#start-stop" },
+        { "include": "#control-sequence" },
+        { "include": "#escape" },
+        { "include": "#parameter" }
+      ]
+    },
+    "math-braces": {
+      "begin": "\\{",
+      "end": "\\}",
+      "name": "meta.group.braces.context",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.group.begin.context" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.group.end.context" }
+      },
+      "patterns": [
+        { "include": "#math-content" }
+      ]
+    }
+  }
+}

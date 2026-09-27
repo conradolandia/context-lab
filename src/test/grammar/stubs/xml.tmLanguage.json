@@ -1,0 +1,20 @@
+{
+  "name": "XML (test stub)",
+  "scopeName": "text.xml",
+  "patterns": [
+    {
+      "begin": "<!--",
+      "end": "-->",
+      "name": "comment.block.xml"
+    },
+    {
+      "match": "(</?)([-\\w.:]+)[^>]*?(/?>)",
+      "name": "meta.tag.xml",
+      "captures": {
+        "1": { "name": "punctuation.definition.tag.xml" },
+        "2": { "name": "entity.name.tag.localname.xml" },
+        "3": { "name": "punctuation.definition.tag.xml" }
+      }
+    }
+  ]
+}

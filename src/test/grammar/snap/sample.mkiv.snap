@@ -1,0 +1,425 @@
+>% !TEX root = sample.mkiv
+#^ text.tex.context comment.line.percentage.context punctuation.definition.comment.context
+# ^^^^^^^^^^^^^^^^^^^^^^^^ text.tex.context comment.line.percentage.context
+>\setuppapersize[A5]
+#^ text.tex.context support.function.context punctuation.definition.function.context
+# ^^^^^^^^^^^^^^ text.tex.context support.function.context
+#               ^ text.tex.context meta.options.context punctuation.definition.options.begin.context
+#                ^^ text.tex.context meta.options.context
+#                  ^ text.tex.context meta.options.context punctuation.definition.options.end.context
+>\setuphead
+#^ text.tex.context support.function.context punctuation.definition.function.context
+# ^^^^^^^^^ text.tex.context support.function.context
+>  [section]
+#^^ text.tex.context
+#  ^ text.tex.context meta.options.context punctuation.definition.options.begin.context
+#   ^^^^^^^ text.tex.context meta.options.context
+#          ^ text.tex.context meta.options.context punctuation.definition.options.end.context
+>  [style=\bfb,
+#^^ text.tex.context
+#  ^ text.tex.context meta.options.context punctuation.definition.options.begin.context
+#   ^^^^^ text.tex.context meta.options.context entity.other.attribute-name.context
+#        ^ text.tex.context meta.options.context punctuation.separator.key-value.context
+#         ^ text.tex.context meta.options.context support.function.context punctuation.definition.function.context
+#          ^^^ text.tex.context meta.options.context support.function.context
+#             ^ text.tex.context meta.options.context punctuation.separator.comma.context
+>   before={\blank[big]},
+#^^^ text.tex.context meta.options.context
+#   ^^^^^^ text.tex.context meta.options.context entity.other.attribute-name.context
+#         ^ text.tex.context meta.options.context punctuation.separator.key-value.context
+#          ^ text.tex.context meta.options.context meta.group.braces.context punctuation.definition.group.begin.context
+#           ^ text.tex.context meta.options.context meta.group.braces.context support.function.context punctuation.definition.function.context
+#            ^^^^^ text.tex.context meta.options.context meta.group.braces.context support.function.context
+#                 ^ text.tex.context meta.options.context meta.group.braces.context meta.options.context punctuation.definition.options.begin.context
+#                  ^^^ text.tex.context meta.options.context meta.group.braces.context meta.options.context
+#                     ^ text.tex.context meta.options.context meta.group.braces.context meta.options.context punctuation.definition.options.end.context
+#                      ^ text.tex.context meta.options.context meta.group.braces.context punctuation.definition.group.end.context
+#                       ^ text.tex.context meta.options.context punctuation.separator.comma.context
+>   color=darkred]
+#^^^ text.tex.context meta.options.context
+#   ^^^^^ text.tex.context meta.options.context entity.other.attribute-name.context
+#        ^ text.tex.context meta.options.context punctuation.separator.key-value.context
+#         ^^^^^^^ text.tex.context meta.options.context string.unquoted.value.context
+#                ^ text.tex.context meta.options.context punctuation.definition.options.end.context
+>
+>\starttext
+#^ text.tex.context keyword.control.start.context punctuation.definition.keyword.context
+# ^^^^^^^^^ text.tex.context keyword.control.start.context
+>
+>\startchapter[title={Uso de \ConTeXt}, reference=ch:uso]
+#^ text.tex.context keyword.control.start.context punctuation.definition.keyword.context
+# ^^^^^^^^^^^^ text.tex.context keyword.control.start.context
+#             ^ text.tex.context meta.options.context punctuation.definition.options.begin.context
+#              ^^^^^ text.tex.context meta.options.context entity.other.attribute-name.context
+#                   ^ text.tex.context meta.options.context punctuation.separator.key-value.context
+#                    ^ text.tex.context meta.options.context meta.group.braces.context punctuation.definition.group.begin.context
+#                     ^^^^^^^ text.tex.context meta.options.context meta.group.braces.context string.unquoted.value.context
+#                            ^ text.tex.context meta.options.context meta.group.braces.context support.function.context punctuation.definition.function.context
+#                             ^^^^^^^ text.tex.context meta.options.context meta.group.braces.context support.function.context
+#                                    ^ text.tex.context meta.options.context meta.group.braces.context punctuation.definition.group.end.context
+#                                     ^ text.tex.context meta.options.context punctuation.separator.comma.context
+#                                      ^ text.tex.context meta.options.context
+#                                       ^^^^^^^^^ text.tex.context meta.options.context entity.other.attribute-name.context
+#                                                ^ text.tex.context meta.options.context punctuation.separator.key-value.context
+#                                                 ^^^^^^ text.tex.context meta.options.context string.unquoted.value.context
+#                                                       ^ text.tex.context meta.options.context punctuation.definition.options.end.context
+>
+>Véase p.~5 y la figura~\in[fig:x]. Texto con … y ĥ, Żółw.
+#^^^^^^^^^^^^^^^^^^^^^^^ text.tex.context
+#                       ^ text.tex.context support.function.context punctuation.definition.function.context
+#                        ^^ text.tex.context support.function.context
+#                          ^ text.tex.context meta.options.context punctuation.definition.options.begin.context
+#                           ^^^^^ text.tex.context meta.options.context
+#                                ^ text.tex.context meta.options.context punctuation.definition.options.end.context
+#                                 ^^^^^^^^^^^^^^^^^^^^^^^^^ text.tex.context
+>Precio: 10\% % comentario al final
+#^^^^^^^^^^ text.tex.context
+#          ^ text.tex.context constant.character.escape.context punctuation.definition.escape.context
+#           ^ text.tex.context constant.character.escape.context
+#            ^ text.tex.context
+#             ^ text.tex.context comment.line.percentage.context punctuation.definition.comment.context
+#              ^^^^^^^^^^^^^^^^^^^^ text.tex.context comment.line.percentage.context
+>
+>\startsection[title=Fórmulas]
+#^ text.tex.context keyword.control.start.context punctuation.definition.keyword.context
+# ^^^^^^^^^^^^ text.tex.context keyword.control.start.context
+#             ^ text.tex.context meta.options.context punctuation.definition.options.begin.context
+#              ^^^^^ text.tex.context meta.options.context entity.other.attribute-name.context
+#                   ^ text.tex.context meta.options.context punctuation.separator.key-value.context
+#                    ^^^^^^^^ text.tex.context meta.options.context string.unquoted.value.context
+#                            ^ text.tex.context meta.options.context punctuation.definition.options.end.context
+>  La energía es $E = mc^2$ y \m{a_1 + b_1}.
+#^^^^^^^^^^^^^^^^ text.tex.context
+#                ^ text.tex.context meta.math.inline.context punctuation.definition.math.begin.context
+#                 ^^^^^^^^ text.tex.context meta.math.inline.context support.class.math.context
+#                         ^ text.tex.context meta.math.inline.context punctuation.definition.math.end.context
+#                          ^^^ text.tex.context
+#                             ^ text.tex.context meta.math.inline.context support.function.context punctuation.definition.function.context
+#                              ^ text.tex.context meta.math.inline.context support.function.context
+#                               ^ text.tex.context meta.math.inline.context punctuation.definition.math.begin.context
+#                                ^^^^^^^^^ text.tex.context meta.math.inline.context support.class.math.context
+#                                         ^ text.tex.context meta.math.inline.context punctuation.definition.math.end.context
+#                                          ^^ text.tex.context
+>  \startformula
+#^^ text.tex.context
+#  ^ text.tex.context meta.math.display.context keyword.control.start.context punctuation.definition.keyword.context
+#   ^^^^^^^^^^^^ text.tex.context meta.math.display.context keyword.control.start.context
+>    \int_0^1 x^2 \, dx = \frac{1}{3} % comentario
+#^^^^ text.tex.context meta.math.display.context support.class.math.context
+#    ^ text.tex.context meta.math.display.context support.class.math.context support.function.context punctuation.definition.function.context
+#     ^^^ text.tex.context meta.math.display.context support.class.math.context support.function.context
+#        ^^^^^^^^^ text.tex.context meta.math.display.context support.class.math.context
+#                 ^ text.tex.context meta.math.display.context support.class.math.context constant.character.escape.context punctuation.definition.escape.context
+#                  ^ text.tex.context meta.math.display.context support.class.math.context constant.character.escape.context
+#                   ^^^^^^ text.tex.context meta.math.display.context support.class.math.context
+#                         ^ text.tex.context meta.math.display.context support.class.math.context support.function.context punctuation.definition.function.context
+#                          ^^^^ text.tex.context meta.math.display.context support.class.math.context support.function.context
+#                              ^ text.tex.context meta.math.display.context support.class.math.context meta.group.braces.context punctuation.definition.group.begin.context
+#                               ^ text.tex.context meta.math.display.context support.class.math.context meta.group.braces.context
+#                                ^ text.tex.context meta.math.display.context support.class.math.context meta.group.braces.context punctuation.definition.group.end.context
+#                                 ^ text.tex.context meta.math.display.context support.class.math.context meta.group.braces.context punctuation.definition.group.begin.context
+#                                  ^ text.tex.context meta.math.display.context support.class.math.context meta.group.braces.context
+#                                   ^ text.tex.context meta.math.display.context support.class.math.context meta.group.braces.context punctuation.definition.group.end.context
+#                                    ^ text.tex.context meta.math.display.context support.class.math.context
+#                                     ^ text.tex.context meta.math.display.context support.class.math.context comment.line.percentage.context punctuation.definition.comment.context
+#                                      ^^^^^^^^^^^ text.tex.context meta.math.display.context support.class.math.context comment.line.percentage.context
+>  \stopformula
+#^^ text.tex.context meta.math.display.context support.class.math.context
+#  ^ text.tex.context meta.math.display.context keyword.control.stop.context punctuation.definition.keyword.context
+#   ^^^^^^^^^^^ text.tex.context meta.math.display.context keyword.control.stop.context
+>
+>  \startsubsection[title=Tablas]
+#^^ text.tex.context
+#  ^ text.tex.context keyword.control.start.context punctuation.definition.keyword.context
+#   ^^^^^^^^^^^^^^^ text.tex.context keyword.control.start.context
+#                  ^ text.tex.context meta.options.context punctuation.definition.options.begin.context
+#                   ^^^^^ text.tex.context meta.options.context entity.other.attribute-name.context
+#                        ^ text.tex.context meta.options.context punctuation.separator.key-value.context
+#                         ^^^^^^ text.tex.context meta.options.context string.unquoted.value.context
+#                               ^ text.tex.context meta.options.context punctuation.definition.options.end.context
+>    \starttabulate[|l|r|]
+#^^^^ text.tex.context
+#    ^ text.tex.context keyword.control.start.context punctuation.definition.keyword.context
+#     ^^^^^^^^^^^^^ text.tex.context keyword.control.start.context
+#                  ^ text.tex.context meta.options.context punctuation.definition.options.begin.context
+#                   ^^^^^ text.tex.context meta.options.context
+#                        ^ text.tex.context meta.options.context punctuation.definition.options.end.context
+>      \NC uno \NC 1 \NR
+#^^^^^^ text.tex.context
+#      ^ text.tex.context support.function.context punctuation.definition.function.context
+#       ^^ text.tex.context support.function.context
+#         ^^^^^ text.tex.context
+#              ^ text.tex.context support.function.context punctuation.definition.function.context
+#               ^^ text.tex.context support.function.context
+#                 ^^^ text.tex.context
+#                    ^ text.tex.context support.function.context punctuation.definition.function.context
+#                     ^^ text.tex.context support.function.context
+>      \NC dos \NC 2 \NR
+#^^^^^^ text.tex.context
+#      ^ text.tex.context support.function.context punctuation.definition.function.context
+#       ^^ text.tex.context support.function.context
+#         ^^^^^ text.tex.context
+#              ^ text.tex.context support.function.context punctuation.definition.function.context
+#               ^^ text.tex.context support.function.context
+#                 ^^^ text.tex.context
+#                    ^ text.tex.context support.function.context punctuation.definition.function.context
+#                     ^^ text.tex.context support.function.context
+>    \stoptabulate
+#^^^^ text.tex.context
+#    ^ text.tex.context keyword.control.stop.context punctuation.definition.keyword.context
+#     ^^^^^^^^^^^^ text.tex.context keyword.control.stop.context
+>
+>    \bTABLE
+#^^^^ text.tex.context
+#    ^ text.tex.context support.function.context punctuation.definition.function.context
+#     ^^^^^^ text.tex.context support.function.context
+>      \bTR \bTD a & b \eTD \bTD $|x|$ \eTD \eTR
+#^^^^^^ text.tex.context
+#      ^ text.tex.context support.function.context punctuation.definition.function.context
+#       ^^^ text.tex.context support.function.context
+#          ^ text.tex.context
+#           ^ text.tex.context support.function.context punctuation.definition.function.context
+#            ^^^ text.tex.context support.function.context
+#               ^^^^^^^ text.tex.context
+#                      ^ text.tex.context support.function.context punctuation.definition.function.context
+#                       ^^^ text.tex.context support.function.context
+#                          ^ text.tex.context
+#                           ^ text.tex.context support.function.context punctuation.definition.function.context
+#                            ^^^ text.tex.context support.function.context
+#                               ^ text.tex.context
+#                                ^ text.tex.context meta.math.inline.context punctuation.definition.math.begin.context
+#                                 ^^^ text.tex.context meta.math.inline.context support.class.math.context
+#                                    ^ text.tex.context meta.math.inline.context punctuation.definition.math.end.context
+#                                     ^ text.tex.context
+#                                      ^ text.tex.context support.function.context punctuation.definition.function.context
+#                                       ^^^ text.tex.context support.function.context
+#                                          ^ text.tex.context
+#                                           ^ text.tex.context support.function.context punctuation.definition.function.context
+#                                            ^^^ text.tex.context support.function.context
+>    \eTABLE
+#^^^^ text.tex.context
+#    ^ text.tex.context support.function.context punctuation.definition.function.context
+#     ^^^^^^ text.tex.context support.function.context
+>  \stopsubsection
+#^^ text.tex.context
+#  ^ text.tex.context keyword.control.stop.context punctuation.definition.keyword.context
+#   ^^^^^^^^^^^^^^ text.tex.context keyword.control.stop.context
+>\stopsection
+#^ text.tex.context keyword.control.stop.context punctuation.definition.keyword.context
+# ^^^^^^^^^^^ text.tex.context keyword.control.stop.context
+>
+>\startsection[title=Código]
+#^ text.tex.context keyword.control.start.context punctuation.definition.keyword.context
+# ^^^^^^^^^^^^ text.tex.context keyword.control.start.context
+#             ^ text.tex.context meta.options.context punctuation.definition.options.begin.context
+#              ^^^^^ text.tex.context meta.options.context entity.other.attribute-name.context
+#                   ^ text.tex.context meta.options.context punctuation.separator.key-value.context
+#                    ^^^^^^ text.tex.context meta.options.context string.unquoted.value.context
+#                          ^ text.tex.context meta.options.context punctuation.definition.options.end.context
+>  Inline: \type{\starttext{}} and \type|a{b| and \type<<x>>.
+#^^^^^^^^^^ text.tex.context
+#          ^ text.tex.context support.function.context punctuation.definition.function.context
+#           ^^^^ text.tex.context support.function.context
+#               ^ text.tex.context punctuation.definition.group.begin.context
+#                ^^^^^^^^^^ text.tex.context markup.inline.raw.context
+#                          ^ text.tex.context markup.inline.raw.context
+#                           ^ text.tex.context markup.inline.raw.context
+#                            ^ text.tex.context punctuation.definition.group.end.context
+#                             ^^^^^ text.tex.context
+#                                  ^ text.tex.context support.function.context punctuation.definition.function.context
+#                                   ^^^^ text.tex.context support.function.context
+#                                       ^ text.tex.context punctuation.definition.raw.begin.context
+#                                        ^^^ text.tex.context markup.inline.raw.context
+#                                           ^ text.tex.context punctuation.definition.raw.end.context
+#                                            ^^^^^ text.tex.context
+#                                                 ^ text.tex.context support.function.context punctuation.definition.function.context
+#                                                  ^^^^ text.tex.context support.function.context
+#                                                      ^^ text.tex.context punctuation.definition.raw.begin.context
+#                                                        ^ text.tex.context markup.inline.raw.context
+#                                                         ^^ text.tex.context punctuation.definition.raw.end.context
+#                                                           ^^ text.tex.context
+>  \starttyping[option=TEX]
+#^^ text.tex.context
+#  ^ text.tex.context keyword.control.start.context punctuation.definition.keyword.context
+#   ^^^^^^^^^^^ text.tex.context keyword.control.start.context
+#              ^ text.tex.context meta.options.context punctuation.definition.options.begin.context
+#               ^^^^^^ text.tex.context meta.options.context entity.other.attribute-name.context
+#                     ^ text.tex.context meta.options.context punctuation.separator.key-value.context
+#                      ^^^ text.tex.context meta.options.context string.unquoted.value.context
+#                         ^ text.tex.context meta.options.context punctuation.definition.options.end.context
+>  \stoptext % not a comment here
+#^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ text.tex.context markup.raw.block.context
+>  \stoptyping
+#^^ text.tex.context markup.raw.block.context
+#  ^ text.tex.context keyword.control.stop.context punctuation.definition.keyword.context
+#   ^^^^^^^^^^ text.tex.context keyword.control.stop.context
+>
+>  \startluacode
+#^^ text.tex.context
+#  ^ text.tex.context keyword.control.start.context punctuation.definition.keyword.context
+#   ^^^^^^^^^^^^ text.tex.context keyword.control.start.context
+>    local n = 1 -- comment
+#^^^^ text.tex.context meta.embedded.block.lua
+#    ^^^^^ text.tex.context meta.embedded.block.lua keyword.local.lua
+#         ^^^^^^^ text.tex.context meta.embedded.block.lua
+#                ^^^^^^^^^^ text.tex.context meta.embedded.block.lua comment.line.double-dash.lua
+>    context("\\stoptext")
+#^^^^^^^^^^^^ text.tex.context meta.embedded.block.lua
+#            ^ text.tex.context meta.embedded.block.lua string.quoted.double.lua
+#             ^^^^^^^^^^ text.tex.context meta.embedded.block.lua string.quoted.double.lua
+#                       ^ text.tex.context meta.embedded.block.lua string.quoted.double.lua
+#                        ^^ text.tex.context meta.embedded.block.lua
+>  \stopluacode
+#^^ text.tex.context meta.embedded.block.lua
+#  ^ text.tex.context keyword.control.stop.context punctuation.definition.keyword.context
+#   ^^^^^^^^^^^ text.tex.context keyword.control.stop.context
+>
+>  \ctxlua{context({"a"}[1])} and \directlua{tex.print("x")}.
+#^^ text.tex.context
+#  ^ text.tex.context support.function.context punctuation.definition.function.context
+#   ^^^^^^ text.tex.context support.function.context
+#         ^ text.tex.context punctuation.definition.group.begin.context
+#          ^^^^^^^^ text.tex.context meta.embedded.inline.lua
+#                  ^ text.tex.context meta.embedded.inline.lua
+#                   ^ text.tex.context meta.embedded.inline.lua string.quoted.double.lua
+#                    ^ text.tex.context meta.embedded.inline.lua string.quoted.double.lua
+#                     ^ text.tex.context meta.embedded.inline.lua string.quoted.double.lua
+#                      ^ text.tex.context meta.embedded.inline.lua
+#                       ^^^^ text.tex.context meta.embedded.inline.lua
+#                           ^ text.tex.context punctuation.definition.group.end.context
+#                            ^^^^^ text.tex.context
+#                                 ^ text.tex.context support.function.context punctuation.definition.function.context
+#                                  ^^^^^^^^^ text.tex.context support.function.context
+#                                           ^ text.tex.context punctuation.definition.group.begin.context
+#                                            ^^^^^^^^^^ text.tex.context meta.embedded.inline.lua
+#                                                      ^ text.tex.context meta.embedded.inline.lua string.quoted.double.lua
+#                                                       ^ text.tex.context meta.embedded.inline.lua string.quoted.double.lua
+#                                                        ^ text.tex.context meta.embedded.inline.lua string.quoted.double.lua
+#                                                         ^ text.tex.context meta.embedded.inline.lua
+#                                                          ^ text.tex.context punctuation.definition.group.end.context
+#                                                           ^^ text.tex.context
+>
+>  \startctxfunction MyFunction
+#^^ text.tex.context
+#  ^ text.tex.context keyword.control.start.context punctuation.definition.keyword.context
+#   ^^^^^^^^^^^^^^^^ text.tex.context keyword.control.start.context
+#                   ^ text.tex.context
+#                    ^^^^^^^^^^ text.tex.context entity.name.function.context
+>    context("ok")
+#^^^^^^^^^^^^ text.tex.context meta.embedded.block.lua
+#            ^ text.tex.context meta.embedded.block.lua string.quoted.double.lua
+#             ^^ text.tex.context meta.embedded.block.lua string.quoted.double.lua
+#               ^ text.tex.context meta.embedded.block.lua string.quoted.double.lua
+#                ^^ text.tex.context meta.embedded.block.lua
+>  \stopctxfunction
+#^^ text.tex.context meta.embedded.block.lua
+#  ^ text.tex.context keyword.control.stop.context punctuation.definition.keyword.context
+#   ^^^^^^^^^^^^^^^ text.tex.context keyword.control.stop.context
+>
+>  \startXML
+#^^ text.tex.context
+#  ^ text.tex.context keyword.control.start.context punctuation.definition.keyword.context
+#   ^^^^^^^^ text.tex.context keyword.control.start.context
+>  <doc><p>Texto</p><!-- nota --></doc>
+#^^ text.tex.context meta.embedded.block.xml
+#  ^ text.tex.context meta.embedded.block.xml meta.tag.xml punctuation.definition.tag.xml
+#   ^^^ text.tex.context meta.embedded.block.xml meta.tag.xml entity.name.tag.localname.xml
+#      ^ text.tex.context meta.embedded.block.xml meta.tag.xml punctuation.definition.tag.xml
+#       ^ text.tex.context meta.embedded.block.xml meta.tag.xml punctuation.definition.tag.xml
+#        ^ text.tex.context meta.embedded.block.xml meta.tag.xml entity.name.tag.localname.xml
+#         ^ text.tex.context meta.embedded.block.xml meta.tag.xml punctuation.definition.tag.xml
+#          ^^^^^ text.tex.context meta.embedded.block.xml
+#               ^^ text.tex.context meta.embedded.block.xml meta.tag.xml punctuation.definition.tag.xml
+#                 ^ text.tex.context meta.embedded.block.xml meta.tag.xml entity.name.tag.localname.xml
+#                  ^ text.tex.context meta.embedded.block.xml meta.tag.xml punctuation.definition.tag.xml
+#                   ^^^^ text.tex.context meta.embedded.block.xml comment.block.xml
+#                       ^^^^^^ text.tex.context meta.embedded.block.xml comment.block.xml
+#                             ^^^ text.tex.context meta.embedded.block.xml comment.block.xml
+#                                ^^ text.tex.context meta.embedded.block.xml meta.tag.xml punctuation.definition.tag.xml
+#                                  ^^^ text.tex.context meta.embedded.block.xml meta.tag.xml entity.name.tag.localname.xml
+#                                     ^ text.tex.context meta.embedded.block.xml meta.tag.xml punctuation.definition.tag.xml
+>  \stopXML
+#^^ text.tex.context meta.embedded.block.xml
+#  ^ text.tex.context keyword.control.stop.context punctuation.definition.keyword.context
+#   ^^^^^^^ text.tex.context keyword.control.stop.context
+>
+>  \startMPcode{doublefun}
+#^^ text.tex.context
+#  ^ text.tex.context keyword.control.start.context punctuation.definition.keyword.context
+#   ^^^^^^^^^^^ text.tex.context keyword.control.start.context
+#              ^ text.tex.context meta.group.braces.context punctuation.definition.group.begin.context
+#               ^^^^^^^^^ text.tex.context meta.group.braces.context
+#                        ^ text.tex.context meta.group.braces.context punctuation.definition.group.end.context
+>    draw fullcircle scaled 2cm ; % \bold{not TeX}
+#^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ text.tex.context meta.embedded.block.metapost
+>  \stopMPcode
+#^^ text.tex.context meta.embedded.block.metapost
+#  ^ text.tex.context keyword.control.stop.context punctuation.definition.keyword.context
+#   ^^^^^^^^^^ text.tex.context keyword.control.stop.context
+>
+>  \startuseMPgraphic{name}{a,b}
+#^^ text.tex.context
+#  ^ text.tex.context keyword.control.start.context punctuation.definition.keyword.context
+#   ^^^^^^^^^^^^^^^^^ text.tex.context keyword.control.start.context
+#                    ^ text.tex.context meta.group.braces.context punctuation.definition.group.begin.context
+#                     ^^^^ text.tex.context meta.group.braces.context
+#                         ^ text.tex.context meta.group.braces.context punctuation.definition.group.end.context
+#                          ^ text.tex.context meta.group.braces.context punctuation.definition.group.begin.context
+#                           ^^^ text.tex.context meta.group.braces.context
+#                              ^ text.tex.context meta.group.braces.context punctuation.definition.group.end.context
+>    fill unitsquare ;
+#^^^^^^^^^^^^^^^^^^^^^^ text.tex.context meta.embedded.block.metapost
+>  \stopuseMPgraphic
+#^^ text.tex.context meta.embedded.block.metapost
+#  ^ text.tex.context keyword.control.stop.context punctuation.definition.keyword.context
+#   ^^^^^^^^^^^^^^^^ text.tex.context keyword.control.stop.context
+>\stopsection
+#^ text.tex.context keyword.control.stop.context punctuation.definition.keyword.context
+# ^^^^^^^^^^^ text.tex.context keyword.control.stop.context
+>
+>%region Macros
+#^ text.tex.context comment.line.percentage.context punctuation.definition.comment.context
+# ^^^^^^^^^^^^^ text.tex.context comment.line.percentage.context
+>\define[2]\Pair{(#1, #2)}
+#^ text.tex.context support.function.context punctuation.definition.function.context
+# ^^^^^^ text.tex.context support.function.context
+#       ^ text.tex.context meta.options.context punctuation.definition.options.begin.context
+#        ^ text.tex.context meta.options.context
+#         ^ text.tex.context meta.options.context punctuation.definition.options.end.context
+#          ^ text.tex.context support.function.context punctuation.definition.function.context
+#           ^^^^ text.tex.context support.function.context
+#               ^ text.tex.context meta.group.braces.context punctuation.definition.group.begin.context
+#                ^ text.tex.context meta.group.braces.context
+#                 ^^ text.tex.context meta.group.braces.context variable.parameter.context
+#                   ^^ text.tex.context meta.group.braces.context
+#                     ^^ text.tex.context meta.group.braces.context variable.parameter.context
+#                       ^ text.tex.context meta.group.braces.context
+#                        ^ text.tex.context meta.group.braces.context punctuation.definition.group.end.context
+>\startsetups[demo]
+#^ text.tex.context keyword.control.start.context punctuation.definition.keyword.context
+# ^^^^^^^^^^^ text.tex.context keyword.control.start.context
+#            ^ text.tex.context meta.options.context punctuation.definition.options.begin.context
+#             ^^^^ text.tex.context meta.options.context
+#                 ^ text.tex.context meta.options.context punctuation.definition.options.end.context
+>  \setupbodyfont[12pt]
+#^^ text.tex.context
+#  ^ text.tex.context support.function.context punctuation.definition.function.context
+#   ^^^^^^^^^^^^^ text.tex.context support.function.context
+#                ^ text.tex.context meta.options.context punctuation.definition.options.begin.context
+#                 ^^^^ text.tex.context meta.options.context
+#                     ^ text.tex.context meta.options.context punctuation.definition.options.end.context
+>\stopsetups
+#^ text.tex.context keyword.control.stop.context punctuation.definition.keyword.context
+# ^^^^^^^^^^ text.tex.context keyword.control.stop.context
+>%endregion
+#^ text.tex.context comment.line.percentage.context punctuation.definition.comment.context
+# ^^^^^^^^^ text.tex.context comment.line.percentage.context
+>
+>\stopchapter
+#^ text.tex.context keyword.control.stop.context punctuation.definition.keyword.context
+# ^^^^^^^^^^^ text.tex.context keyword.control.stop.context
+>
+>\stoptext
+#^ text.tex.context keyword.control.stop.context punctuation.definition.keyword.context
+# ^^^^^^^^ text.tex.context keyword.control.stop.context
+>

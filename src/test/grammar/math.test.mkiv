@@ -1,0 +1,47 @@
+% SYNTAX TEST "text.tex.context" "inline and display math"
+Energy $E = mc^2$ holds.
+%      ^ meta.math.inline.context punctuation.definition.math.begin.context
+%       ^^^^^^^^ meta.math.inline.context support.class.math.context
+%               ^ punctuation.definition.math.end.context
+%                ^^^^^^^ - meta.math.inline.context
+Cost \$5 and $a\$b$.
+%    ^^ constant.character.escape.context
+%      ^^^^^^ - meta.math.inline.context
+%             ^ support.class.math.context
+%              ^^ support.class.math.context constant.character.escape.context
+%                ^ support.class.math.context
+Also \m{x_1 + \frac{a}{b}} and \math[sans]{y}.
+%    ^^ support.function.context
+%       ^^^^^^ meta.math.inline.context support.class.math.context
+%             ^^^^^ support.class.math.context support.function.context
+%                  ^^^ support.class.math.context meta.group.braces.context
+%                         ^^^^^ - meta.math.inline.context
+%                                    ^^^^ meta.options.context
+%                                          ^ support.class.math.context
+Interval $[0,1)$ ok.
+%         ^^^^^ support.class.math.context - meta.options.context
+\startformula
+% <------------- meta.math.display.context keyword.control.start.context
+  \int_0^1 x^2\,dx = \frac{1}{3} % note
+% ^^^^ meta.math.display.context support.class.math.context support.function.context
+%     ^^^^^^^^ support.class.math.context
+%             ^^ constant.character.escape.context
+%                                ^^^^^^ support.class.math.context comment.line.percentage.context
+  \startmathalignment
+% ^^^^^^^^^^^^^^^^^^^ support.class.math.context keyword.control.start.context
+    \NC a \EQ b \NR
+%   ^^^ support.class.math.context support.function.context
+  \stopmathalignment
+% ^^^^^^^^^^^^^^^^^^ support.class.math.context keyword.control.stop.context
+\stopformula after
+% <------------ meta.math.display.context keyword.control.stop.context
+%           ^^^^^^ - meta.math.display.context
+\startformula[sp] a \stopformula
+%             ^^ meta.options.context
+%                ^^^ support.class.math.context
+\startformulas
+% <-------------- keyword.control.start.context - meta.math.display.context
+$$ x $$ plain
+% <-- meta.math.display.context punctuation.definition.math.begin.context
+% ^^^ support.class.math.context
+%      ^^^^^^ - meta.math.display.context

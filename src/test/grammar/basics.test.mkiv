@@ -1,0 +1,40 @@
+% SYNTAX TEST "text.tex.context" "comments, escapes, control sequences, text"
+% a full-line comment
+% <- comment.line.percentage.context punctuation.definition.comment.context
+% ^^^^^^^^^^^^^^^^^^^ comment.line.percentage.context
+Price: 10\% off % trailing
+%        ^^ constant.character.escape.context
+%          ^^^^^ - comment.line.percentage.context
+%               ^^^^^^^^^^ comment.line.percentage.context
+A backslash \\% then comment
+%           ^^ constant.character.escape.context
+%             ^^^^^^^^^^^^^^ comment.line.percentage.context
+Text \bold{word} here
+%    ^ support.function.context punctuation.definition.function.context
+%     ^^^^ support.function.context
+%         ^ meta.group.braces.context punctuation.definition.group.begin.context
+%          ^^^^ meta.group.braces.context
+%              ^ punctuation.definition.group.end.context
+Is it \TeX? Yes, \ConTeXt: ok.
+%     ^^^^ support.function.context
+%         ^ - support.function.context
+%                ^^^^^^^^ support.function.context
+%                        ^ - support.function.context
+See p.~5 and figure~\in[fig:x]~y.
+%   ^^^^ - support.function.context meta.options.context constant.character.escape.context
+%                   ^^^ support.function.context
+%                      ^ meta.options.context punctuation.definition.options.begin.context
+%                       ^^^^^ meta.options.context - entity.other.attribute-name.context
+%                             ^^^ - meta.options.context
+Unicode … ĥ Żółw \emph{naïve} ok
+%       ^^^^^^^^^ - support.function.context comment.line.percentage.context
+%                ^^^^^ support.function.context
+%                      ^^^^^ meta.group.braces.context
+%                            ^^^ - meta.group.braces.context
+\def\Pair#1#2{(#1,##1)}
+% <---- support.function.context
+%        ^^ variable.parameter.context
+%          ^^ variable.parameter.context
+%                 ^^^ meta.group.braces.context variable.parameter.context
+a & b ^ c _ d | e
+% <----------------- - support.function.context support.class.math.context
