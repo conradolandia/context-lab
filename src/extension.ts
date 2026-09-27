@@ -5,7 +5,13 @@ import { resolveToolchain, ToolchainError, type Toolchain } from './toolchain/di
 import type { BuildResult } from './build/compiler';
 import { gateJobArtifacts, type JobSnapshot } from './build/artifactGate';
 import { BuildController } from './build/buildController';
-import { forwardSync, backwardSync, SynctexError } from './synctex/mtxSynctex';
+import {
+  forwardSync,
+  backwardSync,
+  SynctexError,
+  EMPTY_BACKWARD_USER_MESSAGE,
+  COARSE_FLOAT_LINE_USER_MESSAGE,
+} from './synctex/mtxSynctex';
 import { PdfPanel } from './viewer/pdfPanel';
 import { resolveRootFile, type RootResolution } from './project/rootFile';
 import { createDigestifClient, type DigestifClientHandle } from './lsp/digestifClient';
@@ -20,7 +26,7 @@ import {
 } from './folding/startStopFolding';
 
 /** Bump when shipping a SyncTeX/viewer/LSP/diagnostics behavior change Sir must verify in Output. */
-export const BUILD_ID = 'hover-outline-polish-v1';
+export const BUILD_ID = 'synctex-image-empty-ux-v2';
 
 let output: vscode.OutputChannel;
 let digestifOutput: vscode.OutputChannel;
@@ -288,7 +294,7 @@ async function handlePdfClick(
   );
 
   try {
-    const { result: hit, argv, cwd } = await backwardSync(
+    const { result: hit, argv, cwd, note } = await backwardSync(
       toolchain,
       snapshot.synctexPath,
       page,
@@ -298,8 +304,20 @@ async function handlePdfClick(
     );
     output.appendLine(`[synctex report] cwd=${cwd} argv=${JSON.stringify(argv)}`);
     output.appendLine(
-      `[synctex report] file=${hit.filename} line=${hit.linenumber} tol=${hit.tolerance}`,
+      `[synctex report] file=${hit.filename} line=${hit.linenumber} tol=${hit.tolerance}` +
+        (hit.refined ? ' refined=1' : '') +
+        (hit.coarseFloatLine ? ' coarseFloatLine=1' : ''),
     );
+    if (note) {
+      output.appendLine(`[synctex report] ${note}`);
+    }
+
+    // Coarse float/caption tags (line ≤ 1 mid-page) are not useful navigation
+    // targets — message only, same class of outcome as an empty image click.
+    if (hit.coarseFloatLine) {
+      void vscode.window.showInformationMessage(COARSE_FLOAT_LINE_USER_MESSAGE);
+      return;
+    }
 
     let targetPath = hit.filename;
     if (!path.isAbsolute(targetPath)) {
@@ -315,7 +333,11 @@ async function handlePdfClick(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     output.appendLine(`[synctex report] ${msg}`);
-    void vscode.window.showWarningMessage(msg);
+    if (err instanceof SynctexError && err.kind === 'empty') {
+      void vscode.window.showWarningMessage(EMPTY_BACKWARD_USER_MESSAGE);
+    } else {
+      void vscode.window.showWarningMessage(msg);
+    }
   } finally {
     backwardInFlight = false;
   }
