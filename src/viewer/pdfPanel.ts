@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import { PdfRangeServer } from './pdfServer';
+import { pdfPanelTitle } from './pdfPanelTitle';
 
 export type ViewerMessage =
   | { type: 'ready' }
@@ -41,6 +42,8 @@ export interface ForwardSyncPayload {
   urx: number;
   ury: number;
 }
+
+export { DEFAULT_PDF_PANEL_TITLE, pdfPanelTitle } from './pdfPanelTitle';
 
 /**
  * PDF.js webview panel.
@@ -119,7 +122,7 @@ export class PdfPanel {
 
     this.panel = vscode.window.createWebviewPanel(
       PdfPanel.viewType,
-      'ConTeXt PDF',
+      pdfPanelTitle(this.currentPdfPath),
       column ?? vscode.ViewColumn.Beside,
       {
         enableScripts: true,
@@ -163,6 +166,9 @@ export class PdfPanel {
   public async showJobPdf(jobPdfPath: string, jobDir: string): Promise<void> {
     this.setJobDir(jobDir);
     this.revealOrCreate();
+    if (this.panel) {
+      this.panel.title = pdfPanelTitle(jobPdfPath);
+    }
     if (!fs.existsSync(jobPdfPath)) {
       void this.panel?.webview.postMessage({
         type: 'error',
@@ -193,7 +199,14 @@ export class PdfPanel {
     }
     this.currentPdfPath = jobPdfPath;
     this.currentMtimeMs = mtimeMs;
+    this.applyPanelTitle();
     await this.loadPdf(jobPdfPath, cacheKey);
+  }
+
+  private applyPanelTitle(): void {
+    if (this.panel) {
+      this.panel.title = pdfPanelTitle(this.currentPdfPath);
+    }
   }
 
   public async forwardSync(payload: ForwardSyncPayload): Promise<void> {
@@ -331,6 +344,7 @@ export class PdfPanel {
         `PDF load failed (${message}). Restoring previous PDF.`,
       );
       this.currentPdfPath = fallback;
+      this.applyPanelTitle();
       try {
         this.currentMtimeMs = fs.statSync(fallback).mtimeMs;
         const key = `${fallback}:${this.currentMtimeMs}`;

@@ -17,6 +17,7 @@
     "onView:context.projectView"
   ],
   "main": "./dist/extension.js",
+  "icon": "media/icon.png",
   "contributes": {
     "languages": [
       {
