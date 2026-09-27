@@ -1,0 +1,18 @@
+% SYNTAX TEST "text.tex.context" "command colour classification precedence"
+\zerocount
+% <- support.constant.context punctuation.definition.constant.context
+%^^^^^^^^^ support.constant.context
+\ruledhbox
+% <---------- support.function.builtin.context
+\hbox
+% <---- keyword.other.primitive.context
+\ifdim
+% <----- keyword.other.primitive.context
+\setuphead
+% <---------- support.function.context
+\MyMacro
+% <-------- entity.name.function.context
+\starttext
+% <---------- keyword.control.start.context
+\stoptext
+% <--------- keyword.control.stop.context

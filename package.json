@@ -4,6 +4,7 @@
   "description": "ConTeXt SyncTeX PDF preview, DigestiF language server, and TextMate grammar",
   "version": "0.1.21",
   "publisher": "context-lab",
+  "license": "GPL-2.0-only",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -110,6 +111,10 @@
       {
         "command": "context.projectView.setRootFromNode",
         "title": "Set as Main (Root) File"
+      },
+      {
+        "command": "context.refreshKeywords",
+        "title": "ConTeXt: Refresh command keywords"
       }
     ],
     "menus": {
@@ -251,6 +256,7 @@
     "vscode:prepublish": "npm run compile",
     "compile": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
+    "generate:keywords": "node scripts/generate-context-keywords.mjs",
     "test": "npm run compile && node --test dist/test/**/*.test.js && npm run test:grammar",
     "test:grammar": "vscode-tmgrammar-test -g src/test/grammar/stubs/lua.tmLanguage.json -g src/test/grammar/stubs/xml.tmLanguage.json \"src/test/grammar/*.test.mkiv\" && vscode-tmgrammar-snap -g src/test/grammar/stubs/lua.tmLanguage.json -g src/test/grammar/stubs/xml.tmLanguage.json \"src/test/grammar/snap/*.mkiv\"",
     "handshake:context": "node scripts/digestif-context-handshake.mjs",

@@ -26,9 +26,10 @@ import {
 } from './folding/startStopFolding';
 import { registerProjectView } from './project/projectTree';
 import type { ProjectNode } from './project/projectModel';
+import { refreshCommandKeywords } from './syntax/refreshKeywords';
 
 /** Bump when shipping a SyncTeX/viewer/LSP/diagnostics/project-view behavior change Sir must verify in Output. */
-export const BUILD_ID = 'project-view-v2';
+export const BUILD_ID = 'command-colours-v1';
 
 let output: vscode.OutputChannel;
 let digestifOutput: vscode.OutputChannel;
@@ -530,6 +531,9 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand('context.pickRootFile', () => {
       void pickRootFile();
+    }),
+    vscode.commands.registerCommand('context.refreshKeywords', () => {
+      void refreshCommandKeywords(context.extensionPath, output);
     }),
     vscode.languages.registerFoldingRangeProvider(contextSelector, foldProvider),
     vscode.languages.registerDocumentLinkProvider(contextSelector, linkProvider),
