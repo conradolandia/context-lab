@@ -8,9 +8,10 @@ import { forwardSync, backwardSync, SynctexError } from './synctex/mtxSynctex';
 import { PdfPanel } from './viewer/pdfPanel';
 import { resolveRootFile, type RootResolution } from './project/rootFile';
 import { createDigestifClient, type DigestifClientHandle } from './lsp/digestifClient';
+import { maybeOfferTexContextAssociation } from './project/texAssociation';
 
 /** Bump when shipping a SyncTeX/viewer/LSP behavior change Sir must verify in Output. */
-export const BUILD_ID = 'digestif-lsp-v8';
+export const BUILD_ID = 'digestif-lsp-v9';
 
 let output: vscode.OutputChannel;
 let digestifOutput: vscode.OutputChannel;
@@ -22,6 +23,7 @@ let building = false;
 let lastRootResolution: RootResolution | undefined;
 let backwardInFlight = false;
 let digestif: DigestifClientHandle | undefined;
+let extensionContext: vscode.ExtensionContext | undefined;
 
 function getToolchain(): Toolchain {
   return resolveToolchain();
@@ -167,6 +169,16 @@ async function buildAndPreview(): Promise<void> {
       (active && active !== root.rootFile ? `; active=${active}` : ''),
   );
 
+  if (extensionContext) {
+    const openDoc = vscode.workspace.textDocuments.find((d) => d.uri.fsPath === root.rootFile);
+    void maybeOfferTexContextAssociation(
+      extensionContext,
+      root.rootFile,
+      openDoc?.languageId,
+      (line) => output.appendLine(line),
+    );
+  }
+
   try {
     const result = await runContextBuild(toolchain, root.rootFile, { output });
     if (result.exitCode !== 0) {
@@ -211,6 +223,15 @@ async function showPdf(): Promise<void> {
   if (!root) {
     void vscode.window.showErrorMessage('No PDF yet. Run ConTeXt: Build and Preview.');
     return;
+  }
+  if (extensionContext) {
+    const openDoc = vscode.workspace.textDocuments.find((d) => d.uri.fsPath === root.rootFile);
+    void maybeOfferTexContextAssociation(
+      extensionContext,
+      root.rootFile,
+      openDoc?.languageId,
+      (line) => output.appendLine(line),
+    );
   }
   const pdfPath = root.rootFile.replace(/\.[^.]+$/, '.pdf');
   if (!fs.existsSync(pdfPath)) {
@@ -353,6 +374,7 @@ async function handlePdfClick(
 }
 
 export function activate(context: vscode.ExtensionContext): void {
+  extensionContext = context;
   output = vscode.window.createOutputChannel('ConTeXt');
   // Separate channel so DigestiF stderr/LSP noise never interleaves with build logs.
   digestifOutput = vscode.window.createOutputChannel('ConTeXt DigestiF');

@@ -34,6 +34,7 @@ const testOptions = {
     join(__dirname, 'src/test/digestifLaunch.test.ts'),
     join(__dirname, 'src/test/digestifLifecycle.test.ts'),
     join(__dirname, 'src/test/buildDigestifIsolation.test.ts'),
+    join(__dirname, 'src/test/digestifContextMode.test.ts'),
   ],
   bundle: true,
   outdir: join(__dirname, 'dist/test'),

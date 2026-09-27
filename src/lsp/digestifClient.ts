@@ -30,8 +30,10 @@ export const DIGESTIF_CLIENT_NAME = 'ConTeXt SyncTeX Digestif';
 export const DIGESTIF_DOCUMENT_SELECTOR: DocumentSelector = [
   { scheme: 'file', language: 'context' },
   { scheme: 'file', language: 'tex' },
+  { scheme: 'file', language: 'latex' },
   { scheme: 'untitled', language: 'context' },
   { scheme: 'untitled', language: 'tex' },
+  { scheme: 'untitled', language: 'latex' },
 ];
 
 export interface DigestifClientHandle {

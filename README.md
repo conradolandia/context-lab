@@ -19,17 +19,17 @@ Then open this folder in VS Code / Cursor and press **F5** (launch config **Run 
 After the Extension Development Host starts, open the **ConTeXt** output channel. You should see:
 
 ```text
-ConTeXt SyncTeX activated  version=0.1.14  BUILD_ID=digestif-lsp-v8
+ConTeXt SyncTeX activated  version=0.1.15  BUILD_ID=digestif-lsp-v9
 …
-[digestif] BUILD_ID=digestif-lsp-v8 source=luarocks   (or override / path)
+[digestif] BUILD_ID=digestif-lsp-v9 source=luarocks   (or override / path)
 [digestif] launch method=direct — …
 ```
 
 Or, on DigestiF failure (build still works immediately):
 
 ```text
-[digestif] BUILD_ID=digestif-lsp-v8 failed to start: …
-[digestif] BUILD_ID=digestif-lsp-v8 giving up for this window: …
+[digestif] BUILD_ID=digestif-lsp-v9 failed to start: …
+[digestif] BUILD_ID=digestif-lsp-v9 giving up for this window: …
 ```
 
 Every **Build and Preview** reprints `BUILD_ID=…` (Output clear wipes earlier lines). DigestiF starts fire-and-forget and **never** blocks, delays, or is awaited by build/preview/SyncTeX. After one DigestiF failure it stays off until you change `context.digestif*` or reload the window.
@@ -92,35 +92,45 @@ Resolution order:
 
 Optional. DigestiF never blocks build or SyncTeX. DigestiF logs go to the **ConTeXt DigestiF** output channel; build logs stay on **ConTeXt**.
 
+This extension contributes the **`context`** language (aliases: ConTeXt) for `.mkiv`, `.mkxl`, `.mkvi`, `.mklx`, `.mkii`. It does **not** claim `*.tex` globally. DigestiF maps LSP `languageId`:
+
+| languageId | DigestiF format |
+| --- | --- |
+| `context` | ConTeXt (`context-en.xml` via `DIGESTIF_TEXMF`) |
+| `tex` | LaTeX |
+| `latex` | LaTeX |
+
+So a `.tex` file left as Plain Text / TeX gets LaTeX tags. Use ConTeXt language mode for ConTeXt docs.
+
+**Associate `*.tex` → ConTeXt (workspace)**
+
+On Build / Show PDF of a `.tex` file whose language is not `context`, the extension offers once per workspace to set:
+
+```json
+"files.associations": {
+  "*.tex": "context"
+}
+```
+
+Choose **Don't ask again** (or set `context.texAssociation.dontAsk`) to suppress the prompt. You can also set the association by hand in workspace settings.
+
 **Recommended (LuaRocks)** — DigestiF needs `lpeg`/`lfs`:
 
 ```bash
-luarocks --local install digestif
-# Ensure ~/.luarocks/bin is early on PATH, or set:
-#   "context.digestifPath": "/home/andi/.luarocks/bin/digestif"
+luarocks --local --lua-version 5.4 install digestif LUA_INCDIR=/usr/include/lua5.4
+# Ensure ~/.luarocks/bin is on PATH, or set context.digestifPath
 ```
 
-**Launch order**
+The luarocks package includes `ManuscriptConTeXt`; ConTeXt command data comes from generating tags from `context-en.xml` under `DIGESTIF_TEXMF` (set from `context.root`).
 
-1. `context.digestifPath` if set (as-is).
-2. `~/.luarocks/bin/digestif` (preferred over TeX Live).
-3. `digestif` on `PATH`.
-
-Spawn env is the user environment plus `DIGESTIF_TEXMF` only (for ConTeXt interface XML). We do **not** prepend LMTX to `PATH` and do **not** set `TEXMFCNF` / `TEXMF*` / `TEXLUA` (that made TeX Live DigestiF read LMTX `texmf.cnf`).
+**Launch order:** `context.digestifPath` → `~/.luarocks/bin/digestif` → `digestif` on PATH.
 
 **Verify**
 
-1. F5 → ConTeXt channel: `BUILD_ID=digestif-lsp-v8`. Build must print ConTeXt output after `cwd:` immediately.
-2. DigestiF channel: `source=luarocks` (or `override` / `path`) and `language client started`, or a single give-up line.
-3. To use Marketplace DigestiF only: `"context.digestif.enabled": false`.
-
-**Troubleshooting**
-
-| Symptom | What to check |
-| --- | --- |
-| Build waits / no ConTeXt output | Confirm `BUILD_ID=digestif-lsp-v8`; DigestiF must not share the ConTeXt channel |
-| kpathsea / texmf.cnf on DigestiF stderr | TeX Live DigestiF + LMTX pollution; prefer luarocks or set `context.digestifPath` to `~/.luarocks/bin/digestif` |
-| DigestiF failed once, stays off | Intended until settings change / reload |
+1. F5 → `BUILD_ID=digestif-lsp-v9`.
+2. Open a `.mkiv` (language ConTeXt) or associate `*.tex` → ConTeXt.
+3. DigestiF channel: `source=luarocks`, then hover `\starttext` / complete `\setup` with ConTeXt docs (not only `latex.tags`).
+4. Scripted check: `LMTX_ROOT=… npm run handshake:context`.
 
 ### Main (root) file resolution
 
