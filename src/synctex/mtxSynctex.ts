@@ -1,6 +1,25 @@
 import { spawn } from 'node:child_process';
 import * as path from 'node:path';
 import type { Toolchain } from '../toolchain/discover';
+import {
+  COARSE_FLOAT_LINE_USER_MESSAGE,
+  isSuspiciousFileStartHit,
+  nearestSynctexBox,
+  readSynctexPageBoxes,
+  type SynctexBox,
+} from './synctexBoxes';
+
+export {
+  COARSE_FLOAT_LINE_USER_MESSAGE,
+  distanceToBox,
+  isSuspiciousFileStartHit,
+  nearestSynctexBox,
+  parseSynctexPageBoxes,
+  readSynctexPageBoxes,
+  SUSPICIOUS_TOP_LINE_MAX,
+  MID_PAGE_MTX_Y_MIN,
+} from './synctexBoxes';
+export type { SynctexBox } from './synctexBoxes';
 
 export interface ForwardSyncResult {
   page: number;
@@ -14,13 +33,51 @@ export interface BackwardSyncResult {
   filename: string;
   linenumber: number;
   tolerance: number;
+  /** True when we replaced a suspicious file-start hit with a nearer box. */
+  refined?: boolean;
+  /** True when the hit still looks like a float/caption coarse tag (line ≤ 1 mid-page). */
+  coarseFloatLine?: boolean;
 }
 
+export type SynctexErrorKind = 'empty' | 'invalid' | 'other';
+
 export class SynctexError extends Error {
-  constructor(message: string) {
+  readonly kind: SynctexErrorKind;
+
+  constructor(message: string, kind: SynctexErrorKind = 'other') {
     super(message);
     this.name = 'SynctexError';
+    this.kind = kind;
   }
+}
+
+/** Default `--tolerance` for `--report` (mtx default is 10). */
+export const DEFAULT_REPORT_TOLERANCE = 50;
+
+/**
+ * Second-pass snap tolerance when the first `--report` returns empty.
+ * mtx-synctex already walks offsets within `--tolerance`; a larger value
+ * only widens that search — it does not invent a line for image-only hits.
+ */
+export const SNAP_REPORT_TOLERANCE = 150;
+
+/**
+ * Short toast when mtx `--report` exits with empty stdout (no box within
+ * tolerance). Common for figure/image regions that have no SyncTeX records.
+ */
+export const EMPTY_BACKWARD_USER_MESSAGE =
+  'No SyncTeX data at this point — common for images and pure graphics. Click near text to jump to source.';
+
+/** True when mtx produced no parseable hit and no invalid-log complaint. */
+export function isEmptyReportOutput(stdout: string, stderr: string): boolean {
+  const combined = `${stdout}\n${stderr}`.trim();
+  if (!combined) {
+    return true;
+  }
+  if (isInvalidSynctexLogMessage(combined)) {
+    return false;
+  }
+  return parseReportOutput(combined) === undefined;
 }
 
 export interface SynctexRunSpec {
@@ -216,6 +273,8 @@ export interface SynctexInvokeResult<T> {
   cwd: string;
   stdout: string;
   stderr: string;
+  /** Optional note when we refined or flagged a coarse float/caption hit. */
+  note?: string;
 }
 
 /**
@@ -241,9 +300,69 @@ export async function forwardSync(
   return { result: parsed, argv: spec.args, cwd: spec.cwd, stdout, stderr };
 }
 
+export interface BackwardSyncOptions {
+  /** First-pass `--tolerance` (default {@link DEFAULT_REPORT_TOLERANCE}). */
+  tolerance?: number;
+  /**
+   * When the first pass is empty, retry once with this larger tolerance
+   * (nearest-box snap via mtx). Use `0` to disable. Default {@link SNAP_REPORT_TOLERANCE}.
+   */
+  snapTolerance?: number;
+  /**
+   * When mtx returns a suspiciously low line for a mid-page click, try to
+   * pick a nearer/smaller box from the synctex page (caption refinement).
+   * Default true.
+   */
+  refineCoarseLines?: boolean;
+}
+
+function boxToResult(box: SynctexBox, toleranceUsed: number): BackwardSyncResult {
+  return {
+    filename: box.filename,
+    linenumber: box.linenumber,
+    tolerance: toleranceUsed,
+    refined: true,
+  };
+}
+
+function maybeRefineHit(
+  synctexPath: string,
+  page: number,
+  x: number,
+  y: number,
+  hit: BackwardSyncResult,
+  snapTolerance: number,
+  refineCoarseLines: boolean,
+): { hit: BackwardSyncResult; note?: string } {
+  if (!refineCoarseLines || !isSuspiciousFileStartHit(hit.linenumber, y)) {
+    return { hit };
+  }
+  const boxes = readSynctexPageBoxes(synctexPath, page);
+  const better = nearestSynctexBox(boxes, x, y, Math.max(snapTolerance, DEFAULT_REPORT_TOLERANCE));
+  if (better && better.linenumber > hit.linenumber) {
+    return {
+      hit: boxToResult(better, hit.tolerance),
+      note: `refined coarse line ${hit.linenumber} → ${better.linenumber} (${better.filename})`,
+    };
+  }
+  return {
+    hit: { ...hit, coarseFloatLine: true },
+    note: 'coarse float/caption line tag (engine limitation)',
+  };
+}
+
 /**
  * Backward SyncTeX: PDF page+coords → source file+line.
  * Uses `--report --direct --console` with cwd = jobDir and the project synctex path.
+ *
+ * On empty stdout (typical for image/figure clicks with no SyncTeX boxes),
+ * retries once with a larger `--tolerance` so mtx can snap to a nearby text
+ * box, then falls back to parsing page boxes ourselves. Still throws
+ * {@link SynctexError} with `kind: 'empty'` if all miss — never invents a
+ * source line for image-only hits.
+ *
+ * When mtx returns line ≤ 1 for a mid-page click (common float/caption tag),
+ * tries a nearer/smaller box from the same page before accepting the hit.
  */
 export async function backwardSync(
   toolchain: Toolchain,
@@ -252,19 +371,117 @@ export async function backwardSync(
   x: number,
   y: number,
   jobDir: string,
-  tolerance = 50,
+  toleranceOrOpts: number | BackwardSyncOptions = DEFAULT_REPORT_TOLERANCE,
 ): Promise<SynctexInvokeResult<BackwardSyncResult>> {
-  const spec = buildReportArgs(synctexPath, page, x, y, jobDir, tolerance);
-  const { stdout, stderr, exitCode } = await runMtx(toolchain, spec.args, spec.cwd);
-  const combined = `${stdout}\n${stderr}`;
-  const parsed = parseReportOutput(combined);
-  if (!parsed) {
-    const hint = isInvalidSynctexLogMessage(combined)
-      ? ' (mtx-synctex rejected the log path — check cwd and synctex argv)'
-      : '';
+  const opts: BackwardSyncOptions =
+    typeof toleranceOrOpts === 'number'
+      ? { tolerance: toleranceOrOpts }
+      : toleranceOrOpts;
+  const tolerance = opts.tolerance ?? DEFAULT_REPORT_TOLERANCE;
+  const snapTolerance = opts.snapTolerance ?? SNAP_REPORT_TOLERANCE;
+  const refineCoarseLines = opts.refineCoarseLines !== false;
+  const absSynctex = path.resolve(synctexPath);
+
+  const finish = (
+    hit: BackwardSyncResult,
+    argv: string[],
+    cwd: string,
+    stdout: string,
+    stderr: string,
+  ): SynctexInvokeResult<BackwardSyncResult> => {
+    const refined = maybeRefineHit(
+      absSynctex,
+      page,
+      x,
+      y,
+      hit,
+      snapTolerance,
+      refineCoarseLines,
+    );
+    return {
+      result: refined.hit,
+      argv,
+      cwd,
+      stdout,
+      stderr,
+      note: refined.note,
+    };
+  };
+
+  const first = await runReportOnce(toolchain, absSynctex, page, x, y, jobDir, tolerance);
+  if (first.parsed) {
+    return finish(first.parsed, first.spec.args, first.spec.cwd, first.stdout, first.stderr);
+  }
+
+  const firstCombined = `${first.stdout}\n${first.stderr}`;
+  if (isInvalidSynctexLogMessage(firstCombined)) {
     throw new SynctexError(
-      `Backward SyncTeX produced no match (exit ${exitCode}) cwd=${spec.cwd} argv=${JSON.stringify(spec.args)}${hint}: ${combined.trim() || '(empty output)'}`,
+      `Backward SyncTeX produced no match (exit ${first.exitCode}) cwd=${first.spec.cwd} argv=${JSON.stringify(first.spec.args)} (mtx-synctex rejected the log path — check cwd and synctex argv): ${firstCombined.trim() || '(empty output)'}`,
+      'invalid',
     );
   }
-  return { result: parsed, argv: spec.args, cwd: spec.cwd, stdout, stderr };
+
+  if (
+    snapTolerance > tolerance &&
+    isEmptyReportOutput(first.stdout, first.stderr)
+  ) {
+    const snap = await runReportOnce(
+      toolchain,
+      absSynctex,
+      page,
+      x,
+      y,
+      jobDir,
+      snapTolerance,
+    );
+    if (snap.parsed) {
+      return finish(snap.parsed, snap.spec.args, snap.spec.cwd, snap.stdout, snap.stderr);
+    }
+
+    // Local nearest-box parse (same tolerance) — cheap, no second mtx spawn beyond snap.
+    const boxes = readSynctexPageBoxes(absSynctex, page);
+    const local = nearestSynctexBox(boxes, x, y, snapTolerance);
+    if (local) {
+      return {
+        result: boxToResult(local, snapTolerance),
+        argv: snap.spec.args,
+        cwd: snap.spec.cwd,
+        stdout: snap.stdout,
+        stderr: snap.stderr,
+        note: `local nearest-box snap line=${local.linenumber}`,
+      };
+    }
+
+    const snapCombined = `${snap.stdout}\n${snap.stderr}`;
+    throw new SynctexError(
+      `Backward SyncTeX produced no match (exit ${snap.exitCode}) cwd=${snap.spec.cwd} argv=${JSON.stringify(snap.spec.args)} (retried tolerance=${snapTolerance} after empty first pass): ${snapCombined.trim() || '(empty output)'}`,
+      'empty',
+    );
+  }
+
+  throw new SynctexError(
+    `Backward SyncTeX produced no match (exit ${first.exitCode}) cwd=${first.spec.cwd} argv=${JSON.stringify(first.spec.args)}: ${firstCombined.trim() || '(empty output)'}`,
+    isEmptyReportOutput(first.stdout, first.stderr) ? 'empty' : 'other',
+  );
+}
+
+async function runReportOnce(
+  toolchain: Toolchain,
+  synctexPath: string,
+  page: number,
+  x: number,
+  y: number,
+  jobDir: string,
+  tolerance: number,
+): Promise<{
+  spec: SynctexRunSpec;
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+  parsed: BackwardSyncResult | undefined;
+}> {
+  const spec = buildReportArgs(synctexPath, page, x, y, jobDir, tolerance);
+  const { stdout, stderr, exitCode } = await runMtx(toolchain, spec.args, spec.cwd);
+  const parsed = parseReportOutput(`${stdout}\n${stderr}`);
+  return { spec, stdout, stderr, exitCode, parsed };
 }
