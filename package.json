@@ -12,9 +12,7 @@
     "Other"
   ],
   "activationEvents": [
-    "onLanguage:tex",
-    "onLanguage:context",
-    "onView:context.projectView"
+    "onLanguage:tex"
   ],
   "main": "./dist/extension.js",
   "icon": "media/icon.png",
@@ -68,7 +66,8 @@
         {
           "id": "context.projectView",
           "name": "Project",
-          "contextualTitle": "ConTeXt Project"
+          "contextualTitle": "ConTeXt Project",
+          "icon": "$(list-tree)"
         }
       ]
     },
