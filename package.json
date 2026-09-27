@@ -11,7 +11,6 @@
     "Other"
   ],
   "activationEvents": [
-    "onLanguage:context",
     "onLanguage:tex"
   ],
   "main": "./dist/extension.js",
