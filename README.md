@@ -1,6 +1,6 @@
-# ConTeXt SyncTeX (VS Code)
+# ConTeXt Tools (VS Code)
 
-Companion VS Code extension for ConTeXt: compile with SyncTeX, preview PDF with PDF.js, and jump between source and PDF. Not a fork of the stock LMTX `mtx-vscode` syntax pack.
+VS Code extension for ConTeXt: SyncTeX PDF preview, DigestiF language server, and TextMate grammar. Not a fork of the stock LMTX `mtx-vscode` syntax pack.
 
 ## Run locally (F5)
 
@@ -8,8 +8,8 @@ Checkout the PR branch and rebuild before launching so the Extension Host cannot
 
 ```bash
 git fetch origin
-git checkout cursor/hover-outline-polish-7e21
-git pull origin cursor/hover-outline-polish-7e21
+git checkout cursor/rename-context-tools-120e
+git pull origin cursor/rename-context-tools-120e
 npm install
 npm run compile
 ```
@@ -19,17 +19,17 @@ Then open this folder in VS Code / Cursor and press **F5** (launch config **Run 
 After the Extension Development Host starts, open the **ConTeXt** output channel. You should see:
 
 ```text
-ConTeXt SyncTeX activated  version=0.1.17  BUILD_ID=hover-outline-polish-v1
+ConTeXt Tools activated  version=0.1.17  BUILD_ID=context-tools-rename-v1
 …
-[digestif] BUILD_ID=hover-outline-polish-v1 source=luarocks   (or override / path)
+[digestif] BUILD_ID=context-tools-rename-v1 source=luarocks   (or override / path)
 [digestif] launch method=direct — …
 ```
 
 Or, on DigestiF failure (build still works immediately):
 
 ```text
-[digestif] BUILD_ID=hover-outline-polish-v1 failed to start: …
-[digestif] BUILD_ID=hover-outline-polish-v1 giving up for this window: …
+[digestif] BUILD_ID=context-tools-rename-v1 failed to start: …
+[digestif] BUILD_ID=context-tools-rename-v1 giving up for this window: …
 ```
 
 Every **Build and Preview** reprints `BUILD_ID=…` (Output clear wipes earlier lines). DigestiF starts fire-and-forget and **never** blocks, delays, or is awaited by build/preview/SyncTeX. After one DigestiF failure it stays off until you change `context.digestif*` or reload the window.
