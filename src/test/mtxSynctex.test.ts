@@ -10,6 +10,16 @@ import {
   synctexSourceArg,
   unquoteSynctexValue,
   isInvalidSynctexLogMessage,
+  isEmptyReportOutput,
+  EMPTY_BACKWARD_USER_MESSAGE,
+  COARSE_FLOAT_LINE_USER_MESSAGE,
+  DEFAULT_REPORT_TOLERANCE,
+  SNAP_REPORT_TOLERANCE,
+  SynctexError,
+  parseSynctexPageBoxes,
+  nearestSynctexBox,
+  isSuspiciousFileStartHit,
+  distanceToBox,
 } from '../synctex/mtxSynctex';
 
 const fixturesDir = path.join(__dirname, 'fixtures');
@@ -113,6 +123,85 @@ describe('mtxSynctex parseReportOutput', () => {
     assert.equal(unquoteSynctexValue("'foo/bar.tex'"), 'foo/bar.tex');
     assert.equal(unquoteSynctexValue('"foo.tex"'), 'foo.tex');
     assert.equal(unquoteSynctexValue('foo.tex'), 'foo.tex');
+  });
+});
+
+describe('mtxSynctex empty report UX', () => {
+  it('treats blank mtx stdout/stderr as empty (image / no-box click)', () => {
+    assert.equal(isEmptyReportOutput('', ''), true);
+    assert.equal(isEmptyReportOutput('\n', '  '), true);
+  });
+
+  it('does not treat invalid-log messages as empty', () => {
+    const text = readFixture('report-invalid-tex-path.txt');
+    assert.equal(isEmptyReportOutput(text, ''), false);
+  });
+
+  it('does not treat a successful console hit as empty', () => {
+    const text = readFixture('report-console.txt');
+    assert.equal(isEmptyReportOutput(text, ''), false);
+  });
+
+  it('exposes a short user-facing empty message distinct from coarse-float', () => {
+    assert.match(EMPTY_BACKWARD_USER_MESSAGE, /images/i);
+    assert.match(EMPTY_BACKWARD_USER_MESSAGE, /graphics/i);
+    assert.ok(!EMPTY_BACKWARD_USER_MESSAGE.includes('argv='));
+    assert.match(COARSE_FLOAT_LINE_USER_MESSAGE, /float|caption/i);
+    assert.match(COARSE_FLOAT_LINE_USER_MESSAGE, /No useful SyncTeX match/i);
+    assert.ok(!/jumped/i.test(COARSE_FLOAT_LINE_USER_MESSAGE));
+    assert.notEqual(EMPTY_BACKWARD_USER_MESSAGE, COARSE_FLOAT_LINE_USER_MESSAGE);
+  });
+
+  it('SynctexError carries empty kind for toast routing', () => {
+    const err = new SynctexError('detail for Output', 'empty');
+    assert.equal(err.kind, 'empty');
+    assert.equal(err.message, 'detail for Output');
+  });
+
+  it('snap tolerance is larger than the first-pass default', () => {
+    assert.ok(SNAP_REPORT_TOLERANCE > DEFAULT_REPORT_TOLERANCE);
+  });
+});
+
+describe('synctex page boxes (caption / float refine)', () => {
+  const text = readFixture('page-with-figure.synctex.txt');
+
+  it('parses Input + h boxes for the requested page only', () => {
+    const boxes = parseSynctexPageBoxes(text, 40);
+    assert.equal(boxes.length, 4);
+    assert.equal(boxes[0].filename, 'chapter.tex');
+    assert.equal(boxes[1].linenumber, 1);
+    assert.equal(boxes[2].linenumber, 88);
+    assert.equal(parseSynctexPageBoxes(text, 99).length, 0);
+  });
+
+  it('prefers a small caption box over a large line-1 float wrapper', () => {
+    const boxes = parseSynctexPageBoxes(text, 40);
+    // Click inside both the line-1 wrapper and the caption box at y≈520.
+    const hit = nearestSynctexBox(boxes, 150, 525, 50);
+    assert.ok(hit);
+    assert.equal(hit!.linenumber, 88);
+    assert.equal(hit!.filename, 'figures.tex');
+  });
+
+  it('returns undefined for an image-like void far from any box', () => {
+    const boxes = parseSynctexPageBoxes(text, 40);
+    // Center of the large wrapper but we still have that wrapper — pick a
+    // point with no nearby boxes at all (top margin away from line 5 text).
+    assert.equal(nearestSynctexBox(boxes, 500, 20, 10), undefined);
+  });
+
+  it('distanceToBox is 0 inside and positive outside', () => {
+    const boxes = parseSynctexPageBoxes(text, 40);
+    const cap = boxes.find((b) => b.linenumber === 88)!;
+    assert.equal(distanceToBox(cap, 150, 525), 0);
+    assert.ok(distanceToBox(cap, 150, 400) > 0);
+  });
+
+  it('flags mid-page line-1 hits as suspicious file-start', () => {
+    assert.equal(isSuspiciousFileStartHit(1, 343), true);
+    assert.equal(isSuspiciousFileStartHit(1, 10), false);
+    assert.equal(isSuspiciousFileStartHit(88, 343), false);
   });
 });
 
