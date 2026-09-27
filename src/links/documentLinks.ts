@@ -7,6 +7,11 @@ import {
   TEX_INCLUDE_EXTENSIONS,
 } from '../project/pathResolve';
 import { scanStructure, type IncludeKind } from '../project/structureScan';
+import {
+  constrainHoverImageSize,
+  figureHoverImgHtml,
+} from './figureHoverMarkdown';
+import { readImageSize } from './imageSize';
 
 function isContextDoc(doc: vscode.TextDocument): boolean {
   return doc.languageId === 'context' || doc.languageId === 'tex' || doc.languageId === 'latex';
@@ -102,10 +107,16 @@ export class ContextFigureHoverProvider implements vscode.HoverProvider {
     if (!resolved || !IMAGE_EXT.test(resolved)) {
       return undefined;
     }
-    // Skip huge previews; VS Code will load the file — keep a soft size gate via fs later if needed.
-    const md = new vscode.MarkdownString(`![${path.basename(resolved)}](${vscode.Uri.file(resolved)})`);
+    const uri = vscode.Uri.file(resolved);
+    const natural = readImageSize(resolved);
+    const size = natural
+      ? constrainHoverImageSize(natural.width, natural.height)
+      : undefined;
+    const md = new vscode.MarkdownString(
+      figureHoverImgHtml(uri.toString(), path.basename(resolved), size),
+    );
     md.isTrusted = true;
-    md.supportHtml = false;
+    md.supportHtml = true;
     return new vscode.Hover(
       md,
       new vscode.Range(document.positionAt(hit.nameStart), document.positionAt(hit.nameEnd)),

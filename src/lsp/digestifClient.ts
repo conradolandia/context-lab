@@ -23,6 +23,7 @@ import {
   preferDigestifError,
   withTimeout,
 } from './digestifProcess';
+import { normalizeOutlineSymbols } from './normalizeOutlineTitle';
 
 export const DIGESTIF_CLIENT_ID = 'contextSyncTeX.digestif';
 export const DIGESTIF_CLIENT_NAME = 'ConTeXt SyncTeX Digestif';
@@ -214,6 +215,17 @@ export function createDigestifClient(options: {
           const msg = preferDigestifError(error);
           log(`[digestif] BUILD_ID=${buildId} initialization failed: ${msg}`);
           return false;
+        },
+        // DigestiF owns DocumentSymbol; we only clean names for Outline display.
+        middleware: {
+          provideDocumentSymbols: async (document, token, next) => {
+            const result = await next(document, token);
+            if (!result) {
+              return result;
+            }
+            normalizeOutlineSymbols(result as import('./normalizeOutlineTitle').OutlineSymbolLike[]);
+            return result;
+          },
         },
       };
 

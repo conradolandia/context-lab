@@ -40,6 +40,8 @@ const testOptions = {
     join(__dirname, 'src/test/pathResolve.test.ts'),
     join(__dirname, 'src/test/startStopFolding.test.ts'),
     join(__dirname, 'src/test/buildQueue.test.ts'),
+    join(__dirname, 'src/test/normalizeOutlineTitle.test.ts'),
+    join(__dirname, 'src/test/figureHoverMarkdown.test.ts'),
   ],
   bundle: true,
   outdir: join(__dirname, 'dist/test'),

@@ -8,8 +8,8 @@ Checkout the PR branch and rebuild before launching so the Extension Host cannot
 
 ```bash
 git fetch origin
-git checkout cursor/diagnostics-links-folding-onsave-abc1
-git pull origin cursor/diagnostics-links-folding-onsave-abc1
+git checkout cursor/hover-outline-polish-7e21
+git pull origin cursor/hover-outline-polish-7e21
 npm install
 npm run compile
 ```
@@ -19,17 +19,17 @@ Then open this folder in VS Code / Cursor and press **F5** (launch config **Run 
 After the Extension Development Host starts, open the **ConTeXt** output channel. You should see:
 
 ```text
-ConTeXt SyncTeX activated  version=0.1.16  BUILD_ID=diagnostics-links-fold-onsave-v1
+ConTeXt SyncTeX activated  version=0.1.17  BUILD_ID=hover-outline-polish-v1
 …
-[digestif] BUILD_ID=diagnostics-links-fold-onsave-v1 source=luarocks   (or override / path)
+[digestif] BUILD_ID=hover-outline-polish-v1 source=luarocks   (or override / path)
 [digestif] launch method=direct — …
 ```
 
 Or, on DigestiF failure (build still works immediately):
 
 ```text
-[digestif] BUILD_ID=diagnostics-links-fold-onsave-v1 failed to start: …
-[digestif] BUILD_ID=diagnostics-links-fold-onsave-v1 giving up for this window: …
+[digestif] BUILD_ID=hover-outline-polish-v1 failed to start: …
+[digestif] BUILD_ID=hover-outline-polish-v1 giving up for this window: …
 ```
 
 Every **Build and Preview** reprints `BUILD_ID=…` (Output clear wipes earlier lines). DigestiF starts fire-and-forget and **never** blocks, delays, or is awaited by build/preview/SyncTeX. After one DigestiF failure it stays off until you change `context.digestif*` or reload the window.
@@ -89,9 +89,11 @@ Resolution order:
 | `context.digestif.enabled` | `true` | Start Digestif LSP (completion / hover). Safe to leave on if Digestif is missing |
 | `context.digestifPath` | `""` | Absolute Digestif binary; empty = `digestif` on PATH |
 
-### Digestif LSP (completion / hover)
+### Digestif LSP (completion / hover / outline)
 
 Optional. DigestiF never blocks build or SyncTeX. DigestiF logs go to the **ConTeXt DigestiF** output channel; build logs stay on **ConTeXt**.
+
+Document outline (DocumentSymbol) comes from DigestiF. This client runs a thin `middleware.provideDocumentSymbols` that only normalizes symbol names for display: strip wrapping `{}`, collapse whitespace/newlines to a single space, trim. Other DigestiF features are unchanged.
 
 This extension contributes the **`context`** language (aliases: ConTeXt) for `.mkiv`, `.mkxl`, `.mkvi`, `.mklx`, `.mkii`. It does **not** claim `*.tex` globally. DigestiF maps LSP `languageId`:
 
@@ -202,7 +204,7 @@ Fixtures under `src/test/fixtures/diagnostics/` were captured from deliberate LM
 
 ## Document links
 
-Ctrl/Cmd-click resolves file names in `\component`, `\product`, `\environment`, `\project`, `\input`, `\usemodule`, and `\externalfigure` (space, `[]`, and `{}` argument forms). `\usepath[...]` directories relative to the declaring file are searched. Path resolution lives in `src/project/pathResolve.ts` / `structureScan.ts` for reuse by a later project TreeView. Hover on `\externalfigure` shows an image preview for common raster/SVG paths when the file resolves.
+Ctrl/Cmd-click resolves file names in `\component`, `\product`, `\environment`, `\project`, `\input`, `\usemodule`, and `\externalfigure` (space, `[]`, and `{}` argument forms). `\usepath[...]` directories relative to the declaring file are searched. Path resolution lives in `src/project/pathResolve.ts` / `structureScan.ts` for reuse by a later project TreeView. Hover on `\externalfigure` shows an image preview for common raster/SVG paths when the file resolves; the preview is scaled to fit a small tooltip box (max 360×280, aspect ratio kept).
 
 ## Build on save
 
