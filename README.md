@@ -8,8 +8,8 @@ Checkout the PR branch and rebuild before launching so the Extension Host cannot
 
 ```bash
 git fetch origin
-git checkout cursor/rename-context-tools-120e
-git pull origin cursor/rename-context-tools-120e
+git checkout cursor/project-view-59b5
+git pull origin cursor/project-view-59b5
 npm install
 npm run compile
 ```
@@ -19,17 +19,17 @@ Then open this folder in VS Code / Cursor and press **F5** (launch config **Run 
 After the Extension Development Host starts, open the **ConTeXt** output channel. You should see:
 
 ```text
-ConTeXt Tools activated  version=0.1.19  BUILD_ID=context-tools-rename-v1
+ConTeXt Tools activated  version=0.1.21  BUILD_ID=project-view-v2
 …
-[digestif] BUILD_ID=context-tools-rename-v1 source=luarocks   (or override / path)
+[digestif] BUILD_ID=project-view-v2 source=luarocks   (or override / path)
 [digestif] launch method=direct — …
 ```
 
 Or, on DigestiF failure (build still works immediately):
 
 ```text
-[digestif] BUILD_ID=context-tools-rename-v1 failed to start: …
-[digestif] BUILD_ID=context-tools-rename-v1 giving up for this window: …
+[digestif] BUILD_ID=project-view-v2 failed to start: …
+[digestif] BUILD_ID=project-view-v2 giving up for this window: …
 ```
 
 Every **Build and Preview** reprints `BUILD_ID=…` (Output clear wipes earlier lines). DigestiF starts fire-and-forget and **never** blocks, delays, or is awaited by build/preview/SyncTeX. After one DigestiF failure it stays off until you change `context.digestif*` or reload the window.
@@ -88,6 +88,11 @@ Resolution order:
 | `context.rootFile` | `""` | Main file to compile (workspace-relative or absolute). Empty = auto-detect |
 | `context.digestif.enabled` | `true` | Start Digestif LSP (completion / hover). Safe to leave on if Digestif is missing |
 | `context.digestifPath` | `""` | Absolute Digestif binary; empty = `digestif` on PATH |
+| `context.projectView.enabled` | `true` | Show the ConTeXt activity-bar Project TreeView |
+| `context.projectView.includeInputs` | `false` | Show `\input` children under products |
+| `context.projectView.includeModules` | `false` | Reserved; modules/figures stay on document links only |
+| `context.projectView.maxFiles` | `500` | Cap on files visited while expanding the graph |
+| `context.projectView.refreshDebounceMs` | `300` | Debounce before rescan after edits/saves |
 
 ### Digestif LSP (completion / hover / outline)
 
@@ -145,6 +150,25 @@ Order (first match wins):
 4. Fallback: the active file
 
 The status bar shows `ConTeXt: <rootname>`; click it to set or clear `context.rootFile` for the workspace. Build / Show PDF use the resolved root’s PDF and synctex; Forward SyncTeX still passes the **active** file+line to `--file`.
+
+## Project view
+
+Activity-bar container **ConTeXt** → **Project** TreeView. Scans English structure commands (`\project`, `\product`, `\component`, `\environment`, `\usepath`, optional `\input`) with the same `structureScan` / `pathResolve` helpers as document links. Does **not** list `\usemodule` or `\externalfigure` (those stay as document links). DigestiF Outline remains section/label oriented; this view is the file graph only.
+
+| Node | Build | Notes |
+| --- | --- | --- |
+| product / document | yes | Compiles that file |
+| component | yes | Compiles via `resolveRootFile` (product preferred; no “component only” in v1) |
+| environment | no | Loaded into a product; build action not offered |
+| project | refused | Shows a message; offers the first listed product if any |
+
+Repeated `\component` names collapse to one node (tooltip/description shows include count). Multi-product projects expand the product tied to the active file / `context.rootFile`; sibling products stay collapsed. Click a node to open the file. Inline/context actions: Build, Forward SyncTeX (active selection if that file is open, else line 1), Set as Main (Root) File. Title bar: **Reveal Active** and **Refresh**.
+
+The tree is anchored to the resolved product/project (`context.rootFile` or the last discovered product/project). Opening a component only reveals/highlights that node; it does not re-root the tree to a lone component. An unrelated active file keeps the last good model and shows a short “outside this project” message on the view.
+
+Empty / missing-root / no-structure states show a short message pointing at opening a `.tex` / `.mkiv` file or setting `context.rootFile`. Output logs `[projectView] entry=… files=… unresolved=… reason=… …ms` on each rebuild.
+
+English interface command names only. Non-English structure aliases (`\inicio…`, etc.) are not matched; add them later only if a book needs them and the cost stays small.
 
 ## Syntax highlighting and folding
 
@@ -283,6 +307,9 @@ src/build/buildDiagnostics.ts
 src/build/artifactGate.ts
 src/project/pathResolve.ts
 src/project/structureScan.ts
+src/project/projectAnchor.ts
+src/project/projectModel.ts
+src/project/projectTree.ts
 src/project/verbatimRegions.ts
 src/links/documentLinks.ts
 src/folding/startStopFolding.ts
@@ -291,9 +318,10 @@ src/synctex/synctexBoxes.ts
 src/synctex/coords.ts
 src/viewer/pdfPanel.ts
 media/viewer/
+media/context-activity.svg
 syntaxes/context.tmLanguage.json
 src/test/grammar/
 src/test/fixtures/diagnostics/
 ```
 
-Stacked on the TextMate grammar branch (`cursor/textmate-baseline-grammar-64f0` / PR #5). Tree-sitter remains on hold; project TreeView is a separate plan that reuses `pathResolve` / `structureScan`.
+Project TreeView reuses `pathResolve` / `structureScan`. Tree-sitter remains on hold.

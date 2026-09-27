@@ -11,6 +11,9 @@ export type IncludeKind =
   | 'usemodule'
   | 'externalfigure';
 
+/** Role of *this* file from `\\startproject` / `\\startproduct` / … (English interface). */
+export type StructureRole = 'project' | 'product' | 'component' | 'environment';
+
 export interface IncludeRef {
   kind: IncludeKind;
   /** Raw name as written (no braces/brackets). */
@@ -23,9 +26,18 @@ export interface IncludeRef {
   commandStart: number;
 }
 
+export interface FileRoleInfo {
+  role: StructureRole;
+  /** Optional name from `\\startproduct book` / `\\startcomponent[chap]`. */
+  name?: string;
+  commandStart: number;
+}
+
 export interface StructureScanResult {
   usePaths: string[];
   includes: IncludeRef[];
+  /** First `\\start(project|product|component|environment)` in the file, if any. */
+  fileRole?: FileRoleInfo;
 }
 
 const USEPATH = /\\usepath\s*\[([^\]]*)\]/g;
@@ -40,14 +52,20 @@ const USEPATH = /\\usepath\s*\[([^\]]*)\]/g;
 const INCLUDE_CMD =
   /\\(component|product|environment|project|input|usemodule|externalfigure)\b\s*(?:\[([^\]]*)\]|\{([^}]*)\}|([^\s\]\}%\\]+))?/g;
 
+/** `\\startproduct book`, `\\startcomponent[chap]`, `\\startenvironment{env}`, … */
+const START_ROLE =
+  /\\start(project|product|component|environment)\b\s*(?:\[([^\]]*)\]|\{([^}]*)\}|([^\s\]\}%\\]+))?/g;
+
 /**
- * Scan one ConTeXt source buffer for `\\usepath` and file-load commands.
- * Skips comment lines and bodies of common verbatim / Lua / MetaPost regions.
+ * Scan one ConTeXt source buffer for `\\usepath`, file-load commands, and this
+ * file’s structure role. Skips comment lines and bodies of common verbatim /
+ * Lua / MetaPost regions. English interface command names only.
  */
 export function scanStructure(text: string): StructureScanResult {
   const verbatim = findVerbatimRanges(text);
   const usePaths: string[] = [];
   const includes: IncludeRef[] = [];
+  let fileRole: FileRoleInfo | undefined;
 
   // Line map for comment checks
   const lineStarts: number[] = [0];
@@ -78,31 +96,47 @@ export function scanStructure(text: string): StructureScanResult {
     return text.slice(start, end);
   }
 
+  function isSkipped(offset: number): boolean {
+    if (offsetInRanges(offset, verbatim)) {
+      return true;
+    }
+    const line = lineTextAt(offset);
+    if (isCommentLine(line)) {
+      return true;
+    }
+    const lineStart = lineStarts[lineIndexAt(offset)];
+    const prefix = text.slice(lineStart, offset);
+    return stripLineComment(prefix).length !== prefix.length;
+  }
+
   USEPATH.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = USEPATH.exec(text)) !== null) {
-    if (offsetInRanges(m.index, verbatim)) {
-      continue;
-    }
-    if (isCommentLine(lineTextAt(m.index))) {
+    if (isSkipped(m.index)) {
       continue;
     }
     usePaths.push(...parseUsePathBody(m[1]));
   }
 
+  START_ROLE.lastIndex = 0;
+  while ((m = START_ROLE.exec(text)) !== null) {
+    if (isSkipped(m.index)) {
+      continue;
+    }
+    const role = m[1] as StructureRole;
+    const raw = (m[2] ?? m[3] ?? m[4] ?? '').trim();
+    const name = raw ? (raw.split(',')[0]?.trim() ?? raw) : undefined;
+    fileRole = {
+      role,
+      name: name || undefined,
+      commandStart: m.index,
+    };
+    break; // first role wins
+  }
+
   INCLUDE_CMD.lastIndex = 0;
   while ((m = INCLUDE_CMD.exec(text)) !== null) {
-    if (offsetInRanges(m.index, verbatim)) {
-      continue;
-    }
-    const line = lineTextAt(m.index);
-    if (isCommentLine(line)) {
-      continue;
-    }
-    // Ignore if the match sits after a `%` on the same line
-    const lineStart = lineStarts[lineIndexAt(m.index)];
-    const prefix = text.slice(lineStart, m.index);
-    if (stripLineComment(prefix).length !== prefix.length) {
+    if (isSkipped(m.index)) {
       continue;
     }
 
@@ -131,5 +165,5 @@ export function scanStructure(text: string): StructureScanResult {
     });
   }
 
-  return { usePaths, includes };
+  return { usePaths, includes, fileRole };
 }

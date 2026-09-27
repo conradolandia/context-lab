@@ -46,13 +46,13 @@ export class BuildController {
     this.disposed = true;
   }
 
-  /** Manual Build and Preview command. */
-  requestCommandBuild(): void {
+  /** Manual Build and Preview command. Optional absolute root overrides resolveRoot. */
+  requestCommandBuild(overrideRootFile?: string): void {
     if (this.building) {
       void vscode.window.showInformationMessage('A ConTeXt build is already running.');
       return;
     }
-    void this.runBuild('command');
+    void this.runBuild('command', overrideRootFile);
   }
 
   /** Save-triggered build when `context.build.onSave` is true. */
@@ -76,13 +76,15 @@ export class BuildController {
     }
   }
 
-  private async runBuild(trigger: BuildTrigger): Promise<void> {
+  private async runBuild(trigger: BuildTrigger, overrideRootFile?: string): Promise<void> {
     if (this.disposed || this.building) {
       return;
     }
 
     const active = this.deps.activeTexPath();
-    const root = this.deps.resolveRoot(active);
+    const root = overrideRootFile
+      ? { rootFile: overrideRootFile, rule: 'projectView:node' }
+      : this.deps.resolveRoot(active);
     if (!root) {
       if (trigger === 'command') {
         void vscode.window.showErrorMessage('Open a ConTeXt / TeX source file to build.');

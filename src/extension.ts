@@ -24,9 +24,11 @@ import {
   ContextFoldingRangeProvider,
   publishFoldDiagnostics,
 } from './folding/startStopFolding';
+import { registerProjectView } from './project/projectTree';
+import type { ProjectNode } from './project/projectModel';
 
-/** Bump when shipping a SyncTeX/viewer/LSP/diagnostics behavior change Sir must verify in Output. */
-export const BUILD_ID = 'context-tools-rename-v1';
+/** Bump when shipping a SyncTeX/viewer/LSP/diagnostics/project-view behavior change Sir must verify in Output. */
+export const BUILD_ID = 'project-view-v2';
 
 let output: vscode.OutputChannel;
 let digestifOutput: vscode.OutputChannel;
@@ -204,7 +206,10 @@ async function showPdf(): Promise<void> {
   }
 }
 
-async function doForwardSync(): Promise<void> {
+async function doForwardSync(opts?: {
+  file?: string;
+  line?: number;
+}): Promise<void> {
   const cfg = vscode.workspace.getConfiguration('context');
   if (!cfg.get<boolean>('synctex.enabled', true)) {
     void vscode.window.showInformationMessage('SyncTeX is disabled (context.synctex.enabled).');
@@ -212,9 +217,19 @@ async function doForwardSync(): Promise<void> {
   }
 
   const editor = vscode.window.activeTextEditor;
-  if (!editor) {
+  const file = opts?.file ?? editor?.document.uri.fsPath;
+  if (!file) {
     void vscode.window.showErrorMessage('No active editor for Forward SyncTeX.');
     return;
+  }
+
+  let line = opts?.line;
+  if (line == null) {
+    if (editor && editor.document.uri.fsPath === file) {
+      line = editor.selection.active.line + 1;
+    } else {
+      line = 1;
+    }
   }
 
   if (!snapshot?.synctexPath || !snapshot.pdfPath || !snapshot.jobDir) {
@@ -232,8 +247,6 @@ async function doForwardSync(): Promise<void> {
     return;
   }
 
-  const file = editor.document.uri.fsPath;
-  const line = editor.selection.active.line + 1;
   output.appendLine(
     `[synctex find] file=${file} line=${line} synctex=${snapshot.synctexPath} jobDir=${snapshot.jobDir}`,
   );
@@ -256,6 +269,83 @@ async function doForwardSync(): Promise<void> {
     output.appendLine(`[synctex find] ${msg}`);
     void vscode.window.showWarningMessage(msg);
   }
+}
+
+function buildFromProjectNode(node: ProjectNode): void {
+  if (node.kind === 'project') {
+    const firstProduct = node.children.find((c) => c.kind === 'product' && c.fsPath && !c.missing);
+    void vscode.window
+      .showInformationMessage(
+        'Project files are not compile targets (compiling a project can loop). Build a product instead.',
+        firstProduct ? `Build ${firstProduct.label}` : 'OK',
+      )
+      .then((choice) => {
+        if (firstProduct?.fsPath && choice?.startsWith('Build ')) {
+          buildController?.requestCommandBuild(firstProduct.fsPath);
+        }
+      });
+    return;
+  }
+  if (node.kind === 'environment') {
+    void vscode.window.showInformationMessage(
+      'Environment files are not compile targets. Build a product or component instead.',
+    );
+    return;
+  }
+  if (node.missing || !node.fsPath) {
+    void vscode.window.showErrorMessage('Cannot build: file is missing or unresolved.');
+    return;
+  }
+
+  if (node.kind === 'product' || node.kind === 'document') {
+    buildController?.requestCommandBuild(node.fsPath);
+    return;
+  }
+
+  // Component (and input): compile via resolveRootFile (product preferred).
+  let text = '';
+  try {
+    const open = vscode.workspace.textDocuments.find((d) => d.uri.fsPath === node.fsPath);
+    text = open ? open.getText() : fs.readFileSync(node.fsPath, 'utf8');
+  } catch {
+    text = '';
+  }
+  const cfg = vscode.workspace.getConfiguration('context');
+  const resolved = resolveRootFile({
+    activeFile: node.fsPath,
+    activeText: text,
+    rootFileSetting: cfg.get<string>('rootFile', '') ?? '',
+    workspaceFolders: workspaceFolderPaths(),
+  });
+  buildController?.requestCommandBuild(resolved.rootFile);
+}
+
+async function forwardSyncFromProjectNode(node: ProjectNode): Promise<void> {
+  if (!node.fsPath || node.missing) {
+    void vscode.window.showErrorMessage('Cannot SyncTeX: file is missing or unresolved.');
+    return;
+  }
+  const openEditor = vscode.window.visibleTextEditors.find(
+    (e) => e.document.uri.fsPath === node.fsPath,
+  );
+  const line = openEditor ? openEditor.selection.active.line + 1 : 1;
+  await doForwardSync({ file: node.fsPath, line });
+}
+
+async function setRootFromProjectNode(node: ProjectNode): Promise<void> {
+  if (!node.fsPath || node.missing) {
+    void vscode.window.showErrorMessage('Cannot set root: file is missing or unresolved.');
+    return;
+  }
+  const folders = workspaceFolderPaths();
+  let rel = node.fsPath;
+  if (folders[0] && rel.startsWith(folders[0] + path.sep)) {
+    rel = path.relative(folders[0], rel);
+  }
+  const cfg = vscode.workspace.getConfiguration('context');
+  await cfg.update('rootFile', rel, vscode.ConfigurationTarget.Workspace);
+  output.appendLine(`[root] set context.rootFile=${rel} (from Project view)`);
+  updateRootStatus();
 }
 
 async function handlePdfClick(
@@ -477,6 +567,19 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }),
   );
+
+  registerProjectView(context, {
+    output,
+    workspaceFolderPaths,
+    activeTexPath,
+    getRootFileSetting: () =>
+      vscode.workspace.getConfiguration('context').get<string>('rootFile', '') ?? '',
+    buildNode: buildFromProjectNode,
+    forwardSyncNode: (node) => {
+      void forwardSyncFromProjectNode(node);
+    },
+    setRootFromNode: setRootFromProjectNode,
+  });
 
   const pkgPath = path.join(context.extensionPath, 'package.json');
   let version = 'unknown';
