@@ -20,7 +20,7 @@ import {
 } from './folding/startStopFolding';
 
 /** Bump when shipping a SyncTeX/viewer/LSP/diagnostics behavior change Sir must verify in Output. */
-export const BUILD_ID = 'diagnostics-links-fold-onsave-v1';
+export const BUILD_ID = 'hover-outline-polish-v1';
 
 let output: vscode.OutputChannel;
 let digestifOutput: vscode.OutputChannel;
