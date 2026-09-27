@@ -2,7 +2,7 @@
   "name": "context-synctex",
   "displayName": "ConTeXt SyncTeX",
   "description": "ConTeXt build, PDF.js viewer, and SyncTeX forward/backward navigation",
-  "version": "0.1.18",
+  "version": "0.1.19",
   "publisher": "context-lab",
   "engines": {
     "vscode": "^1.85.0"

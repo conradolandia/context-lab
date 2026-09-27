@@ -147,6 +147,8 @@ describe('mtxSynctex empty report UX', () => {
     assert.match(EMPTY_BACKWARD_USER_MESSAGE, /graphics/i);
     assert.ok(!EMPTY_BACKWARD_USER_MESSAGE.includes('argv='));
     assert.match(COARSE_FLOAT_LINE_USER_MESSAGE, /float|caption/i);
+    assert.match(COARSE_FLOAT_LINE_USER_MESSAGE, /No useful SyncTeX match/i);
+    assert.ok(!/jumped/i.test(COARSE_FLOAT_LINE_USER_MESSAGE));
     assert.notEqual(EMPTY_BACKWARD_USER_MESSAGE, COARSE_FLOAT_LINE_USER_MESSAGE);
   });
 

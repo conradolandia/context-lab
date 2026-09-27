@@ -171,4 +171,4 @@ export function isSuspiciousFileStartHit(
 }
 
 export const COARSE_FLOAT_LINE_USER_MESSAGE =
-  'SyncTeX jumped to the start of that file — ConTeXt often tags float/caption boxes with a coarse line. Click nearby body text for a more precise jump.';
+  'No useful SyncTeX match here — ConTeXt often tags float/caption boxes with a coarse line (file start). Click nearby body text for a precise jump.';

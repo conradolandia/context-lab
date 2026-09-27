@@ -362,7 +362,8 @@ function maybeRefineHit(
  * source line for image-only hits.
  *
  * When mtx returns line ≤ 1 for a mid-page click (common float/caption tag),
- * tries a nearer/smaller box from the same page before accepting the hit.
+ * tries a nearer/smaller box from the same page; if nothing better exists,
+ * sets `coarseFloatLine` so the UI can refuse the jump (message only).
  */
 export async function backwardSync(
   toolchain: Toolchain,

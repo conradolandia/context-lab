@@ -19,17 +19,17 @@ Then open this folder in VS Code / Cursor and press **F5** (launch config **Run 
 After the Extension Development Host starts, open the **ConTeXt** output channel. You should see:
 
 ```text
-ConTeXt SyncTeX activated  version=0.1.18  BUILD_ID=synctex-image-empty-ux-v1
+ConTeXt SyncTeX activated  version=0.1.19  BUILD_ID=synctex-image-empty-ux-v2
 …
-[digestif] BUILD_ID=synctex-image-empty-ux-v1 source=luarocks   (or override / path)
+[digestif] BUILD_ID=synctex-image-empty-ux-v2 source=luarocks   (or override / path)
 [digestif] launch method=direct — …
 ```
 
 Or, on DigestiF failure (build still works immediately):
 
 ```text
-[digestif] BUILD_ID=synctex-image-empty-ux-v1 failed to start: …
-[digestif] BUILD_ID=synctex-image-empty-ux-v1 giving up for this window: …
+[digestif] BUILD_ID=synctex-image-empty-ux-v2 failed to start: …
+[digestif] BUILD_ID=synctex-image-empty-ux-v2 giving up for this window: …
 ```
 
 Every **Build and Preview** reprints `BUILD_ID=…` (Output clear wipes earlier lines). DigestiF starts fire-and-forget and **never** blocks, delays, or is awaited by build/preview/SyncTeX. After one DigestiF failure it stays off until you change `context.digestif*` or reload the window.
@@ -229,7 +229,7 @@ mtxrun `--script synctex` exchanges **y top-down** (origin at the page top). The
 
 **Images / pure graphics.** ConTeXt SyncTeX **only marks text** (Hans: “we only mark text and don't bother about the rest”). Figure image areas have **no** SyncTeX record, so `mtxrun --script synctex --report …` exits 0 with empty stdout. The extension shows a short toast in that case and may retry once with a larger `--tolerance`, then a local nearest-box parse of the `.synctex` page. It does not invent a source line for an image-only click.
 
-**Captions / floats.** Caption clicks often *do* hit a text box, but ConTeXt may tag that box with a coarse line (commonly line 1 of the file that owns the float). When `--report` returns line ≤ 1 for a mid-page click, the extension tries a nearer/smaller box from the same page; if nothing better exists, it still jumps and shows an info toast distinct from the empty-image warning. Prefer `\setupsynctex[state=repeat,method=min]` (words) over `method=max` (large ranges) when caption accuracy matters — this is an engine tagging limit, not something SyncTeX can invent.
+**Captions / floats.** Caption clicks often *do* hit a text box, but ConTeXt may tag most of that text with a coarse line (commonly line 1 of the file). Experiments on LMTX 2026.09.22 (`method=min` vs `max`, `state=start` vs `repeat`) show the same line-1 tagging for caption body; `method` only changes box granularity (words vs ranges) and runtime (~10% vs ~5%), not caption line accuracy. CLI `--synctex` / `--synctex=repeat` always selects `method=max`; `method` is only settable via `\setupsynctex`. When `--report` returns line ≤ 1 for a mid-page click and no nearer higher-line box exists, the extension **does not jump** — it shows an info toast distinct from the empty-image warning. Click nearby body text for a useful match.
 
 
 Example (Sir’s machine):
@@ -262,7 +262,7 @@ Build uses: `context --synctex=repeat` plus `context.build.args`.
 3. **Ctrl+click** the dedicatory / include region → should open `include/contenido/00-1-dedicatoria.tex` at line 2.
 4. Confirm Output shows `file=include/contenido/00-1-dedicatoria.tex line=2` (not “no match”), plus `--report --direct --console`.
 5. **Ctrl+click an image / figure region** in the PDF: toast should say there is no SyncTeX data at that point (common for images). Output still logs the empty mtxrun argv. Click near text on the same page — jump should still work. SyncTeX does not invent a source line for image-only hits.
-6. **Ctrl+click a figure caption**: prefer a jump near `\externalfigure` / caption source. If the engine only tagged line 1, Output may show `coarseFloatLine=1` and an info toast (distinct from the empty-image warning).
+6. **Ctrl+click a figure caption**: if the engine only tagged line 1 mid-page, Output shows `coarseFloatLine=1` and an info toast — **no jump to file start**. Click nearby body text for a precise jump.
 7. **Ctrl+Alt+J** / Ctrl+click on a long page (e.g. prologue page 12) — highlight and jumps should track the correct vertical position.
 8. Status bar shows the main file; click to change `context.rootFile`.
 9. On a large PDF (`BUILD_ID=viewer-worker-v1`): Output should show `worker=real`, `rangeServer=http://127.0.0.1:…`, `rangeReqs` > 0, and `getDocumentMs` / `firstPageMs` in the low thousands (target: first page ~1–2 s on a ~70 MB / 360-page job). If you see `worker=fake`, the blob worker failed — report that line.

@@ -26,7 +26,7 @@ import {
 } from './folding/startStopFolding';
 
 /** Bump when shipping a SyncTeX/viewer/LSP/diagnostics behavior change Sir must verify in Output. */
-export const BUILD_ID = 'synctex-image-empty-ux-v1';
+export const BUILD_ID = 'synctex-image-empty-ux-v2';
 
 let output: vscode.OutputChannel;
 let digestifOutput: vscode.OutputChannel;
@@ -312,6 +312,13 @@ async function handlePdfClick(
       output.appendLine(`[synctex report] ${note}`);
     }
 
+    // Coarse float/caption tags (line ≤ 1 mid-page) are not useful navigation
+    // targets — message only, same class of outcome as an empty image click.
+    if (hit.coarseFloatLine) {
+      void vscode.window.showInformationMessage(COARSE_FLOAT_LINE_USER_MESSAGE);
+      return;
+    }
+
     let targetPath = hit.filename;
     if (!path.isAbsolute(targetPath)) {
       targetPath = path.resolve(snapshot.jobDir, targetPath);
@@ -323,9 +330,6 @@ async function handlePdfClick(
     const range = new vscode.Range(line, 0, line, 0);
     ed.selection = new vscode.Selection(range.start, range.start);
     ed.revealRange(range, vscode.TextEditorRevealType.InCenter);
-    if (hit.coarseFloatLine) {
-      void vscode.window.showInformationMessage(COARSE_FLOAT_LINE_USER_MESSAGE);
-    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     output.appendLine(`[synctex report] ${msg}`);
