@@ -307,6 +307,7 @@ src/build/buildDiagnostics.ts
 src/build/artifactGate.ts
 src/project/pathResolve.ts
 src/project/structureScan.ts
+src/project/projectAnchor.ts
 src/project/projectModel.ts
 src/project/projectTree.ts
 src/project/verbatimRegions.ts
