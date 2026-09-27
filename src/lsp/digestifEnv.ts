@@ -253,7 +253,7 @@ export function buildDigestifEnv(options: BuildDigestifEnvOptions): DigestifEnvR
       kind: 'xml-missing',
       message:
         'ConTeXt interface XML not found: set context.root to your LMTX install root ' +
-        '(the directory that contains tex/, example: /home/andi/Apps/lmtx) so Digestif can load context-en.xml.',
+        '(the directory that contains tex/, example: /path/to/lmtx) so Digestif can load context-en.xml.',
     };
   }
 
@@ -264,7 +264,7 @@ export function buildDigestifEnv(options: BuildDigestifEnvOptions): DigestifEnvR
       kind: 'xml-missing',
       message:
         `Could not resolve an LMTX install root from ${candidate}. ` +
-        `Set context.root to the parent of tex/ (example: /home/andi/Apps/lmtx), not the bin folder. ` +
+        `Set context.root to the parent of tex/ (example: /path/to/lmtx), not the bin folder. ` +
         `Expected ${path.join('…', CONTEXT_INTERFACE_REL)}.`,
     };
   }
@@ -287,7 +287,7 @@ export function buildDigestifEnv(options: BuildDigestifEnvOptions): DigestifEnvR
       kind: 'xml-missing',
       message:
         `Refusing interface XML path under a bin/ directory: ${interfaceXmlPath}. ` +
-        `Set context.root to the LMTX install root (e.g. /home/andi/Apps/lmtx).`,
+        `Set context.root to the LMTX install root (e.g. /path/to/lmtx).`,
     };
   }
 

@@ -180,7 +180,7 @@
         "context.root": {
           "type": "string",
           "default": "",
-          "description": "LMTX / ConTeXt Standalone install root (the directory that contains tex/, e.g. /home/andi/Apps/lmtx). Not the bin folder. Empty = use PATH and infer the install root."
+          "description": "LMTX / ConTeXt Standalone install root (the directory that contains tex/, e.g. /path/to/lmtx). Not the bin folder. Empty = use PATH and infer the install root."
         },
         "context.contextPath": {
           "type": "string",
