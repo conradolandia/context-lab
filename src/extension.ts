@@ -7,11 +7,14 @@ import { gateJobArtifacts, type JobSnapshot } from './build/artifactGate';
 import { forwardSync, backwardSync, SynctexError } from './synctex/mtxSynctex';
 import { PdfPanel } from './viewer/pdfPanel';
 import { resolveRootFile, type RootResolution } from './project/rootFile';
+import { createDigestifClient, type DigestifClientHandle } from './lsp/digestifClient';
+import { maybeOfferTexContextAssociation } from './project/texAssociation';
 
-/** Bump when shipping a SyncTeX/viewer behavior change Sir must verify in Output. */
-export const BUILD_ID = 'viewer-worker-v1';
+/** Bump when shipping a SyncTeX/viewer/LSP behavior change Sir must verify in Output. */
+export const BUILD_ID = 'digestif-lsp-v9';
 
 let output: vscode.OutputChannel;
+let digestifOutput: vscode.OutputChannel;
 let pdfPanel: PdfPanel;
 let rootStatus: vscode.StatusBarItem;
 let snapshot: JobSnapshot | undefined;
@@ -19,6 +22,8 @@ let generation = 0;
 let building = false;
 let lastRootResolution: RootResolution | undefined;
 let backwardInFlight = false;
+let digestif: DigestifClientHandle | undefined;
+let extensionContext: vscode.ExtensionContext | undefined;
 
 function getToolchain(): Toolchain {
   return resolveToolchain();
@@ -156,10 +161,23 @@ async function buildAndPreview(): Promise<void> {
   pdfPanel.setBuilding(true, 'Building…');
   output.clear();
   output.show(true);
+  // DigestiF must never be awaited here. Reprint BUILD_ID after clear so Sir
+  // can see which build is running even if DigestiF logs were wiped.
+  output.appendLine(`ConTeXt SyncTeX BUILD_ID=${BUILD_ID} (build does not wait on DigestiF)`);
   output.appendLine(
     `Building root=${root.rootFile} (rule=${root.rule})` +
       (active && active !== root.rootFile ? `; active=${active}` : ''),
   );
+
+  if (extensionContext) {
+    const openDoc = vscode.workspace.textDocuments.find((d) => d.uri.fsPath === root.rootFile);
+    void maybeOfferTexContextAssociation(
+      extensionContext,
+      root.rootFile,
+      openDoc?.languageId,
+      (line) => output.appendLine(line),
+    );
+  }
 
   try {
     const result = await runContextBuild(toolchain, root.rootFile, { output });
@@ -205,6 +223,15 @@ async function showPdf(): Promise<void> {
   if (!root) {
     void vscode.window.showErrorMessage('No PDF yet. Run ConTeXt: Build and Preview.');
     return;
+  }
+  if (extensionContext) {
+    const openDoc = vscode.workspace.textDocuments.find((d) => d.uri.fsPath === root.rootFile);
+    void maybeOfferTexContextAssociation(
+      extensionContext,
+      root.rootFile,
+      openDoc?.languageId,
+      (line) => output.appendLine(line),
+    );
   }
   const pdfPath = root.rootFile.replace(/\.[^.]+$/, '.pdf');
   if (!fs.existsSync(pdfPath)) {
@@ -347,7 +374,10 @@ async function handlePdfClick(
 }
 
 export function activate(context: vscode.ExtensionContext): void {
+  extensionContext = context;
   output = vscode.window.createOutputChannel('ConTeXt');
+  // Separate channel so DigestiF stderr/LSP noise never interleaves with build logs.
+  digestifOutput = vscode.window.createOutputChannel('ConTeXt DigestiF');
 
   rootStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   rootStatus.command = 'context.pickRootFile';
@@ -363,10 +393,17 @@ export function activate(context: vscode.ExtensionContext): void {
     },
   );
 
+  digestif = createDigestifClient({
+    output: digestifOutput,
+    buildId: BUILD_ID,
+  });
+
   context.subscriptions.push(
     output,
+    digestifOutput,
     rootStatus,
     { dispose: () => pdfPanel.dispose() },
+    { dispose: () => digestif?.dispose() },
     vscode.commands.registerCommand('context.buildAndPreview', () => {
       void buildAndPreview();
     }),
@@ -386,6 +423,15 @@ export function activate(context: vscode.ExtensionContext): void {
       if (e.affectsConfiguration('context.rootFile')) {
         updateRootStatus();
       }
+      if (
+        e.affectsConfiguration('context.root') ||
+        e.affectsConfiguration('context.contextPath') ||
+        e.affectsConfiguration('context.mtxrunPath') ||
+        e.affectsConfiguration('context.digestif.enabled') ||
+        e.affectsConfiguration('context.digestifPath')
+      ) {
+        digestif?.onSettingsChanged();
+      }
     }),
   );
 
@@ -401,14 +447,19 @@ export function activate(context: vscode.ExtensionContext): void {
     `ConTeXt SyncTeX activated  version=${version}  BUILD_ID=${BUILD_ID}`,
   );
   output.appendLine(`extensionPath=${context.extensionPath}`);
+  digestifOutput.appendLine(
+    `ConTeXt DigestiF channel  BUILD_ID=${BUILD_ID} (build uses the ConTeXt channel only)`,
+  );
   updateRootStatus();
   const r = lastRootResolution;
   if (r) {
     output.appendLine(`[root] ${r.rootFile} (rule=${r.rule})`);
   }
+  digestif.scheduleStart();
   output.show(true);
 }
 
 export function deactivate(): void {
+  void digestif?.stop();
   pdfPanel?.dispose();
 }

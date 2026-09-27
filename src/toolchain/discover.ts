@@ -1,12 +1,25 @@
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import * as vscode from 'vscode';
+import {
+  findBinaryUnderRoot,
+  inferRootFromBinary,
+  resolveInstallRoot,
+} from './paths';
+
+export {
+  candidateBinDirs,
+  findBinaryUnderRoot,
+  inferRootFromBinary,
+  isInstallRoot,
+  resolveInstallRoot,
+  walkToInstallRoot,
+} from './paths';
 
 export interface Toolchain {
   contextPath: string;
   mtxrunPath: string;
-  /** Effective ConTeXt root when known (from setting or inferred from PATH). */
+  /** Effective LMTX install root (parent of tex/), from setting or inferred. */
   root?: string;
 }
 
@@ -46,80 +59,6 @@ function which(binary: string): string | undefined {
   }
 }
 
-/** Candidate bin dirs under an LMTX / ConTeXt root. */
-export function candidateBinDirs(root: string): string[] {
-  const platformHints = [
-    process.platform === 'darwin'
-      ? process.arch === 'arm64'
-        ? 'osx-arm64'
-        : 'osx-64'
-      : process.platform === 'win32'
-        ? 'mswin'
-        : process.arch === 'arm64'
-          ? 'linux-aarch64'
-          : 'linux-64',
-    'linux-64',
-    'linux-aarch64',
-    'osx-64',
-    'osx-arm64',
-    'mswin',
-  ];
-
-  const dirs: string[] = [];
-  const push = (p: string) => {
-    if (!dirs.includes(p)) {
-      dirs.push(p);
-    }
-  };
-
-  push(path.join(root, 'bin'));
-  for (const hint of platformHints) {
-    push(path.join(root, 'bin', hint));
-    push(path.join(root, 'tex', `texmf-${hint}`, 'bin'));
-  }
-  // Flat installs sometimes put binaries directly under root
-  push(root);
-  return dirs;
-}
-
-export function findBinaryUnderRoot(root: string, name: string): string | undefined {
-  const exe = process.platform === 'win32' ? `${name}.exe` : name;
-  for (const dir of candidateBinDirs(root)) {
-    const candidate = path.join(dir, exe);
-    if (isExecutable(candidate)) {
-      return candidate;
-    }
-  }
-  return undefined;
-}
-
-/** Infer LMTX-like root from a binary realpath (e.g. tex/texmf-OS/bin/context). */
-export function inferRootFromBinary(binaryPath: string): string | undefined {
-  try {
-    const resolved = fs.realpathSync(binaryPath);
-    const parts = resolved.split(path.sep);
-    const binIdx = parts.lastIndexOf('bin');
-    if (binIdx > 0) {
-      const parent = parts[binIdx - 1];
-      if (parent.startsWith('texmf-')) {
-        // …/tex/texmf-linux-64/bin/context → root is two levels above texmf-*
-        const texIdx = binIdx - 2;
-        if (texIdx >= 0 && parts[texIdx] === 'tex') {
-          return parts.slice(0, texIdx).join(path.sep) || path.sep;
-        }
-        return parts.slice(0, binIdx - 1).join(path.sep) || path.sep;
-      }
-      // …/bin/<platform>/context or …/bin/context
-      if (binIdx >= 1) {
-        return parts.slice(0, binIdx).join(path.sep) || path.sep;
-      }
-    }
-  } catch {
-    // ignore
-  }
-  return undefined;
-}
-
 export function resolveToolchain(
   overrides?: Partial<{
     root: string;
@@ -154,12 +93,13 @@ export function resolveToolchain(
   }
 
   if (rootSetting) {
-    root = rootSetting;
+    // Normalize: context.root must be the install root (parent of tex/), not bin/
+    root = resolveInstallRoot(rootSetting) ?? rootSetting;
     if (!contextPath) {
-      contextPath = findBinaryUnderRoot(rootSetting, 'context');
+      contextPath = findBinaryUnderRoot(root, 'context');
     }
     if (!mtxrunPath) {
-      mtxrunPath = findBinaryUnderRoot(rootSetting, 'mtxrun');
+      mtxrunPath = findBinaryUnderRoot(root, 'mtxrun');
     }
   }
 
@@ -175,6 +115,9 @@ export function resolveToolchain(
       inferRootFromBinary(contextPath ?? '') ??
       inferRootFromBinary(mtxrunPath ?? '') ??
       undefined;
+  } else {
+    // Re-normalize in case setting pointed at bin/texmf-linux-64
+    root = resolveInstallRoot(root) ?? root;
   }
 
   if (!contextPath || !mtxrunPath) {
@@ -185,9 +128,9 @@ export function resolveToolchain(
       .filter(Boolean)
       .join(' and ');
     throw new ToolchainError(
-      `Could not find ${missing}. Set context.root to your LMTX install ` +
-        `(example: /home/andi/Apps/lmtx), set context.contextPath / context.mtxrunPath, ` +
-        `or ensure both binaries are on PATH.`,
+      `Could not find ${missing}. Set context.root to your LMTX install root ` +
+        `(the directory that contains tex/, example: /home/andi/Apps/lmtx), ` +
+        `set context.contextPath / context.mtxrunPath, or ensure both binaries are on PATH.`,
     );
   }
 

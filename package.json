@@ -2,7 +2,7 @@
   "name": "context-synctex",
   "displayName": "ConTeXt SyncTeX",
   "description": "ConTeXt build, PDF.js viewer, and SyncTeX forward/backward navigation",
-  "version": "0.1.6",
+  "version": "0.1.15",
   "publisher": "context-lab",
   "engines": {
     "vscode": "^1.85.0"
@@ -16,6 +16,22 @@
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "languages": [
+      {
+        "id": "context",
+        "aliases": [
+          "ConTeXt"
+        ],
+        "extensions": [
+          ".mkiv",
+          ".mkxl",
+          ".mkvi",
+          ".mklx",
+          ".mkii"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
     "commands": [
       {
         "command": "context.buildAndPreview",
@@ -48,7 +64,7 @@
         "context.root": {
           "type": "string",
           "default": "",
-          "description": "ConTeXt / LMTX installation root. Empty by default; leave empty to use PATH. Example: /home/andi/Apps/lmtx"
+          "description": "LMTX / ConTeXt Standalone install root (the directory that contains tex/, e.g. /home/andi/Apps/lmtx). Not the bin folder. Empty = use PATH and infer the install root."
         },
         "context.contextPath": {
           "type": "string",
@@ -76,7 +92,22 @@
         "context.rootFile": {
           "type": "string",
           "default": "",
-          "description": "Main ConTeXt file to compile (workspace-relative or absolute). Empty = auto-detect via % !TEX root, \\startcomponent→\\product, or the active file."
+          "description": "Main ConTeXt file to compile (workspace-relative or absolute). Empty = auto-detect via % !TEX root, \\startcomponent\u2192\\product, or the active file."
+        },
+        "context.digestif.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Start the Digestif language server for ConTeXt/TeX completion and hover. Build and SyncTeX keep working if Digestif is missing."
+        },
+        "context.digestifPath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to the Digestif executable. Empty = resolve ~/.luarocks/bin/digestif then digestif on PATH."
+        },
+        "context.texAssociation.dontAsk": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, never prompt to associate *.tex with the ConTeXt language for DigestiF. Also set via the prompt's Don't ask again action (workspace state)."
         }
       }
     }
@@ -86,6 +117,7 @@
     "compile": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
     "test": "npm run compile && node --test dist/test/**/*.test.js",
+    "handshake:context": "node scripts/digestif-context-handshake.mjs",
     "lint": "tsc -p . --noEmit"
   },
   "devDependencies": {
@@ -95,6 +127,10 @@
     "typescript": "^5.4.0"
   },
   "dependencies": {
-    "pdfjs-dist": "^4.10.38"
+    "pdfjs-dist": "^4.10.38",
+    "vscode-languageclient": "^9.0.1"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true
   }
 }

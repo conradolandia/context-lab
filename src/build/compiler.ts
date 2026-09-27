@@ -1,37 +1,27 @@
-import { spawn } from 'node:child_process';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { Toolchain } from '../toolchain/discover';
+import { spawnContextBuild, type ContextBuildResult } from './spawnContext';
 
-export interface BuildResult {
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-  sourcePath: string;
-  pdfPath: string;
-  cwd: string;
-}
+export type { ContextBuildResult as BuildResult } from './spawnContext';
+export { spawnContextBuild } from './spawnContext';
 
 export interface BuildOptions {
   extraArgs?: string[];
   cwd?: string;
   output?: vscode.OutputChannel;
-}
-
-function jobPdfPath(sourcePath: string): string {
-  const parsed = path.parse(sourcePath);
-  return path.join(parsed.dir, `${parsed.name}.pdf`);
+  env?: NodeJS.ProcessEnv;
 }
 
 /**
  * Run `context --synctex=repeat` (+ extra args) on the given source file.
- * Does not touch the viewer; caller runs the artifact gate on success.
+ * Does not touch DigestiF or the viewer; caller runs the artifact gate on success.
  */
 export function runContextBuild(
   toolchain: Toolchain,
   sourcePath: string,
   options: BuildOptions = {},
-): Promise<BuildResult> {
+): Promise<ContextBuildResult> {
   const cwd = options.cwd ?? path.dirname(sourcePath);
   const cfg = vscode.workspace.getConfiguration('context');
   const settingArgs = cfg.get<string[]>('build.args', []) ?? [];
@@ -43,40 +33,18 @@ export function runContextBuild(
   output?.appendLine(`$ ${toolchain.contextPath} ${args.join(' ')}`);
   output?.appendLine(`cwd: ${cwd}`);
 
-  return new Promise((resolve, reject) => {
-    const child = spawn(toolchain.contextPath, args, {
-      cwd,
-      env: process.env,
-      shell: false,
-    });
+  const { promise } = spawnContextBuild({
+    contextPath: toolchain.contextPath,
+    sourcePath,
+    cwd,
+    args,
+    env: options.env ?? process.env,
+    onStdout: (text) => output?.append(text),
+    onStderr: (text) => output?.append(text),
+  });
 
-    let stdout = '';
-    let stderr = '';
-
-    child.stdout.on('data', (chunk: Buffer) => {
-      const text = chunk.toString();
-      stdout += text;
-      output?.append(text);
-    });
-    child.stderr.on('data', (chunk: Buffer) => {
-      const text = chunk.toString();
-      stderr += text;
-      output?.append(text);
-    });
-    child.on('error', (err) => {
-      reject(err);
-    });
-    child.on('close', (code) => {
-      const exitCode = code ?? 1;
-      output?.appendLine(`\n[exit ${exitCode}]`);
-      resolve({
-        exitCode,
-        stdout,
-        stderr,
-        sourcePath,
-        pdfPath: jobPdfPath(sourcePath),
-        cwd,
-      });
-    });
+  return promise.then((result) => {
+    output?.appendLine(`\n[exit ${result.exitCode}]`);
+    return result;
   });
 }

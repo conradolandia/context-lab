@@ -8,8 +8,8 @@ Checkout the PR branch and rebuild before launching so the Extension Host cannot
 
 ```bash
 git fetch origin
-git checkout cursor/fix-synctex-pdf-speed-4323
-git pull origin cursor/fix-synctex-pdf-speed-4323
+git checkout cursor/digestif-lsp-bc94
+git pull origin cursor/digestif-lsp-bc94
 npm install
 npm run compile
 ```
@@ -19,10 +19,20 @@ Then open this folder in VS Code / Cursor and press **F5** (launch config **Run 
 After the Extension Development Host starts, open the **ConTeXt** output channel. You should see:
 
 ```text
-ConTeXt SyncTeX activated  version=0.1.6  BUILD_ID=viewer-worker-v1
+ConTeXt SyncTeX activated  version=0.1.15  BUILD_ID=digestif-lsp-v9
+…
+[digestif] BUILD_ID=digestif-lsp-v9 source=luarocks   (or override / path)
+[digestif] launch method=direct — …
 ```
 
-If you still see an older `BUILD_ID`, close all Extension Development Host windows, rebuild, and F5 again.
+Or, on DigestiF failure (build still works immediately):
+
+```text
+[digestif] BUILD_ID=digestif-lsp-v9 failed to start: …
+[digestif] BUILD_ID=digestif-lsp-v9 giving up for this window: …
+```
+
+Every **Build and Preview** reprints `BUILD_ID=…` (Output clear wipes earlier lines). DigestiF starts fire-and-forget and **never** blocks, delays, or is awaited by build/preview/SyncTeX. After one DigestiF failure it stays off until you change `context.digestif*` or reload the window.
 
 Unit tests (no ConTeXt required):
 
@@ -48,22 +58,79 @@ The extension opens the resolved source itself (no `--editor`). Output channel l
 
 ## Toolchain settings
 
+`context.root` is the **LMTX / ConTeXt Standalone install root**: the directory that contains `tex/`, **not** the `bin` folder. See [wiki Structure](https://wiki.contextgarden.net/ConTeXt_Standalone/Structure).
+
+Sir’s layout:
+
+```text
+/home/andi/Apps/lmtx/                          ← set context.root here
+  tex/
+    texmf-linux-64/bin/context, mtxrun         ← binaries only
+    texmf-context/tex/context/interface/mkiv/context-en.xml
+```
+
 Resolution order:
 
 1. `context.contextPath` / `context.mtxrunPath` (absolute overrides, each independent)
-2. Binaries under `context.root` (LMTX-style `bin` / `tex/texmf-*/bin` layout)
-3. `context` and `mtxrun` on `PATH`
+2. Binaries under `context.root` → `{root}/tex/texmf-*/bin/{context,mtxrun}` (and older `bin/` layouts)
+3. `context` and `mtxrun` on `PATH` (install root inferred by walking parents until `tex/texmf-context` exists)
 
-`context.root` defaults to **empty** (no hardcoded path). PATH installs need no config.
+`context.root` defaults to **empty** (no hardcoded path). PATH installs need no config when the binary realpath sits under a normal LMTX tree.
 
 | Setting | Default | Notes |
 | --- | --- | --- |
-| `context.root` | `""` | LMTX root, e.g. `/home/andi/Apps/lmtx` |
+| `context.root` | `""` | Install root (parent of `tex/`), e.g. `/home/andi/Apps/lmtx` — never `…/bin` |
 | `context.contextPath` | `""` | Absolute `context` binary |
 | `context.mtxrunPath` | `""` | Absolute `mtxrun` binary |
 | `context.synctex.enabled` | `true` | Toggle SyncTeX |
 | `context.build.args` | `[]` | Extra args after `--synctex=repeat` |
 | `context.rootFile` | `""` | Main file to compile (workspace-relative or absolute). Empty = auto-detect |
+| `context.digestif.enabled` | `true` | Start Digestif LSP (completion / hover). Safe to leave on if Digestif is missing |
+| `context.digestifPath` | `""` | Absolute Digestif binary; empty = `digestif` on PATH |
+
+### Digestif LSP (completion / hover)
+
+Optional. DigestiF never blocks build or SyncTeX. DigestiF logs go to the **ConTeXt DigestiF** output channel; build logs stay on **ConTeXt**.
+
+This extension contributes the **`context`** language (aliases: ConTeXt) for `.mkiv`, `.mkxl`, `.mkvi`, `.mklx`, `.mkii`. It does **not** claim `*.tex` globally. DigestiF maps LSP `languageId`:
+
+| languageId | DigestiF format |
+| --- | --- |
+| `context` | ConTeXt (`context-en.xml` via `DIGESTIF_TEXMF`) |
+| `tex` | LaTeX |
+| `latex` | LaTeX |
+
+So a `.tex` file left as Plain Text / TeX gets LaTeX tags. Use ConTeXt language mode for ConTeXt docs.
+
+**Associate `*.tex` → ConTeXt (workspace)**
+
+On Build / Show PDF of a `.tex` file whose language is not `context`, the extension offers once per workspace to set:
+
+```json
+"files.associations": {
+  "*.tex": "context"
+}
+```
+
+Choose **Don't ask again** (or set `context.texAssociation.dontAsk`) to suppress the prompt. You can also set the association by hand in workspace settings.
+
+**Recommended (LuaRocks)** — DigestiF needs `lpeg`/`lfs`:
+
+```bash
+luarocks --local --lua-version 5.4 install digestif LUA_INCDIR=/usr/include/lua5.4
+# Ensure ~/.luarocks/bin is on PATH, or set context.digestifPath
+```
+
+The luarocks package includes `ManuscriptConTeXt`; ConTeXt command data comes from generating tags from `context-en.xml` under `DIGESTIF_TEXMF` (set from `context.root`).
+
+**Launch order:** `context.digestifPath` → `~/.luarocks/bin/digestif` → `digestif` on PATH.
+
+**Verify**
+
+1. F5 → `BUILD_ID=digestif-lsp-v9`.
+2. Open a `.mkiv` (language ConTeXt) or associate `*.tex` → ConTeXt.
+3. DigestiF channel: `source=luarocks`, then hover `\starttext` / complete `\setup` with ConTeXt docs (not only `latex.tags`).
+4. Scripted check: `LMTX_ROOT=… npm run handshake:context`.
 
 ### Main (root) file resolution
 
@@ -119,6 +186,9 @@ Build uses: `context --synctex=repeat` plus `context.build.args`.
 ```
 src/extension.ts
 src/toolchain/discover.ts
+src/lsp/digestifEnv.ts
+src/lsp/digestifClient.ts
+src/lsp/digestifLaunch.ts
 src/build/compiler.ts
 src/build/artifactGate.ts
 src/synctex/mtxSynctex.ts
@@ -126,4 +196,4 @@ src/viewer/pdfPanel.ts
 media/viewer/
 ```
 
-Phase 2 (not in this MVP): Digestif LSP, tree-sitter-context.
+Phase 2b (later): tree-sitter-context for folding/highlighting.
