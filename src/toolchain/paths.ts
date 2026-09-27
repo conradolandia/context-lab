@@ -16,6 +16,21 @@ export const CONTEXT_INTERFACE_REL = path.join(
 export const TEXMF_CONTEXT_REL = path.join('tex', 'texmf-context');
 
 /**
+ * Relative path to SciTE lexer data tables under the install root
+ * (`scite-context-data-{context,interfaces,tex}.lua`).
+ */
+export const SCITE_DATA_REL = path.join(
+  'tex',
+  'texmf-context',
+  'context',
+  'data',
+  'scite',
+  'context',
+  'lexers',
+  'data',
+);
+
+/**
  * True if `dir` looks like an LMTX / ConTeXt Standalone install root
  * (the directory that contains `tex/`, never a `bin/` folder).
  */

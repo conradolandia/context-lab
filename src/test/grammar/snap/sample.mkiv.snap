@@ -20,8 +20,8 @@
 #  ^ text.tex.context meta.options.context punctuation.definition.options.begin.context
 #   ^^^^^ text.tex.context meta.options.context entity.other.attribute-name.context
 #        ^ text.tex.context meta.options.context punctuation.separator.key-value.context
-#         ^ text.tex.context meta.options.context support.function.context punctuation.definition.function.context
-#          ^^^ text.tex.context meta.options.context support.function.context
+#         ^ text.tex.context meta.options.context entity.name.function.context punctuation.definition.function.context
+#          ^^^ text.tex.context meta.options.context entity.name.function.context
 #             ^ text.tex.context meta.options.context punctuation.separator.comma.context
 >   before={\blank[big]},
 #^^^ text.tex.context meta.options.context
@@ -146,24 +146,24 @@
 #                        ^ text.tex.context meta.options.context punctuation.definition.options.end.context
 >      \NC uno \NC 1 \NR
 #^^^^^^ text.tex.context
-#      ^ text.tex.context support.function.context punctuation.definition.function.context
-#       ^^ text.tex.context support.function.context
+#      ^ text.tex.context entity.name.function.context punctuation.definition.function.context
+#       ^^ text.tex.context entity.name.function.context
 #         ^^^^^ text.tex.context
-#              ^ text.tex.context support.function.context punctuation.definition.function.context
-#               ^^ text.tex.context support.function.context
+#              ^ text.tex.context entity.name.function.context punctuation.definition.function.context
+#               ^^ text.tex.context entity.name.function.context
 #                 ^^^ text.tex.context
-#                    ^ text.tex.context support.function.context punctuation.definition.function.context
-#                     ^^ text.tex.context support.function.context
+#                    ^ text.tex.context entity.name.function.context punctuation.definition.function.context
+#                     ^^ text.tex.context entity.name.function.context
 >      \NC dos \NC 2 \NR
 #^^^^^^ text.tex.context
-#      ^ text.tex.context support.function.context punctuation.definition.function.context
-#       ^^ text.tex.context support.function.context
+#      ^ text.tex.context entity.name.function.context punctuation.definition.function.context
+#       ^^ text.tex.context entity.name.function.context
 #         ^^^^^ text.tex.context
-#              ^ text.tex.context support.function.context punctuation.definition.function.context
-#               ^^ text.tex.context support.function.context
+#              ^ text.tex.context entity.name.function.context punctuation.definition.function.context
+#               ^^ text.tex.context entity.name.function.context
 #                 ^^^ text.tex.context
-#                    ^ text.tex.context support.function.context punctuation.definition.function.context
-#                     ^^ text.tex.context support.function.context
+#                    ^ text.tex.context entity.name.function.context punctuation.definition.function.context
+#                     ^^ text.tex.context entity.name.function.context
 >    \stoptabulate
 #^^^^ text.tex.context
 #    ^ text.tex.context keyword.control.stop.context punctuation.definition.keyword.context
@@ -171,35 +171,35 @@
 >
 >    \bTABLE
 #^^^^ text.tex.context
-#    ^ text.tex.context support.function.context punctuation.definition.function.context
-#     ^^^^^^ text.tex.context support.function.context
+#    ^ text.tex.context entity.name.function.context punctuation.definition.function.context
+#     ^^^^^^ text.tex.context entity.name.function.context
 >      \bTR \bTD a & b \eTD \bTD $|x|$ \eTD \eTR
 #^^^^^^ text.tex.context
-#      ^ text.tex.context support.function.context punctuation.definition.function.context
-#       ^^^ text.tex.context support.function.context
+#      ^ text.tex.context entity.name.function.context punctuation.definition.function.context
+#       ^^^ text.tex.context entity.name.function.context
 #          ^ text.tex.context
-#           ^ text.tex.context support.function.context punctuation.definition.function.context
-#            ^^^ text.tex.context support.function.context
+#           ^ text.tex.context entity.name.function.context punctuation.definition.function.context
+#            ^^^ text.tex.context entity.name.function.context
 #               ^^^^^^^ text.tex.context
-#                      ^ text.tex.context support.function.context punctuation.definition.function.context
-#                       ^^^ text.tex.context support.function.context
+#                      ^ text.tex.context entity.name.function.context punctuation.definition.function.context
+#                       ^^^ text.tex.context entity.name.function.context
 #                          ^ text.tex.context
-#                           ^ text.tex.context support.function.context punctuation.definition.function.context
-#                            ^^^ text.tex.context support.function.context
+#                           ^ text.tex.context entity.name.function.context punctuation.definition.function.context
+#                            ^^^ text.tex.context entity.name.function.context
 #                               ^ text.tex.context
 #                                ^ text.tex.context meta.math.inline.context punctuation.definition.math.begin.context
 #                                 ^^^ text.tex.context meta.math.inline.context support.class.math.context
 #                                    ^ text.tex.context meta.math.inline.context punctuation.definition.math.end.context
 #                                     ^ text.tex.context
-#                                      ^ text.tex.context support.function.context punctuation.definition.function.context
-#                                       ^^^ text.tex.context support.function.context
+#                                      ^ text.tex.context entity.name.function.context punctuation.definition.function.context
+#                                       ^^^ text.tex.context entity.name.function.context
 #                                          ^ text.tex.context
-#                                           ^ text.tex.context support.function.context punctuation.definition.function.context
-#                                            ^^^ text.tex.context support.function.context
+#                                           ^ text.tex.context entity.name.function.context punctuation.definition.function.context
+#                                            ^^^ text.tex.context entity.name.function.context
 >    \eTABLE
 #^^^^ text.tex.context
-#    ^ text.tex.context support.function.context punctuation.definition.function.context
-#     ^^^^^^ text.tex.context support.function.context
+#    ^ text.tex.context entity.name.function.context punctuation.definition.function.context
+#     ^^^^^^ text.tex.context entity.name.function.context
 >  \stopsubsection
 #^^ text.tex.context
 #  ^ text.tex.context keyword.control.stop.context punctuation.definition.keyword.context
@@ -381,13 +381,13 @@
 #^ text.tex.context comment.line.percentage.context punctuation.definition.comment.context
 # ^^^^^^^^^^^^^ text.tex.context comment.line.percentage.context
 >\define[2]\Pair{(#1, #2)}
-#^ text.tex.context support.function.context punctuation.definition.function.context
-# ^^^^^^ text.tex.context support.function.context
+#^ text.tex.context support.function.builtin.context punctuation.definition.function.context
+# ^^^^^^ text.tex.context support.function.builtin.context
 #       ^ text.tex.context meta.options.context punctuation.definition.options.begin.context
 #        ^ text.tex.context meta.options.context
 #         ^ text.tex.context meta.options.context punctuation.definition.options.end.context
-#          ^ text.tex.context support.function.context punctuation.definition.function.context
-#           ^^^^ text.tex.context support.function.context
+#          ^ text.tex.context entity.name.function.context punctuation.definition.function.context
+#           ^^^^ text.tex.context entity.name.function.context
 #               ^ text.tex.context meta.group.braces.context punctuation.definition.group.begin.context
 #                ^ text.tex.context meta.group.braces.context
 #                 ^^ text.tex.context meta.group.braces.context variable.parameter.context

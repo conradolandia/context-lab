@@ -2,6 +2,8 @@
 
 VS Code extension for ConTeXt: SyncTeX PDF preview, DigestiF language server, and TextMate grammar. Not a fork of the stock LMTX `mtx-vscode` syntax pack.
 
+**License:** GNU GPL version 2 only (`GPL-2.0-only`). See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE). Keyword lists are derived from ConTeXt SciTE data (same GPL-2 regime).
+
 ## Run locally (F5)
 
 Checkout the PR branch and rebuild before launching so the Extension Host cannot load a stale `dist/`:
@@ -48,6 +50,7 @@ npm test
 | Show last gated PDF | **ConTeXt: Show PDF** |
 | Forward SyncTeX (source → PDF) | **ConTeXt: Forward SyncTeX** — `Ctrl+Alt+J` (macOS: `Cmd+Alt+J`) |
 | Backward SyncTeX (PDF → source) | **Ctrl+click** (macOS: **Cmd+click**) in the PDF webview |
+| Refresh TextMate command keywords from LMTX | **ConTeXt: Refresh command keywords** (then reload the window) |
 
 CLI (project synctex, `cwd` = job directory):
 
@@ -172,13 +175,19 @@ English interface command names only. Non-English structure aliases (`\inicio…
 
 ## Syntax highlighting and folding
 
-`syntaxes/context.tmLanguage.json` is a hand-written TextMate grammar (scope `text.tex.context`) for the `context` language. It uses standard scope names, so ordinary themes color it; it does not use the `context.*` scopes of the stock `mtx-vscode` grammar.
+`syntaxes/context.tmLanguage.json` is a TextMate grammar (scope `text.tex.context`) for the `context` language. It uses standard scope names, so ordinary themes color it; it does not use the `context.*` scopes of the stock `mtx-vscode` grammar.
+
+Known ConTeXt names are classified from a committed SciTE keyword snapshot (`syntaxes/context-keywords.json`, interface set **`common` only**). Pattern order among csnames: constant → `\if…` → helper → interface command → primitive → reserved → user catch-all. `\start…` / `\stop…` and embeds stay ahead of those lists.
 
 | Construct | Scope |
 | --- | --- |
 | `% comment` (not `\%`) | `comment.line.percentage.context` |
 | `\start…` / `\stop…` | `keyword.control.start.context` / `keyword.control.stop.context` |
-| Other control sequences (`\[a-zA-Z]+`) | `support.function.context` |
+| Named constants (`\zerocount`, …) | `support.constant.context` |
+| Helpers / plain (`\ruledhbox`, …) | `support.function.builtin.context` |
+| Primitives / `\if…` | `keyword.other.primitive.context` |
+| Interface commands (`\setuphead`, …) | `support.function.context` |
+| Unknown / user csnames | `entity.name.function.context` |
 | `\%`, `\$`, `\{`, `\\`, `\,` … | `constant.character.escape.context` |
 | `#1` … `#9`, `##1` | `variable.parameter.context` |
 | `[...]` | `meta.options.context` |
@@ -193,13 +202,23 @@ English interface command names only. Non-English structure aliases (`\inicio…
 | `\startXML`, `\startPARSEDXML` | body `meta.embedded.block.xml` (built-in `text.xml`) |
 | `\start…MP…` (`\startMPcode`, `\startuseMPgraphic`, `\startMPpage`, …) | body `meta.embedded.block.metapost`, not highlighted |
 
+### Refresh command keywords
+
+After an LMTX upgrade, regenerate the committed snapshot from your install root (same discovery as `context.root`):
+
+```bash
+CONTEXT_ROOT=/path/to/lmtx npm run generate:keywords
+```
+
+Or run **ConTeXt: Refresh command keywords** and reload the window. Provenance (file hashes, date, optional LMTX version) is written into `syntaxes/context-keywords.json`. See [`NOTICE`](NOTICE).
+
 Notes:
 
 - Lua and XML bodies map to the `lua` and `xml` languages (`embeddedLanguages`), so comment toggling uses `--` and `<!-- -->` there.
 - Value text in `key=value` has token type `other` (`tokenTypes`), not `string`, so the default `editor.quickSuggestions` setting (off in strings) does not suppress completion there.
 - Brackets inside verbatim bodies are excluded from bracket matching and colorization (`unbalancedBracketScopes`).
 - `\startxmlsetups` and `\startbuffer` bodies are highlighted as TeX: setups contain TeX, and buffer contents are not known in advance.
-- English interface only. Command names use ASCII letters; `\unprotect` names with `_`, `!` or `?` split at those characters. Environments defined with `\definetyping` are not recognized as verbatim.
+- English interface only (`common` keyword set). Localized SciTE `% interface=` switching is not in v1. User catch-all allows `_`, `@`, `!`, `?` and high bytes (SciTE identifier charset). Environments defined with `\definetyping` are not recognized as verbatim.
 - A `[` in running text also opens an options region until the next `]`.
 
 **Folding.** This extension registers a folding range provider that stacks `\start<name>` / `\stop<name>` and matches names. A name mismatch (for example `\startsection` … `\stopsubsection`) is reported as a warning diagnostic (`context.folding`). Bodies of common typing / Lua / MetaPost regions are skipped. While the provider is active it replaces TextMate folding markers in `language-configuration.json`; those markers remain as a fallback when the provider is not registered. `%region` / `%endregion` markers are still available via language configuration when no provider applies.
@@ -313,15 +332,21 @@ src/project/projectTree.ts
 src/project/verbatimRegions.ts
 src/links/documentLinks.ts
 src/folding/startStopFolding.ts
+src/syntax/refreshKeywords.ts
 src/synctex/mtxSynctex.ts
 src/synctex/synctexBoxes.ts
 src/synctex/coords.ts
 src/viewer/pdfPanel.ts
 media/viewer/
 media/context-activity.svg
+scripts/generate-context-keywords.mjs
 syntaxes/context.tmLanguage.json
+syntaxes/context-keywords.json
+LICENSE
+NOTICE
 src/test/grammar/
 src/test/fixtures/diagnostics/
+src/test/fixtures/keywords/
 ```
 
 Project TreeView reuses `pathResolve` / `structureScan`. Tree-sitter remains on hold.

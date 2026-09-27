@@ -1,0 +1,32 @@
+ConTeXt Tools — keyword snapshot provenance
+==========================================
+
+This extension is licensed under the GNU General Public License, version 2
+only (see LICENSE and package.json "license": "GPL-2.0-only"). That matches
+upstream ConTeXt COPYING (“GNU General Public License, version 2, exactly”).
+
+Generated keyword lists under syntaxes/ (context-keywords.json and the
+inlined repository rules in context.tmLanguage.json) are derived from LMTX
+SciTE data tables:
+
+  scite-context-data-context.lua
+  scite-context-data-interfaces.lua
+  scite-context-data-tex.lua
+
+Typical path under an LMTX install root (context.root):
+
+  tex/texmf-context/context/data/scite/context/lexers/data/
+
+Those tables are part of the ConTeXt distribution (GPL-2). Regenerating them
+does not change that: the committed snapshot redistributes derived name lists.
+
+How to refresh
+--------------
+
+  CONTEXT_ROOT=/path/to/lmtx npm run generate:keywords
+
+Or from the editor: “ConTeXt: Refresh command keywords” (then reload the window).
+
+Provenance for the committed snapshot is recorded in
+syntaxes/context-keywords.json under the "provenance" key (source paths,
+SHA-256 hashes, UTC date, and optional LMTX version string).
