@@ -362,6 +362,7 @@ src/synctex/synctexBoxes.ts
 src/synctex/coords.ts
 src/viewer/pdfPanel.ts
 media/viewer/
+media/icon.png
 media/context-activity.svg
 scripts/generate-context-keywords.mjs
 syntaxes/context.tmLanguage.json

@@ -45,6 +45,7 @@ const testOptions = {
     join(__dirname, 'src/test/projectModel.test.ts'),
     join(__dirname, 'src/test/generateKeywords.test.ts'),
     join(__dirname, 'src/test/latexWorkshopConflict.test.ts'),
+    join(__dirname, 'src/test/pdfPanelTitle.test.ts'),
   ],
   bundle: true,
   outdir: join(__dirname, 'dist/test'),
