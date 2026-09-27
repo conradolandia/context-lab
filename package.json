@@ -2,7 +2,7 @@
   "name": "context-tools",
   "displayName": "ConTeXt Tools",
   "description": "ConTeXt SyncTeX PDF preview, DigestiF language server, and TextMate grammar",
-  "version": "0.1.21",
+  "version": "0.1.22",
   "publisher": "context-lab",
   "license": "GPL-2.0-only",
   "engines": {
@@ -221,6 +221,11 @@
           "type": "boolean",
           "default": false,
           "description": "If true, never prompt to associate *.tex with the ConTeXt language for DigestiF. Also set via the prompt's Don't ask again action (workspace state)."
+        },
+        "context.latexWorkshopConflict.dontAsk": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, never warn when LaTeX Workshop (James-Yu.latex-workshop) is enabled and also contributes language id context. Also set via the warning's Don't show again action (global state)."
         },
         "context.projectView.enabled": {
           "type": "boolean",
