@@ -5,6 +5,14 @@
   "version": "0.1.22",
   "publisher": "context-lab",
   "license": "GPL-2.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/conradolandia/context-lab.git"
+  },
+  "bugs": {
+    "url": "https://github.com/conradolandia/context-lab/issues"
+  },
+  "homepage": "https://github.com/conradolandia/context-lab#readme",
   "engines": {
     "vscode": "^1.85.0"
   },
