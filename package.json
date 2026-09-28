@@ -1,8 +1,8 @@
 {
   "name": "context-tools",
   "displayName": "ConTeXt Tools",
-  "description": "ConTeXt SyncTeX PDF preview, DigestiF language server, and TextMate grammar",
-  "version": "0.1.22",
+  "description": "ConTeXt SyncTeX PDF preview, DigestiF language server, TextMate grammar, and snippets",
+  "version": "0.1.23",
   "publisher": "context-lab",
   "license": "GPL-2.0-only",
   "repository": {
@@ -17,7 +17,8 @@
     "vscode": "^1.85.0"
   },
   "categories": [
-    "Other"
+    "Other",
+    "Snippets"
   ],
   "activationEvents": [
     "onLanguage:tex"
@@ -58,6 +59,12 @@
           "markup.inline.raw.context",
           "markup.raw.block.context"
         ]
+      }
+    ],
+    "snippets": [
+      {
+        "language": "context",
+        "path": "./snippets/context.code-snippets"
       }
     ],
     "viewsContainers": {

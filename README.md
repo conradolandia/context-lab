@@ -1,6 +1,6 @@
 # ConTeXt Tools
 
-VS Code / Cursor extension for ConTeXt (LMTX): SyncTeX PDF preview, DigestiF language server, Project view, and a TextMate grammar for the `context` language. Not a fork of the stock LMTX `mtx-vscode` syntax pack.
+VS Code / Cursor extension for ConTeXt (LMTX): SyncTeX PDF preview, DigestiF language server, Project view, a TextMate grammar, and a small snippet set for the `context` language. Not a fork of the stock LMTX `mtx-vscode` syntax pack.
 
 **License:** GNU GPL version 2 only (`GPL-2.0-only`). See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE). Keyword lists are derived from ConTeXt SciTE data (same GPL-2 regime).
 
@@ -147,6 +147,21 @@ The viewer keeps the last good PDF while a build runs, then reloads after a stab
 LaTeX Workshop (`James-Yu.latex-workshop`) from 10.x also contributes language id `context`. VS Code keeps one grammar per language id; when both are enabled, Workshop’s LaTeX grammar often wins for `.mkiv`.
 
 ConTeXt Tools shows a one-shot warning with options to disable Workshop for the workspace, add it to `unwantedRecommendations`, or dismiss. Nothing is auto-disabled without that prompt. Prefer **Disable (Workspace)** for ConTeXt folders. See also this repo’s [`.vscode/extensions.json`](.vscode/extensions.json).
+
+## Snippets
+
+A small built-in set is contributed for language id **`context`** (`snippets/context.code-snippets`). Prefixes include structure stubs (`startproduct`, `startcomponent`, `startenvironment`, `startproject`, `component`, `environment`), document/sectioning (`startdocument`, `startchapter`, `startsection`), a few environments (`startitemize`, `startnarrower`, `startframed`), and `texroot` for the `% !TEX root =` magic comment.
+
+Snippets appear only when the editor language is `context` (native `.mkiv` / …, or `*.tex` after `"files.associations": { "*.tex": "context" }`).
+
+To add your own without changing the extension:
+
+| Scope | How |
+| --- | --- |
+| User | **Snippets: Configure User Snippets** → choose **context** (or create `context.json`) |
+| Workspace | Add `.vscode/<name>.code-snippets` with `"scope": "context"` on each snippet |
+
+User and workspace snippets merge with the built-in set; same prefix can appear from more than one source.
 
 ## Syntax highlighting
 
