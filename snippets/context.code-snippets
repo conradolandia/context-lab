@@ -104,10 +104,5 @@
       "\\stopframed"
     ],
     "description": "Framed block"
-  },
-  "TEX root magic comment": {
-    "prefix": "texroot",
-    "body": "% !TEX root = ${1:main.tex}",
-    "description": "Magic comment for ConTeXt Tools root file resolution"
   }
 }

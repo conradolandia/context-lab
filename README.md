@@ -150,7 +150,7 @@ ConTeXt Tools shows a one-shot warning with options to disable Workshop for the 
 
 ## Snippets
 
-A small built-in set is contributed for language id **`context`** (`snippets/context.code-snippets`). Prefixes include structure stubs (`startproduct`, `startcomponent`, `startenvironment`, `startproject`, `component`, `environment`), document/sectioning (`startdocument`, `startchapter`, `startsection`), a few environments (`startitemize`, `startnarrower`, `startframed`), and `texroot` for the `% !TEX root =` magic comment.
+A small built-in set is contributed for language id **`context`** (`snippets/context.code-snippets`). Prefixes: structure stubs (`startproduct`, `startcomponent`, `startenvironment`, `startproject`, `component`, `environment`), document/sectioning (`startdocument`, `startchapter`, `startsection`), and a few environments (`startitemize`, `startnarrower`, `startframed`). Root file selection stays via `context.rootFile` / the status-bar picker, not a snippet.
 
 Snippets appear only when the editor language is `context` (native `.mkiv` / …, or `*.tex` after `"files.associations": { "*.tex": "context" }`).
 
