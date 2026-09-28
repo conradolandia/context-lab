@@ -1,6 +1,6 @@
 # ConTeXt Tools
 
-VS Code / Cursor extension for ConTeXt (LMTX): SyncTeX PDF preview, DigestiF language server, Project view, a TextMate grammar, and a small snippet set for the `context` language. Not a fork of the stock LMTX `mtx-vscode` syntax pack.
+VS Code / Cursor extension for ConTeXt (LMTX): SyncTeX PDF preview, DigestiF language server, Project view, a TextMate grammar, and a small snippet set for the `context` language.
 
 **License:** GNU GPL version 2 only (`GPL-2.0-only`). See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE). Keyword lists are derived from ConTeXt SciTE data (same GPL-2 regime).
 
