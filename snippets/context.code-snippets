@@ -1,0 +1,108 @@
+{
+  "Start product": {
+    "prefix": "startproduct",
+    "body": [
+      "\\startproduct ${1:name}",
+      "\\project ${2:project}",
+      "\\environment ${3:environment}",
+      "\\component ${4:component}",
+      "\\stopproduct"
+    ],
+    "description": "Define a product (compile target) with common loads"
+  },
+  "Start component": {
+    "prefix": "startcomponent",
+    "body": [
+      "\\startcomponent ${1:name}",
+      "\\product ${2:product}",
+      "\\project ${3:project}",
+      "$0",
+      "\\stopcomponent"
+    ],
+    "description": "Define a component with product/project back-references"
+  },
+  "Start environment": {
+    "prefix": "startenvironment",
+    "body": [
+      "\\startenvironment ${1:name}",
+      "$0",
+      "\\stopenvironment"
+    ],
+    "description": "Define a shared environment file"
+  },
+  "Start project": {
+    "prefix": "startproject",
+    "body": [
+      "\\startproject ${1:name}",
+      "\\environment ${2:environment}",
+      "\\product ${3:product}",
+      "\\stopproject"
+    ],
+    "description": "Define a project coordination file"
+  },
+  "Load component": {
+    "prefix": "component",
+    "body": "\\component ${1:name}",
+    "description": "Load a component by name"
+  },
+  "Load environment": {
+    "prefix": "environment",
+    "body": "\\environment ${1:name}",
+    "description": "Load an environment by name"
+  },
+  "Start document": {
+    "prefix": "startdocument",
+    "body": [
+      "\\startdocument",
+      "$0",
+      "\\stopdocument"
+    ],
+    "description": "Document environment"
+  },
+  "Start chapter": {
+    "prefix": "startchapter",
+    "body": [
+      "\\startchapter[title={${1:Title}}]",
+      "$0",
+      "\\stopchapter"
+    ],
+    "description": "Chapter with title"
+  },
+  "Start section": {
+    "prefix": "startsection",
+    "body": [
+      "\\startsection[title={${1:Title}}]",
+      "$0",
+      "\\stopsection"
+    ],
+    "description": "Section with title"
+  },
+  "Start itemize": {
+    "prefix": "startitemize",
+    "body": [
+      "\\startitemize",
+      "\\item ${1:first}",
+      "\\item ${2:second}",
+      "\\stopitemize"
+    ],
+    "description": "Itemize list (use [n] for numbered)"
+  },
+  "Start narrower": {
+    "prefix": "startnarrower",
+    "body": [
+      "\\startnarrower",
+      "$0",
+      "\\stopnarrower"
+    ],
+    "description": "Narrower block"
+  },
+  "Start framed": {
+    "prefix": "startframed",
+    "body": [
+      "\\startframed",
+      "$0",
+      "\\stopframed"
+    ],
+    "description": "Framed block"
+  }
+}
