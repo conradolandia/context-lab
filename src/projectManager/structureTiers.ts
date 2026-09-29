@@ -58,12 +58,19 @@ export const TIER_INFO: Record<StructureTier, TierInfo> = {
   },
   project: {
     id: 'project',
-    title: 'Project (several products)',
+    title: 'Project tier (several products)',
     wikiSection: '§1.4',
-    summary: 'Several related products share setup and need coordination.',
-    compileHint: 'Compile each product — not the project file.',
+    summary:
+      'Several related products share setup and need a coordination project file.',
+    compileHint:
+      'Compile each product (active/default product is the compile root) — never the \\startproject coordination file.',
   },
 };
+
+/** Short UI label: prefer “structure” language over bare “project”. */
+export function structureTierLabel(tier: StructureTier): string {
+  return TIER_INFO[tier].title;
+}
 
 /** Ordered ladder from simplest to heaviest (wiki §1 mental map). */
 export const TIER_LADDER: StructureTier[] = ['single', 'env-doc', 'product', 'project'];
@@ -77,14 +84,14 @@ export function recommendTier(answers: NeedAnswers): TierRecommendation {
     return {
       tier: 'project',
       reason:
-        'Several related outputs need coordination (§1.4). Use a project only when products must share setup and listing.',
+        'Several related outputs need coordination (§1.4). Use project tier only when products must share setup and listing.',
     };
   }
   if (answers.splitParts) {
     return {
       tier: 'product',
       reason:
-        'One output split into reusable parts (§1.3). A product + components is enough; a project is not required.',
+        'One output split into reusable parts (§1.3). A product + components is enough; a project-tier coordination file is not required.',
       warning: answers.sharedSetup
         ? undefined
         : 'Shared setup is common with products; an environment file will still be included so components compile alone.',
@@ -120,8 +127,8 @@ export function tierOverrideWarning(
   }
   if (chosen === 'project' && recommended !== 'project') {
     return (
-      'Starting with a project too early (§13.1). Prefer the simplest structure that matches the job; ' +
-      'use a project only when several related products must be coordinated.'
+      'Starting with a project tier too early (§13.1). Prefer the simplest structure that matches the job; ' +
+      'use project tier only when several related products must be coordinated.'
     );
   }
   if (choseIdx > recIdx) {

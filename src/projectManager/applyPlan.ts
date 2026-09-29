@@ -1,6 +1,7 @@
 /**
  * Apply a StructurePlan via WorkspaceEdit; set context.rootFile only
  * (never inject % !TEX root); open root; refresh Project view; offer *.tex association.
+ * Upgrade plans may list deletePaths (e.g. former document after env-doc → product).
  */
 
 import * as fs from 'node:fs';
@@ -19,11 +20,17 @@ export interface ApplyPlanOptions {
   output: vscode.OutputChannel;
   /** Refresh Project TreeView after write. */
   refreshProjectView?: () => void;
+  /** Log label: create vs upgrade. */
+  actionLabel?: 'created' | 'upgraded';
 }
 
 export type ApplyPlanResult =
-  | { ok: true; rootFile: string; written: string[] }
-  | { ok: false; reason: 'cancelled' | 'conflicts' | 'no-workspace' | 'write-failed'; message: string };
+  | { ok: true; rootFile: string; written: string[]; deleted: string[] }
+  | {
+      ok: false;
+      reason: 'cancelled' | 'conflicts' | 'no-workspace' | 'write-failed';
+      message: string;
+    };
 
 function workspaceRelative(absPath: string): string {
   const folders = vscode.workspace.workspaceFolders ?? [];
@@ -38,13 +45,18 @@ function workspaceRelative(absPath: string): string {
 
 /**
  * Detect conflicts against the live filesystem (plan.conflicts may be stale).
+ * Prefer `plan.conflicts` when the planner already classified unexpected clashes
+ * (upgrade expects to overwrite the spec and current root file).
  */
 export function liveConflicts(plan: StructurePlan): string[] {
+  if (plan.conflicts.length > 0) {
+    return plan.conflicts.filter((p) => fs.existsSync(p));
+  }
   return plan.files.map((f) => f.path).filter((p) => fs.existsSync(p));
 }
 
 /**
- * Apply the plan. Prefer a single WorkspaceEdit so create is all-or-nothing
+ * Apply the plan. Prefer a single WorkspaceEdit so create/upgrade is all-or-nothing
  * from the editor’s point of view.
  */
 export async function applyStructurePlan(
@@ -52,12 +64,14 @@ export async function applyStructurePlan(
 ): Promise<ApplyPlanResult> {
   const { plan, extensionContext, output } = opts;
   const setRootFile = opts.setRootFile !== false;
+  const action = opts.actionLabel ?? 'created';
 
   if (!vscode.workspace.workspaceFolders?.length) {
     return {
       ok: false,
       reason: 'no-workspace',
-      message: 'Open a folder before creating a ConTeXt document structure.',
+      message:
+        'Open a folder before creating or upgrading a ConTeXt document structure.',
     };
   }
 
@@ -78,14 +92,13 @@ export async function applyStructurePlan(
       return {
         ok: false,
         reason: 'cancelled',
-        message: 'Create cancelled (existing files not overwritten).',
+        message: 'Cancelled (existing files not overwritten).',
       };
     }
   }
 
-  // Refuse if any generated file still somehow contains magic root
   for (const f of plan.files) {
-    if (/%\s*!TEX\s+root/i.test(f.contents)) {
+    if (f.role !== 'spec' && /%\s*!TEX\s+root/i.test(f.contents)) {
       return {
         ok: false,
         reason: 'write-failed',
@@ -97,9 +110,15 @@ export async function applyStructurePlan(
   const edit = new vscode.WorkspaceEdit();
   for (const f of plan.files) {
     const uri = vscode.Uri.file(f.path);
-    const overwrite = conflicts.includes(f.path);
+    const overwrite = fs.existsSync(f.path);
     edit.createFile(uri, { overwrite, ignoreIfExists: false });
     edit.insert(uri, new vscode.Position(0, 0), f.contents);
+  }
+
+  for (const del of plan.deletePaths ?? []) {
+    if (fs.existsSync(del)) {
+      edit.deleteFile(vscode.Uri.file(del), { ignoreIfNotExists: true });
+    }
   }
 
   const applied = await vscode.workspace.applyEdit(edit);
@@ -112,18 +131,25 @@ export async function applyStructurePlan(
   }
 
   const written = plan.files.map((f) => f.path);
+  const deleted = (plan.deletePaths ?? []).filter((p) => !fs.existsSync(p));
   output.appendLine(
-    `[projectManager] created tier=${plan.tier} files=${written.length} root=${plan.rootFile}`,
+    `[projectManager] ${action} tier=${plan.tier} files=${written.length} root=${plan.rootFile}` +
+      (deleted.length ? ` deleted=${deleted.length}` : ''),
   );
   for (const f of plan.files) {
     output.appendLine(`  ${f.role.padEnd(12)} ${workspaceRelative(f.path)}`);
+  }
+  for (const d of plan.deletePaths ?? []) {
+    output.appendLine(`  ${'delete'.padEnd(12)} ${workspaceRelative(d)}`);
   }
 
   if (setRootFile && plan.rootFile) {
     const rel = workspaceRelative(plan.rootFile);
     const cfg = vscode.workspace.getConfiguration('context');
     await cfg.update('rootFile', rel, vscode.ConfigurationTarget.Workspace);
-    output.appendLine(`[projectManager] set context.rootFile=${rel}`);
+    output.appendLine(
+      `[projectManager] set context.rootFile=${rel} (compile root: product or document)`,
+    );
   }
 
   try {
@@ -136,7 +162,6 @@ export async function applyStructurePlan(
   }
 
   opts.refreshProjectView?.();
-  // Also poke the command so any other listeners refresh
   void vscode.commands.executeCommand('context.projectView.refresh');
 
   const openDoc = vscode.workspace.textDocuments.find(
@@ -149,5 +174,5 @@ export async function applyStructurePlan(
     (line) => output.appendLine(line),
   );
 
-  return { ok: true, rootFile: plan.rootFile, written };
+  return { ok: true, rootFile: plan.rootFile, written, deleted };
 }

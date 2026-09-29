@@ -59,7 +59,7 @@ Resolution order:
 | `context.projectView.refreshDebounceMs` | `300` | Debounce before rescan after edits/saves |
 | `context.projectManager.defaultExtension` | `".tex"` | Scaffold extension (v1: `.tex` only) |
 | `context.projectManager.usePrefixedNames` | `false` | Denser `product_*` / `component_*` prefixes when true |
-| `context.projectManager.setRootFileOnCreate` | `true` | Set `context.rootFile` after create (no `% !TEX root` in files) |
+| `context.projectManager.setRootFileOnCreate` | `true` | Set `context.rootFile` after create to the product/document compile root (no `% !TEX root` in files) |
 
 Example (absolute path; home installs are often `$HOME/context` expanded):
 
@@ -139,18 +139,20 @@ Activity-bar container **ConTeXt** → **Project**. Scans English structure comm
 
 Click a node to open the file. Actions: Build, Forward SyncTeX, Set as Main (Root) File. Title bar: **New Document Structure…**, **Reveal Active**, and **Refresh**.
 
-## Project Manager (new structure)
+## Project Manager (document structure)
 
 Command **ConTeXt: New Document Structure…** (`context.projectManager.create`) opens a webview wizard that scaffolds the simplest ConTeXt structure that matches the job (wiki *Project and file management* §1):
 
-| Tier | When | Compile |
+| Tier | When | Compile root |
 | --- | --- | --- |
 | Single document | One file | That file |
 | Document + environment | Shared setup | Document file |
-| Product + components | One output, split parts (no project) | Product file |
-| Project | Several related products | Each product (not the project file) |
+| Product + components | One output, split parts (no project tier) | Product file |
+| Project tier (§1.4) | Several related products | Each product (never the `\startproject` coordination file) |
 
-After create: opens the compile root, sets `context.rootFile` when enabled, refreshes the Project view, and may offer `files.associations["*.tex"] = "context"`. Scaffolds use `.tex` only and do not insert `% !TEX root`. Layered environments (ordered list) are supported.
+After create: writes `.context/structure.json` (tier + default compile root), opens that compile root, sets `context.rootFile` when enabled, refreshes the Project view, and may offer `files.associations["*.tex"] = "context"`. Scaffolds use `.tex` only and do not insert `% !TEX root`. Layered environments (ordered list) are supported.
+
+**Upgrade:** **ConTeXt: Upgrade Document Structure…** (`context.projectManager.upgrade`) moves a scaffold one rung up the §1 ladder when a valid `.context/structure.json` is present. Without a spec, the command refuses and can open the create wizard. Multi-product series still use **one active** `context.rootFile` (a product); switch via the status bar or Project view **Set as Main (Root) File**.
 
 Local LMTX manuals that complement the wiki live under `$CONTEXT_ROOT/tex/texmf-context/doc/` (for example `$HOME/context` or `/opt/context`): `context/documents/general/magazines/mag-1101-mkiv.pdf` and `context/documents/general/manuals/mkiv/workflows-mkiv.pdf`.
 

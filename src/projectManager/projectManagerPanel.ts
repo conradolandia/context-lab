@@ -20,6 +20,7 @@ import {
   type StructurePlanInput,
 } from './structurePlan';
 import { applyStructurePlan } from './applyPlan';
+import { runStructureUpgrade } from './upgradeCommand';
 
 export interface ProjectManagerPanelDeps {
   extensionContext: vscode.ExtensionContext;
@@ -419,10 +420,10 @@ export class ProjectManagerPanel {
 </style>
 </head>
 <body>
-  <h1>New ConTeXt project structure</h1>
+  <h1>New ConTeXt document structure</h1>
   <p>Wizard based on the <a href="https://wiki.contextgarden.net/Input_and_compilation/Project_and_file_management">ConTeXt Project and file management</a> article.</p>
   <blockquote class="principle">
-    Do not introduce a project merely because a document contains several files.
+    Do not introduce a project-tier coordination file merely because a document contains several files.
     Use the simplest structure that matches the job. (wiki §1)
   </blockquote>
 
@@ -480,11 +481,12 @@ export class ProjectManagerPanel {
       <input type="text" id="components" spellcheck="false" />
     </div>
     <div id="projectFields">
-      <label class="block" for="products">Products</label>
+      <label class="block" for="products">Products (project tier — each builds separately)</label>
       <input type="text" id="products" spellcheck="false" />
+      <p class="hint">Compile root is the first product. The coordination <code>\\startproject</code> file is not a build target.</p>
     </div>
     <label class="row"><input type="checkbox" id="usePrefixedNames" /> Prefer denser prefixes (product_*, component_*)</label>
-    <label class="row"><input type="checkbox" id="setRootFile" checked /> Set <code>context.rootFile</code> to the project root file</label>
+    <label class="row"><input type="checkbox" id="setRootFile" checked /> Set <code>context.rootFile</code> to the compile root (product or document — never the \\startproject file)</label>
     <div class="actions">
       <button class="secondary" id="backRec">Back</button>
       <button id="toPreview">Preview</button>
@@ -635,7 +637,7 @@ window.addEventListener('message', (event) => {
     overwriteConfirmed = false;
     $('tree').textContent = (msg.dryRun.treeLines || []).join('\\n');
     $('rootHint').textContent = msg.dryRun.rootFile
-      ? 'Compile root: ' + msg.dryRun.rootFile
+      ? 'Compile root (product or document): ' + msg.dryRun.rootFile
       : '';
     const cb = $('conflictBox');
     if (msg.dryRun.conflicts && msg.dryRun.conflicts.length) {
@@ -690,7 +692,7 @@ vscode.postMessage({ type: 'ready' });
   }
 }
 
-/** Register the create command. */
+/** Register create + upgrade commands. */
 export function registerProjectManager(
   context: vscode.ExtensionContext,
   deps: Omit<ProjectManagerPanelDeps, 'extensionContext'>,
@@ -698,6 +700,13 @@ export function registerProjectManager(
   context.subscriptions.push(
     vscode.commands.registerCommand('context.projectManager.create', () => {
       ProjectManagerPanel.show({
+        extensionContext: context,
+        output: deps.output,
+        refreshProjectView: deps.refreshProjectView,
+      });
+    }),
+    vscode.commands.registerCommand('context.projectManager.upgrade', () => {
+      void runStructureUpgrade({
         extensionContext: context,
         output: deps.output,
         refreshProjectView: deps.refreshProjectView,

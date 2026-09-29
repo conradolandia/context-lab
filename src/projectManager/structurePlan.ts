@@ -1,17 +1,26 @@
 /**
  * Pure structure plan: wizard answers → file list + dry-run tree.
  * Templates follow wiki §1 / §4 / §5; layered environments §7.1.
+ * Every plan includes `.context/structure.json` (compile root = product/document).
  */
 
 import * as path from 'node:path';
 import type { StructureTier } from './structureTiers';
+import {
+  STRUCTURE_SPEC_REL,
+  buildStructureSpec,
+  relativeRootFile,
+  serializeStructureSpec,
+  type StructureSpecCreatedBy,
+} from './structureSpec';
 
 export type PlannedFileRole =
   | 'document'
   | 'environment'
   | 'product'
   | 'component'
-  | 'project';
+  | 'project'
+  | 'spec';
 
 export interface PlannedFile {
   /** Absolute path. */
@@ -49,6 +58,10 @@ export interface StructurePlanInput {
   extension?: string;
   /** Absolute paths that already exist (conflict detection). */
   existingPaths?: Iterable<string> | ((absPath: string) => boolean);
+  /** Who writes the structure spec (default: create). */
+  createdBy?: StructureSpecCreatedBy;
+  /** Optional clock for deterministic tests. */
+  now?: Date;
 }
 
 export interface StructurePlan {
@@ -56,12 +69,14 @@ export interface StructurePlan {
   /** Absolute directory that holds the scaffold. */
   scaffoldRoot: string;
   files: PlannedFile[];
-  /** Absolute compile root (document or first/default product). */
+  /** Absolute compile root (document or first/default product — never \\startproject). */
   rootFile: string;
   /** Absolute paths that already exist. */
   conflicts: string[];
   /** Dry-run tree lines (relative). */
   treeLines: string[];
+  /** Absolute paths to delete when applying an upgrade (optional). */
+  deletePaths?: string[];
 }
 
 const DEFAULT_COMPONENTS = ['chapter-01', 'chapter-02'];
@@ -82,31 +97,31 @@ function existsChecker(
   return (abs) => set.has(path.resolve(abs));
 }
 
-function sanitizeStem(raw: string): string {
+export function sanitizeStem(raw: string): string {
   const s = raw.trim().replace(/\\/g, '/').replace(/\.tex$/i, '');
   const base = s.split('/').filter(Boolean).pop() ?? s;
   return base.replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') || 'document';
 }
 
-function defaultEnvStem(name: string): string {
+export function defaultEnvStem(name: string): string {
   return name.startsWith('env_') ? name : `env_${name}`;
 }
 
-function productFileStem(stem: string, prefixed: boolean): string {
+export function productFileStem(stem: string, prefixed: boolean): string {
   if (prefixed && !stem.startsWith('product_')) {
     return `product_${stem}`;
   }
   return stem;
 }
 
-function componentFileStem(stem: string, prefixed: boolean): string {
+export function componentFileStem(stem: string, prefixed: boolean): string {
   if (prefixed && !stem.startsWith('component_')) {
     return `component_${stem}`;
   }
   return stem;
 }
 
-function projectFileStem(name: string): string {
+export function projectFileStem(name: string): string {
   return name.startsWith('project_') ? name : `project_${name}`;
 }
 
@@ -115,11 +130,11 @@ function chapterTitle(stem: string): string {
   return bare.replace(/\b\w/g, (c) => c.toUpperCase()) || 'Chapter';
 }
 
-function envLoadLines(envStems: string[]): string {
+export function envLoadLines(envStems: string[]): string {
   return envStems.map((e) => `\\environment ${e}`).join('\n');
 }
 
-function environmentContents(stem: string): string {
+export function environmentContents(stem: string): string {
   return [
     `\\startenvironment ${stem}`,
     '',
@@ -130,31 +145,31 @@ function environmentContents(stem: string): string {
   ].join('\n');
 }
 
-function singleDocumentContents(): string {
+export function singleDocumentContents(body = '% Document body'): string {
   return [
     '\\startdocument',
     '',
-    '% Document body',
+    body,
     '',
     '\\stopdocument',
     '',
   ].join('\n');
 }
 
-function envDocContents(envStems: string[]): string {
+export function envDocContents(envStems: string[], body = '% Document body'): string {
   return [
     envLoadLines(envStems),
     '',
     '\\startdocument',
     '',
-    '% Document body',
+    body,
     '',
     '\\stopdocument',
     '',
   ].join('\n');
 }
 
-function productContents(
+export function productContents(
   productStem: string,
   envStems: string[],
   componentStems: string[],
@@ -173,8 +188,13 @@ function productContents(
   return lines.join('\n');
 }
 
-function componentContents(componentStem: string, envStems: string[]): string {
+export function componentContents(
+  componentStem: string,
+  envStems: string[],
+  body?: string,
+): string {
   const title = chapterTitle(componentStem);
+  const chapterBody = body ?? '% Chapter body';
   return [
     `\\startcomponent ${componentStem}`,
     '',
@@ -182,7 +202,7 @@ function componentContents(componentStem: string, envStems: string[]): string {
     '',
     `\\startchapter[title={${title}}]`,
     '',
-    '% Chapter body',
+    chapterBody,
     '',
     '\\stopchapter',
     '',
@@ -191,7 +211,7 @@ function componentContents(componentStem: string, envStems: string[]): string {
   ].join('\n');
 }
 
-function projectContents(
+export function projectContents(
   projectStem: string,
   envStems: string[],
   productStems: string[],
@@ -213,7 +233,7 @@ function toPosix(rel: string): string {
   return rel.split(path.sep).join('/');
 }
 
-function pushFile(
+export function pushFile(
   files: PlannedFile[],
   scaffoldRoot: string,
   rel: string,
@@ -239,7 +259,6 @@ function buildTreeLines(scaffoldName: string, files: PlannedFile[]): string[] {
     if (parts.length === 1) {
       lines.push(`|-- ${parts[0]}`);
     } else {
-      // show nested as |-- dir/ then |   |-- file for first level only (wiki §5)
       const dir = parts[0];
       const rest = parts.slice(1).join('/');
       const dirLine = `|-- ${dir}/`;
@@ -252,9 +271,37 @@ function buildTreeLines(scaffoldName: string, files: PlannedFile[]): string[] {
   return lines;
 }
 
+function appendSpecFile(
+  files: PlannedFile[],
+  scaffoldRoot: string,
+  opts: {
+    tier: StructureTier;
+    rootFileAbs: string;
+    environments: string[];
+    createdBy: StructureSpecCreatedBy;
+    now?: Date;
+  },
+): void {
+  const spec = buildStructureSpec({
+    tier: opts.tier,
+    rootFile: relativeRootFile(scaffoldRoot, opts.rootFileAbs),
+    environments: opts.tier === 'single' ? undefined : opts.environments,
+    createdBy: opts.createdBy,
+    now: opts.now,
+  });
+  pushFile(
+    files,
+    scaffoldRoot,
+    STRUCTURE_SPEC_REL,
+    serializeStructureSpec(spec),
+    'spec',
+  );
+}
+
 /**
  * Build a dry-run / apply plan for one wiki §1 tier.
  * Never writes to disk; never inserts `% !TEX root`.
+ * Always includes `.context/structure.json` with compile root = product/document.
  */
 export function buildStructurePlan(input: StructurePlanInput): StructurePlan {
   const name = sanitizeStem(input.name);
@@ -268,6 +315,7 @@ export function buildStructurePlan(input: StructurePlanInput): StructurePlan {
   const prefixed = input.usePrefixedNames === true;
   const scaffoldRoot = path.resolve(input.baseDir, name);
   const exists = existsChecker(input.existingPaths);
+  const createdBy = input.createdBy ?? 'context.projectManager.create';
 
   const envStems =
     input.environments && input.environments.length > 0
@@ -359,7 +407,11 @@ export function buildStructurePlan(input: StructurePlanInput): StructurePlan {
         files,
         scaffoldRoot,
         `${projStem}${ext}`,
-        projectContents(projStem, envStems, productStems.map((p) => productFileStem(p, prefixed))),
+        projectContents(
+          projStem,
+          envStems,
+          productStems.map((p) => productFileStem(p, prefixed)),
+        ),
         'project',
       );
       const compFileStems = componentStems.map((c) => componentFileStem(c, prefixed));
@@ -370,7 +422,9 @@ export function buildStructurePlan(input: StructurePlanInput): StructurePlan {
           files,
           scaffoldRoot,
           `${dir}/${prodStem}${ext}`,
-          productContents(prodStem, envStems, compFileStems, { projectStem: projStem }),
+          productContents(prodStem, envStems, compFileStems, {
+            projectStem: projStem,
+          }),
           'product',
         );
         for (const fileStem of compFileStems) {
@@ -383,9 +437,12 @@ export function buildStructurePlan(input: StructurePlanInput): StructurePlan {
           );
         }
       }
-      // Compile root: first product file
+      // Compile root: first product file (never the coordination project file)
       const firstProd = files.find((f) => f.role === 'product');
-      rootFile = firstProd?.path ?? files[0]?.path ?? '';
+      rootFile = firstProd?.path ?? '';
+      if (!rootFile) {
+        throw new Error('project-tier plan must include a product compile root');
+      }
       break;
     }
     default: {
@@ -394,9 +451,17 @@ export function buildStructurePlan(input: StructurePlanInput): StructurePlan {
     }
   }
 
+  appendSpecFile(files, scaffoldRoot, {
+    tier: input.tier,
+    rootFileAbs: rootFile,
+    environments: envStems,
+    createdBy,
+    now: input.now,
+  });
+
   // Safety: generated contents must not inject magic root comments
   for (const f of files) {
-    if (/%\s*!TEX\s+root/i.test(f.contents)) {
+    if (f.role !== 'spec' && /%\s*!TEX\s+root/i.test(f.contents)) {
       throw new Error(`Refusing plan that inserts % !TEX root (${f.relativePath})`);
     }
   }
@@ -424,6 +489,7 @@ export function planToDryRunJson(plan: StructurePlan): {
   conflicts: string[];
   treeLines: string[];
   files: { relativePath: string; role: PlannedFileRole }[];
+  deletePaths?: string[];
 } {
   return {
     tier: plan.tier,
@@ -435,5 +501,33 @@ export function planToDryRunJson(plan: StructurePlan): {
       relativePath: f.relativePath,
       role: f.role,
     })),
+    deletePaths: plan.deletePaths,
   };
+}
+
+/** Extract body text between \\startdocument … \\stopdocument (best-effort). */
+export function extractDocumentBody(tex: string): string {
+  const m = /\\startdocument\b([\s\S]*?)\\stopdocument\b/.exec(tex);
+  if (m) {
+    return m[1].replace(/^\s*\n/, '').replace(/\n\s*$/, '') || '% Document body';
+  }
+  return tex.trim() || '% Document body';
+}
+
+/** Ensure a product file declares \\project <stem> (idempotent). */
+export function ensureProjectDirective(tex: string, projectStem: string): string {
+  if (new RegExp(`\\\\project\\s+${escapeRegExp(projectStem)}\\b`).test(tex)) {
+    return tex;
+  }
+  if (/\\project\s+\S+/.test(tex)) {
+    return tex.replace(/\\project\s+\S+/, `\\project ${projectStem}`);
+  }
+  return tex.replace(
+    /(\\startproduct\s+\S+[^\n]*\n)/,
+    `$1\n\\project ${projectStem}\n`,
+  );
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

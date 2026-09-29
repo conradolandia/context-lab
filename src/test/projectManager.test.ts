@@ -10,6 +10,12 @@ import {
   type NeedAnswers,
 } from '../projectManager/structureTiers';
 import { buildStructurePlan, planToDryRunJson } from '../projectManager/structurePlan';
+import { buildUpgradePlan } from '../projectManager/structureUpgrade';
+import {
+  parseStructureSpecText,
+  findStructureSpec,
+  nextStructureTier,
+} from '../projectManager/structureSpec';
 import { scanStructure } from '../project/structureScan';
 import { buildProjectModel } from '../project/projectModel';
 import { resolveIncludePath } from '../project/pathResolve';
@@ -65,7 +71,7 @@ describe('recommendTier', () => {
   it('warns when choosing project without multi-product need (§13.1)', () => {
     const warn = tierOverrideWarning('product', 'project');
     assert.ok(warn);
-    assert.match(warn!, /project too early|§13\.1/i);
+    assert.match(warn!, /project tier too early|§13\.1/i);
     assert.equal(tierOverrideWarning('project', 'project'), undefined);
   });
 });
@@ -80,12 +86,21 @@ describe('buildStructurePlan', () => {
     });
     const rels = plan.files.map((f) => f.relativePath).sort();
     assert.deepEqual(rels, [
+      '.context/structure.json',
       'book.tex',
       'chapter-01.tex',
       'chapter-02.tex',
       'env_book.tex',
     ]);
     assert.equal(plan.rootFile, path.join(dir, 'book', 'book.tex'));
+    const specFile = plan.files.find((f) => f.role === 'spec')!;
+    const spec = JSON.parse(specFile.contents);
+    assert.equal(spec.schemaVersion, 1);
+    assert.equal(spec.tier, 'product');
+    assert.equal(spec.rootFile, 'book.tex');
+    assert.deepEqual(spec.environments, ['env_book']);
+    assert.equal(spec.createdBy, 'context.projectManager.create');
+    assert.doesNotMatch(specFile.contents, /project_book/);
     assert.deepEqual(plan.treeLines[0], 'book/');
     const product = plan.files.find((f) => f.role === 'product')!;
     assert.match(product.contents, /\\startproduct book/);
@@ -120,6 +135,10 @@ describe('buildStructurePlan', () => {
     assert.match(prod.contents, /\\project project_series/);
     assert.doesNotMatch(prod.contents, /\\startdocument/);
     assert.equal(plan.rootFile, path.join(dir, 'series', 'book-one', 'book-one.tex'));
+    const spec = JSON.parse(plan.files.find((f) => f.role === 'spec')!.contents);
+    assert.equal(spec.tier, 'project');
+    assert.equal(spec.rootFile, 'book-one/book-one.tex');
+    assert.ok(!String(spec.rootFile).includes('project_series'));
   });
 
   it('uses \\startdocument for single and env-doc only', async () => {
@@ -237,5 +256,120 @@ describe('need answers exhaustiveness', () => {
     ];
     const tiers = cases.map((c) => recommendTier(c).tier);
     assert.deepEqual(tiers, ['single', 'env-doc', 'product', 'project']);
+  });
+});
+
+describe('structure spec + upgrade', () => {
+  it('validates JSON and rejects bad specs', () => {
+    const ok = parseStructureSpecText(
+      JSON.stringify({
+        schemaVersion: 1,
+        tier: 'single',
+        rootFile: 'note.tex',
+      }),
+    );
+    assert.equal(ok.ok, true);
+    const bad = parseStructureSpecText('{"tier":"single"}');
+    assert.equal(bad.ok, false);
+  });
+
+  it('upgrades single → env-doc preserving body', async () => {
+    const dir = await tempDir();
+    const created = buildStructurePlan({
+      tier: 'single',
+      baseDir: dir,
+      name: 'note',
+      now: new Date('2026-01-01T00:00:00.000Z'),
+    });
+    for (const f of created.files) {
+      fs.mkdirSync(path.dirname(f.path), { recursive: true });
+      fs.writeFileSync(
+        f.path,
+        f.role === 'document'
+          ? '\\startdocument\n\nHello body\n\n\\stopdocument\n'
+          : f.contents,
+      );
+    }
+    const found = findStructureSpec(path.join(dir, 'note'));
+    assert.ok(found);
+    const upgrade = buildUpgradePlan({
+      scaffoldRoot: found!.scaffoldRoot,
+      spec: found!.spec,
+      now: new Date('2026-01-02T00:00:00.000Z'),
+    });
+    assert.equal(upgrade.tier, 'env-doc');
+    const doc = upgrade.files.find((f) => f.role === 'document')!;
+    assert.match(doc.contents, /\\environment env_note/);
+    assert.match(doc.contents, /Hello body/);
+    const spec = JSON.parse(upgrade.files.find((f) => f.role === 'spec')!.contents);
+    assert.equal(spec.tier, 'env-doc');
+    assert.equal(spec.createdBy, 'context.projectManager.upgrade');
+    assert.equal(spec.createdAt, '2026-01-01T00:00:00.000Z');
+    assert.equal(nextStructureTier('env-doc'), 'product');
+  });
+
+  it('upgrades env-doc → product (replaces document path with product)', async () => {
+    const dir = await tempDir();
+    const created = buildStructurePlan({
+      tier: 'env-doc',
+      baseDir: dir,
+      name: 'essay',
+      now: new Date('2026-01-01T00:00:00.000Z'),
+    });
+    for (const f of created.files) {
+      fs.mkdirSync(path.dirname(f.path), { recursive: true });
+      fs.writeFileSync(f.path, f.contents);
+    }
+    const found = findStructureSpec(path.join(dir, 'essay'));
+    assert.ok(found);
+    const upgrade = buildUpgradePlan({
+      scaffoldRoot: found!.scaffoldRoot,
+      spec: found!.spec,
+    });
+    assert.equal(upgrade.tier, 'product');
+    const product = upgrade.files.find((f) => f.role === 'product')!;
+    assert.equal(product.relativePath, 'essay.tex');
+    assert.match(product.contents, /\\startproduct essay/);
+    assert.match(product.contents, /\\component chapter-01/);
+    assert.ok(upgrade.files.some((f) => f.relativePath === 'chapter-01.tex'));
+    // Same path as the former document — overwrite, do not delete
+    assert.equal(upgrade.deletePaths, undefined);
+    assert.equal(path.basename(upgrade.rootFile), 'essay.tex');
+    const spec = JSON.parse(upgrade.files.find((f) => f.role === 'spec')!.contents);
+    assert.equal(spec.tier, 'product');
+    assert.equal(spec.rootFile, 'essay.tex');
+  });
+
+  it('upgrades product → project tier with an extra product; root stays a product', async () => {
+    const dir = await tempDir();
+    const created = buildStructurePlan({
+      tier: 'product',
+      baseDir: dir,
+      name: 'book',
+      now: new Date('2026-01-01T00:00:00.000Z'),
+    });
+    for (const f of created.files) {
+      fs.mkdirSync(path.dirname(f.path), { recursive: true });
+      fs.writeFileSync(f.path, f.contents);
+    }
+    const found = findStructureSpec(path.join(dir, 'book'));
+    assert.ok(found);
+    const upgrade = buildUpgradePlan({
+      scaffoldRoot: found!.scaffoldRoot,
+      spec: found!.spec,
+      additionalProducts: ['book-two'],
+    });
+    assert.equal(upgrade.tier, 'project');
+    const proj = upgrade.files.find((f) => f.role === 'project')!;
+    assert.match(proj.contents, /\\startproject project_book/);
+    assert.match(proj.contents, /\\product book/);
+    assert.match(proj.contents, /\\product book-two/);
+    const prod = upgrade.files.find((f) => f.relativePath === 'book.tex')!;
+    assert.match(prod.contents, /\\project project_book/);
+    assert.ok(upgrade.files.some((f) => f.relativePath === 'book-two/book-two.tex'));
+    assert.equal(upgrade.rootFile, path.join(dir, 'book', 'book.tex'));
+    const spec = JSON.parse(upgrade.files.find((f) => f.role === 'spec')!.contents);
+    assert.equal(spec.rootFile, 'book.tex');
+    assert.doesNotMatch(spec.rootFile, /project_/);
   });
 });

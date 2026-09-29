@@ -135,6 +135,10 @@
         "command": "context.projectManager.create",
         "title": "ConTeXt: New Document Structure…",
         "icon": "$(new-file)"
+      },
+      {
+        "command": "context.projectManager.upgrade",
+        "title": "ConTeXt: Upgrade Document Structure…"
       }
     ],
     "menus": {
@@ -293,7 +297,7 @@
         "context.projectManager.setRootFileOnCreate": {
           "type": "boolean",
           "default": true,
-          "description": "When true, after creating a structure set context.rootFile to the compile root (document or product). Does not write % !TEX root into files."
+          "description": "When true, after creating a structure set context.rootFile to the compile root (document or product — never the \\startproject coordination file). Does not write % !TEX root into files."
         }
       }
     }
