@@ -32,7 +32,7 @@ export const SCITE_DATA_REL = path.join(
 
 /**
  * True if `dir` looks like an LMTX / ConTeXt Standalone install root
- * (the directory that contains `tex/`, never a `bin/` folder).
+ * (the directory that contains `tex/`).
  */
 export function isInstallRoot(dir: string): boolean {
   if (!dir) {
@@ -87,7 +87,7 @@ export function walkToInstallRoot(start: string): string | undefined {
 /**
  * Normalize a candidate path to the ConTeXt installation root (parent of tex/).
  * - If already an install root, return it.
- * - Otherwise walk parents (handles bin dirs, texmf-linux-64, mistaken settings).
+ * - Otherwise walk parents (handles bin dirs and texmf-<platform> paths).
  */
 export function resolveInstallRoot(candidate: string): string | undefined {
   const trimmed = candidate?.trim();
@@ -163,7 +163,6 @@ export function findBinaryUnderRoot(root: string, name: string): string | undefi
 /**
  * Infer ConTeXt installation root from a binary realpath.
  * Walks parents until `tex/texmf-context/…/context-en.xml` (or texmf-context) exists.
- * Never returns a `bin/` directory.
  */
 export function inferRootFromBinary(binaryPath: string): string | undefined {
   if (!binaryPath) {

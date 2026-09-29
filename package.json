@@ -187,7 +187,7 @@
         "context.root": {
           "type": "string",
           "default": "",
-          "description": "ConTeXt installation root (Standalone / LMTX tree): the directory that contains tex/ (for example $HOME/context or /opt/context). Not the bin folder (binaries are under tex/texmf-<platform>/bin/). Empty = use PATH and infer the install root."
+          "description": "ConTeXt installation root (Standalone / LMTX tree): the directory that contains tex/ (for example $HOME/context or /opt/context). Binaries live under tex/texmf-<platform>/bin/. Empty = use PATH and infer the install root."
         },
         "context.contextPath": {
           "type": "string",

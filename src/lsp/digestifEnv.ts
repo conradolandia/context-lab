@@ -264,7 +264,7 @@ export function buildDigestifEnv(options: BuildDigestifEnvOptions): DigestifEnvR
       kind: 'xml-missing',
       message:
         `Could not resolve a ConTeXt installation root from ${candidate}. ` +
-        `Set context.root to the parent of tex/ (for example: $HOME/context), not the bin folder. ` +
+        `Set context.root to the parent of tex/ (for example: $HOME/context). ` +
         `Expected ${path.join('…', CONTEXT_INTERFACE_REL)}.`,
     };
   }
@@ -277,7 +277,7 @@ export function buildDigestifEnv(options: BuildDigestifEnvOptions): DigestifEnvR
       message:
         `ConTeXt interface XML (context-en.xml) not found under install root ${root}. ` +
         `Expected ${path.join(root, CONTEXT_INTERFACE_REL)}. ` +
-        `Check context.root points at the ConTeXt installation root (parent of tex/), not …/tex/texmf-*/bin.`,
+        `Check context.root points at the ConTeXt installation root (parent of tex/).`,
     };
   }
 

@@ -22,7 +22,7 @@ Requires a working LMTX / ConTeXt Standalone install for build and SyncTeX. Dige
 
 ## Settings
 
-`context.root` is the **ConTeXt installation root** (Standalone / LMTX tree root): the directory that contains `tex/`, **not** the `bin` folder. Binaries live under `$CONTEXT_ROOT/tex/texmf-<platform>/bin/` (`context`, `mtxrun`, `luametatex`, …). See [wiki Structure](https://wiki.contextgarden.net/ConTeXt_Standalone/Structure).
+`context.root` is the **ConTeXt installation root** (Standalone / LMTX tree root): the directory that contains `tex/`. Binaries live under `$CONTEXT_ROOT/tex/texmf-<platform>/bin/` (`context`, `mtxrun`, `luametatex`, …). See [wiki Structure](https://wiki.contextgarden.net/ConTeXt_Standalone/Structure).
 
 Typical layout:
 
@@ -43,7 +43,7 @@ Resolution order:
 
 | Setting | Default | Notes |
 | --- | --- | --- |
-| `context.root` | `""` | ConTeXt installation root (parent of `tex/`) — never `…/bin` |
+| `context.root` | `""` | ConTeXt installation root (parent of `tex/`) |
 | `context.contextPath` | `""` | Absolute `context` binary |
 | `context.mtxrunPath` | `""` | Absolute `mtxrun` binary |
 | `context.synctex.enabled` | `true` | Toggle SyncTeX |

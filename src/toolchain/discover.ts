@@ -93,7 +93,7 @@ export function resolveToolchain(
   }
 
   if (rootSetting) {
-    // Normalize: context.root must be the install root (parent of tex/), not bin/
+    // Normalize: context.root is the install root (parent of tex/)
     root = resolveInstallRoot(rootSetting) ?? rootSetting;
     if (!contextPath) {
       contextPath = findBinaryUnderRoot(root, 'context');
