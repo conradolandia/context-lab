@@ -419,11 +419,11 @@ export class ProjectManagerPanel {
 </style>
 </head>
 <body>
-  <h1>New ConTeXt document structure</h1>
-  <p class="sub">Create the simplest structure that matches the job (wiki §1).</p>
+  <h1>New ConTeXt project structure</h1>
+  <p>Wizard based on the <a href="https://wiki.contextgarden.net/Input_and_compilation/Project_and_file_management">ConTeXt Project and file management</a> article.</p>
   <blockquote class="principle">
     Do not introduce a project merely because a document contains several files.
-    Use the simplest structure that matches the job.
+    Use the simplest structure that matches the job. (wiki §1)
   </blockquote>
 
   <ol class="steps" id="stepper">
@@ -483,9 +483,8 @@ export class ProjectManagerPanel {
       <label class="block" for="products">Products</label>
       <input type="text" id="products" spellcheck="false" />
     </div>
-    <label class="row"><input type="checkbox" id="usePrefixedNames" /> Denser prefixes (product_*, component_*)</label>
-    <label class="row"><input type="checkbox" id="setRootFile" checked /> Set <code>context.rootFile</code> to the compile root</label>
-    <p class="hint">Files use <code>.tex</code> only. Root marking uses the setting only — no <code>% !TEX root</code> is written.</p>
+    <label class="row"><input type="checkbox" id="usePrefixedNames" /> Prefer denser prefixes (product_*, component_*)</label>
+    <label class="row"><input type="checkbox" id="setRootFile" checked /> Set <code>context.rootFile</code> to the project root file</label>
     <div class="actions">
       <button class="secondary" id="backRec">Back</button>
       <button id="toPreview">Preview</button>
