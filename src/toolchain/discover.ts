@@ -19,7 +19,7 @@ export {
 export interface Toolchain {
   contextPath: string;
   mtxrunPath: string;
-  /** Effective LMTX install root (parent of tex/), from setting or inferred. */
+  /** Effective ConTeXt installation root (parent of tex/), from setting or inferred. */
   root?: string;
 }
 
@@ -128,8 +128,8 @@ export function resolveToolchain(
       .filter(Boolean)
       .join(' and ');
     throw new ToolchainError(
-      `Could not find ${missing}. Set context.root to your LMTX install root ` +
-        `(the directory that contains tex/, example: /path/to/lmtx), ` +
+      `Could not find ${missing}. Set context.root to your ConTeXt installation root ` +
+        `(the directory that contains tex/, example: /path/to/context), ` +
         `set context.contextPath / context.mtxrunPath, or ensure both binaries are on PATH.`,
     );
   }

@@ -13,7 +13,7 @@ SciTE data tables:
   scite-context-data-interfaces.lua
   scite-context-data-tex.lua
 
-Typical path under an LMTX install root (context.root):
+Typical path under a ConTeXt installation root (context.root):
 
   tex/texmf-context/context/data/scite/context/lexers/data/
 
@@ -23,7 +23,7 @@ does not change that: the committed snapshot redistributes derived name lists.
 How to refresh
 --------------
 
-  CONTEXT_ROOT=/path/to/lmtx npm run generate:keywords
+  CONTEXT_ROOT=/path/to/context npm run generate:keywords
 
 Or from the editor: “ConTeXt: Refresh command keywords” (then reload the window).
 

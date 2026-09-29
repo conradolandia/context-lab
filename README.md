@@ -22,14 +22,14 @@ Requires a working LMTX / ConTeXt Standalone install for build and SyncTeX. Dige
 
 ## Settings
 
-`context.root` is the **LMTX / ConTeXt Standalone install root**: the directory that contains `tex/`, **not** the `bin` folder. See [wiki Structure](https://wiki.contextgarden.net/ConTeXt_Standalone/Structure).
+`context.root` is the **ConTeXt installation root** (Standalone / LMTX tree root): the directory that contains `tex/`, **not** the `bin` folder. Binaries live under `$CONTEXT_ROOT/tex/texmf-<platform>/bin/` (`context`, `mtxrun`, `luametatex`, …). See [wiki Structure](https://wiki.contextgarden.net/ConTeXt_Standalone/Structure).
 
 Typical layout:
 
 ```text
-$CONTEXT_ROOT/                          ← set context.root here
+$CONTEXT_ROOT/                          ← set context.root here (install root)
   tex/
-    texmf-*/bin/context, mtxrun         ← binaries
+    texmf-<platform>/bin/               ← binaries (context, mtxrun, …)
     texmf-context/…                     ← formats, data, SciTE tables
 ```
 
@@ -39,11 +39,11 @@ Resolution order:
 2. Binaries under `context.root` → `{root}/tex/texmf-*/bin/{context,mtxrun}` (and older `bin/` layouts)
 3. `context` and `mtxrun` on `PATH` (install root inferred by walking parents until `tex/texmf-context` exists)
 
-`context.root` defaults to empty. PATH installs need no config when the binary realpath sits under a normal LMTX tree.
+`context.root` defaults to empty. PATH installs need no config when the binary realpath sits under a normal Standalone / LMTX tree.
 
 | Setting | Default | Notes |
 | --- | --- | --- |
-| `context.root` | `""` | Install root (parent of `tex/`) — never `…/bin` |
+| `context.root` | `""` | ConTeXt installation root (parent of `tex/`) — never `…/bin` |
 | `context.contextPath` | `""` | Absolute `context` binary |
 | `context.mtxrunPath` | `""` | Absolute `mtxrun` binary |
 | `context.synctex.enabled` | `true` | Toggle SyncTeX |
@@ -62,7 +62,7 @@ Example:
 
 ```json
 {
-  "context.root": "/path/to/lmtx"
+  "context.root": "/path/to/context"
 }
 ```
 

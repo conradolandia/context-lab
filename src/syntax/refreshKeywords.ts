@@ -26,7 +26,7 @@ export async function refreshCommandKeywords(
 
   if (!root) {
     void vscode.window.showErrorMessage(
-      'ConTeXt: cannot refresh keywords — set context.root to your LMTX install root.',
+      'ConTeXt: cannot refresh keywords — set context.root to your ConTeXt installation root (the directory that contains tex/, not bin/).',
     );
     return;
   }

@@ -85,7 +85,7 @@ export function walkToInstallRoot(start: string): string | undefined {
 }
 
 /**
- * Normalize a candidate path to the LMTX install root.
+ * Normalize a candidate path to the ConTeXt installation root (parent of tex/).
  * - If already an install root, return it.
  * - Otherwise walk parents (handles bin dirs, texmf-linux-64, mistaken settings).
  */
@@ -100,7 +100,7 @@ export function resolveInstallRoot(candidate: string): string | undefined {
   return walkToInstallRoot(trimmed);
 }
 
-/** Candidate bin dirs under an LMTX / ConTeXt install root. Pure (no vscode). */
+/** Candidate bin dirs under a ConTeXt installation root. Pure (no vscode). */
 export function candidateBinDirs(root: string): string[] {
   const platformHints = [
     process.platform === 'darwin'
@@ -161,7 +161,7 @@ export function findBinaryUnderRoot(root: string, name: string): string | undefi
 }
 
 /**
- * Infer LMTX install root from a binary realpath.
+ * Infer ConTeXt installation root from a binary realpath.
  * Walks parents until `tex/texmf-context/…/context-en.xml` (or texmf-context) exists.
  * Never returns a `bin/` directory.
  */

@@ -10,9 +10,9 @@
  *     scite-context-data-tex.lua
  *
  * Usage:
- *   CONTEXT_ROOT=/path/to/lmtx npm run generate:keywords
+ *   CONTEXT_ROOT=/path/to/context npm run generate:keywords
  *   node scripts/generate-context-keywords.mjs --data-dir /path/to/lexers/data
- *   node scripts/generate-context-keywords.mjs --root /path/to/lmtx
+ *   node scripts/generate-context-keywords.mjs --root /path/to/context
  *
  * Classification mirrors mtx-vscode.lua (common interface only; helpers and
  * constants overload primitives; normal* variants added for engine names).
@@ -536,7 +536,7 @@ function resolveDataDir(argv) {
 
   if (!installRoot) {
     throw new Error(
-      'Could not locate LMTX SciTE data. Set CONTEXT_ROOT to your install root ' +
+      'Could not locate ConTeXt SciTE data. Set CONTEXT_ROOT to your ConTeXt installation root ' +
         '(parent of tex/), pass --root, pass --data-dir, or put context/mtxrun on PATH.',
     );
   }
@@ -553,7 +553,7 @@ function printHelp() {
   console.log(`Usage: node scripts/generate-context-keywords.mjs [options]
 
 Options:
-  --root <dir>       LMTX install root (parent of tex/)
+  --root <dir>       ConTeXt installation root (parent of tex/)
   --data-dir <dir>   Directory containing scite-context-data-*.lua
   --out-dir <dir>    Write context-keywords.json here (default: syntaxes/)
   --grammar <file>   Patch this TextMate grammar (default: syntaxes/context.tmLanguage.json)
