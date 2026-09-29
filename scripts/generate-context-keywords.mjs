@@ -10,9 +10,9 @@
  *     scite-context-data-tex.lua
  *
  * Usage:
- *   CONTEXT_ROOT=/path/to/context npm run generate:keywords
+ *   CONTEXT_ROOT=$HOME/context npm run generate:keywords
  *   node scripts/generate-context-keywords.mjs --data-dir /path/to/lexers/data
- *   node scripts/generate-context-keywords.mjs --root /path/to/context
+ *   node scripts/generate-context-keywords.mjs --root $HOME/context
  *
  * Classification mirrors mtx-vscode.lua (common interface only; helpers and
  * constants overload primitives; normal* variants added for engine names).

@@ -129,7 +129,7 @@ export function resolveToolchain(
       .join(' and ');
     throw new ToolchainError(
       `Could not find ${missing}. Set context.root to your ConTeXt installation root ` +
-        `(the directory that contains tex/, example: /path/to/context), ` +
+        `(the directory that contains tex/, for example: $HOME/context), ` +
         `set context.contextPath / context.mtxrunPath, or ensure both binaries are on PATH.`,
     );
   }

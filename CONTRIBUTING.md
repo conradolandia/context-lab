@@ -33,8 +33,8 @@ npm run watch            # rebuild on change
 Unit and grammar tests do not require a ConTeXt install. Optional DigestiF handshake (needs DigestiF + LMTX):
 
 ```bash
-CONTEXT_ROOT=/path/to/context npm run handshake:context
-# or: LMTX_ROOT=/path/to/context npm run handshake:context
+CONTEXT_ROOT=$HOME/context npm run handshake:context
+# or: LMTX_ROOT=$HOME/context npm run handshake:context
 ```
 
 ## Extension Development Host (F5)
@@ -59,7 +59,7 @@ npx @vscode/vsce package
 After upgrading LMTX, regenerate the committed SciTE keyword snapshot:
 
 ```bash
-CONTEXT_ROOT=/path/to/context npm run generate:keywords
+CONTEXT_ROOT=$HOME/context npm run generate:keywords
 ```
 
 Or run **ConTeXt: Refresh command keywords** in the editor and reload the window. Provenance (hashes, date, optional LMTX version) is written into `syntaxes/context-keywords.json`. See [`NOTICE`](NOTICE).
@@ -82,7 +82,7 @@ Review the `.snap` diff before committing.
 - Target `main`.
 - Keep scope focused; one concern per PR when practical.
 - Run `npm run lint` and `npm test` before requesting review.
-- Do not add personal absolute paths (`/home/…`), machine hostnames, or private book/project paths in docs, fixtures you invent, or settings examples. Use `$CONTEXT_ROOT`, `/path/to/context`, or temp dirs in tests.
+- Do not add personal absolute paths (`/home/alice/…`), machine hostnames, or private book/project paths in docs, fixtures you invent, or settings examples. For concrete installs use `$HOME/context` or `/opt/context`; `$CONTEXT_ROOT` is fine for shell env; temp dirs in tests.
 - Do not claim `*.tex` globally in `package.json` contributes; DigestiF ConTeXt mode requires language id `context`.
 - Soft-warn only for LaTeX Workshop conflicts; never auto-disable Workshop without the user action.
 - License: GPL-2.0-only. Keep keyword provenance in [`NOTICE`](NOTICE) accurate when regenerating snapshots.

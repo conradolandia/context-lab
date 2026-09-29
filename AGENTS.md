@@ -30,7 +30,7 @@ Build path: `buildController` → `spawnContextBuild` → artifact gate → view
 3. **Language id `context` for DigestiF ConTeXt mode.** DigestiF maps `tex`/`latex` → LaTeX tags. ConTeXt completion needs `languageId === 'context'`.
 4. **Do not claim `*.tex` globally** in `contributes.languages`. Offer workspace `files.associations` via the existing prompt / setting only.
 5. **LaTeX Workshop conflict: soft-warn only.** Detect when Workshop contributes language id `context`; warn once with disable / unwantedRecommendations / dismiss. Never auto-disable without the user’s chosen action. Skip the modal in `ExtensionMode.Development` (F5 grammar usually wins).
-6. **No user PII in docs or examples.** Prefer `$CONTEXT_ROOT`, `/path/to/context`, or OS temp dirs. Do not commit personal home paths, hostnames, or private manuscript paths.
+6. **No user PII in docs or examples.** Prefer `$CONTEXT_ROOT`, `$HOME/context`, `/opt/context`, or OS temp dirs. Do not commit personal home paths, hostnames, or private manuscript paths.
 7. **GPL-2.0-only.** Keyword regeneration redistributes SciTE-derived names; keep [`NOTICE`](NOTICE) accurate.
 
 ## Tests and checks

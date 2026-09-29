@@ -23,7 +23,7 @@ does not change that: the committed snapshot redistributes derived name lists.
 How to refresh
 --------------
 
-  CONTEXT_ROOT=/path/to/context npm run generate:keywords
+  CONTEXT_ROOT=$HOME/context npm run generate:keywords
 
 Or from the editor: “ConTeXt: Refresh command keywords” (then reload the window).
 
