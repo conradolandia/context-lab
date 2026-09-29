@@ -19,7 +19,7 @@ export {
 export interface Toolchain {
   contextPath: string;
   mtxrunPath: string;
-  /** Effective LMTX install root (parent of tex/), from setting or inferred. */
+  /** Effective ConTeXt installation root (parent of tex/), from setting or inferred. */
   root?: string;
 }
 
@@ -93,7 +93,7 @@ export function resolveToolchain(
   }
 
   if (rootSetting) {
-    // Normalize: context.root must be the install root (parent of tex/), not bin/
+    // Normalize: context.root is the install root (parent of tex/)
     root = resolveInstallRoot(rootSetting) ?? rootSetting;
     if (!contextPath) {
       contextPath = findBinaryUnderRoot(root, 'context');
@@ -116,7 +116,7 @@ export function resolveToolchain(
       inferRootFromBinary(mtxrunPath ?? '') ??
       undefined;
   } else {
-    // Re-normalize in case setting pointed at bin/texmf-linux-64
+    // Re-normalize via walk-to-install-root when needed
     root = resolveInstallRoot(root) ?? root;
   }
 
@@ -128,8 +128,8 @@ export function resolveToolchain(
       .filter(Boolean)
       .join(' and ');
     throw new ToolchainError(
-      `Could not find ${missing}. Set context.root to your LMTX install root ` +
-        `(the directory that contains tex/, example: /path/to/lmtx), ` +
+      `Could not find ${missing}. Set context.root to your ConTeXt installation root ` +
+        `(the directory that contains tex/, for example: $HOME/context), ` +
         `set context.contextPath / context.mtxrunPath, or ensure both binaries are on PATH.`,
     );
   }
