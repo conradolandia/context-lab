@@ -116,7 +116,7 @@ export function resolveToolchain(
       inferRootFromBinary(mtxrunPath ?? '') ??
       undefined;
   } else {
-    // Re-normalize in case setting pointed at bin/texmf-linux-64
+    // Re-normalize via walk-to-install-root when needed
     root = resolveInstallRoot(root) ?? root;
   }
 
