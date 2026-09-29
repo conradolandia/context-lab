@@ -50,6 +50,17 @@ describe('pathResolve', () => {
     });
     assert.equal(hit, fig);
   });
+  it('resolves wiki §5 product subdirectory layout', async () => {
+    const dir = await tempDir();
+    const project = path.join(dir, 'project_series.tex');
+    const bookDir = path.join(dir, 'book-one');
+    fs.mkdirSync(bookDir, { recursive: true });
+    const book = path.join(bookDir, 'book-one.tex');
+    fs.writeFileSync(book, '\\startproduct book-one\n\\stopproduct\n');
+    fs.writeFileSync(project, '\\startproject project_series\n\\product book-one\n\\stopproject\n');
+    const hit = resolveIncludePath({ fromFile: project, name: 'book-one' });
+    assert.equal(hit, book);
+  });
 });
 
 describe('structureScan', () => {
