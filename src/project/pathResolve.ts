@@ -102,6 +102,26 @@ export function resolveIncludePath(opts: ResolveIncludeOptions): string | undefi
       if (exists(abs)) {
         return abs;
       }
+      // Wiki §5 product layout: `\product book-one` → book-one/book-one.tex
+      // (bare stem only — skip when the name already has a path).
+      if (!/[\\/]/.test(n)) {
+        const stem = hasKnownSuffix(n, extensions)
+          ? n.slice(0, n.length - path.extname(n).length)
+          : n;
+        if (stem) {
+          const nested = hasKnownSuffix(n, extensions)
+            ? [path.resolve(dir, stem, n)]
+            : [
+                path.resolve(dir, stem, stem),
+                ...extensions.map((ext) => path.resolve(dir, stem, `${stem}${ext}`)),
+              ];
+          for (const cand of nested) {
+            if (exists(cand)) {
+              return cand;
+            }
+          }
+        }
+      }
     }
   }
   return undefined;

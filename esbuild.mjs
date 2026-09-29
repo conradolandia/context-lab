@@ -43,6 +43,7 @@ const testOptions = {
     join(__dirname, 'src/test/normalizeOutlineTitle.test.ts'),
     join(__dirname, 'src/test/figureHoverMarkdown.test.ts'),
     join(__dirname, 'src/test/projectModel.test.ts'),
+    join(__dirname, 'src/test/projectManager.test.ts'),
     join(__dirname, 'src/test/generateKeywords.test.ts'),
     join(__dirname, 'src/test/latexWorkshopConflict.test.ts'),
     join(__dirname, 'src/test/pdfPanelTitle.test.ts'),

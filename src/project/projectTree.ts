@@ -430,7 +430,7 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<ProjectTreeI
         fileCount: 0,
         timingsMs: { total: 0 },
         emptyMessage:
-          'No ConTeXt product or project found. Open a .tex / .mkiv file or set context.rootFile.',
+          'No ConTeXt product or project found. Open a .tex / .mkiv file, set context.rootFile, or run ConTeXt: New Document Structure…',
       };
       this.applyOutsideMessage(false, undefined);
       return this.model;

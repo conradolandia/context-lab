@@ -1,6 +1,6 @@
 # ConTeXt Tools
 
-VS Code / Cursor extension for ConTeXt (LMTX): SyncTeX PDF preview, DigestiF language server, Project view, a TextMate grammar, and a small snippet set for the `context` language.
+VS Code / Cursor extension for ConTeXt (LMTX): SyncTeX PDF preview, DigestiF language server, Project view, Project Manager (scaffold), a TextMate grammar, and a small snippet set for the `context` language.
 
 **License:** GNU GPL version 2 only (`GPL-2.0-only`). See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE). Keyword lists are derived from ConTeXt SciTE data (same GPL-2 regime).
 
@@ -57,6 +57,9 @@ Resolution order:
 | `context.projectView.includeModules` | `false` | Reserved; modules/figures stay on document links only |
 | `context.projectView.maxFiles` | `500` | Cap on files visited while expanding the graph |
 | `context.projectView.refreshDebounceMs` | `300` | Debounce before rescan after edits/saves |
+| `context.projectManager.defaultExtension` | `".tex"` | Scaffold extension (v1: `.tex` only) |
+| `context.projectManager.usePrefixedNames` | `false` | Denser `product_*` / `component_*` prefixes when true |
+| `context.projectManager.setRootFileOnCreate` | `true` | Set `context.rootFile` after create (no `% !TEX root` in files) |
 
 Example (absolute path; home installs are often `$HOME/context` expanded):
 
@@ -134,7 +137,22 @@ Activity-bar container **ConTeXt** → **Project**. Scans English structure comm
 | environment | no | Loaded into a product |
 | project | refused | Offers the first listed product if any |
 
-Click a node to open the file. Actions: Build, Forward SyncTeX, Set as Main (Root) File. Title bar: **Reveal Active** and **Refresh**.
+Click a node to open the file. Actions: Build, Forward SyncTeX, Set as Main (Root) File. Title bar: **New Document Structure…**, **Reveal Active**, and **Refresh**.
+
+## Project Manager (new structure)
+
+Command **ConTeXt: New Document Structure…** (`context.projectManager.create`) opens a webview wizard that scaffolds the simplest ConTeXt structure that matches the job (wiki *Project and file management* §1):
+
+| Tier | When | Compile |
+| --- | --- | --- |
+| Single document | One file | That file |
+| Document + environment | Shared setup | Document file |
+| Product + components | One output, split parts (no project) | Product file |
+| Project | Several related products | Each product (not the project file) |
+
+After create: opens the compile root, sets `context.rootFile` when enabled, refreshes the Project view, and may offer `files.associations["*.tex"] = "context"`. Scaffolds use `.tex` only and do not insert `% !TEX root`. Layered environments (ordered list) are supported.
+
+Local LMTX manuals that complement the wiki live under `$CONTEXT_ROOT/tex/texmf-context/doc/` (for example `$HOME/context` or `/opt/context`): `context/documents/general/magazines/mag-1101-mkiv.pdf` and `context/documents/general/manuals/mkiv/workflows-mkiv.pdf`.
 
 ## Build on save
 

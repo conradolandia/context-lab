@@ -12,11 +12,13 @@ src/viewer/                   PDF webview panel, range server, PDF.js worker
 src/synctex/                  mtxrun synctex CLI, box parse, coordinate mapping
 src/lsp/                      DigestiF launch, client, env (DIGESTIF_TEXMF)
 src/project/                  Root file, structure scan, path resolve, Project TreeView
+src/projectManager/           New Document Structure wizard (tiers, plan, apply, webview)
 src/links/                    Document links + figure hover
 src/folding/                  \start…/\stop… folding + mismatch diagnostics
 src/syntax/                   Refresh keywords command
 src/compat/                   LaTeX Workshop language-id conflict soft-warn
 media/viewer/                 Webview HTML/JS/CSS (PDF.js)
+media/projectManager/         Reserved for Project Manager webview assets
 syntaxes/                     TextMate grammar + keyword snapshot
 scripts/                      generate-context-keywords, digestif handshake
 ```

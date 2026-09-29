@@ -26,11 +26,12 @@ import {
 } from './folding/startStopFolding';
 import { registerProjectView } from './project/projectTree';
 import type { ProjectNode } from './project/projectModel';
+import { registerProjectManager } from './projectManager/projectManagerPanel';
 import { refreshCommandKeywords } from './syntax/refreshKeywords';
 import { maybeWarnLatexWorkshopConflict } from './compat/latexWorkshopConflict';
 
 /** Bump when shipping a SyncTeX/viewer/LSP/diagnostics/project-view behavior change Sir must verify in Output. */
-export const BUILD_ID = 'latex-workshop-warn-v1';
+export const BUILD_ID = 'project-manager-v1';
 
 let output: vscode.OutputChannel;
 let digestifOutput: vscode.OutputChannel;
@@ -579,7 +580,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
-  registerProjectView(context, {
+  const projectView = registerProjectView(context, {
     output,
     workspaceFolderPaths,
     activeTexPath,
@@ -590,6 +591,11 @@ export function activate(context: vscode.ExtensionContext): void {
       void forwardSyncFromProjectNode(node);
     },
     setRootFromNode: setRootFromProjectNode,
+  });
+
+  registerProjectManager(context, {
+    output,
+    refreshProjectView: () => projectView.refresh(),
   });
 
   const pkgPath = path.join(context.extensionPath, 'package.json');
