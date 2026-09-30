@@ -9,7 +9,12 @@ import {
   tierOverrideWarning,
   type NeedAnswers,
 } from '../projectManager/structureTiers';
-import { buildStructurePlan, planToDryRunJson } from '../projectManager/structurePlan';
+import {
+  buildStructurePlan,
+  formatDocumentMetadataValue,
+  parseDocumentMetadataLines,
+  planToDryRunJson,
+} from '../projectManager/structurePlan';
 import { buildUpgradePlan } from '../projectManager/structureUpgrade';
 import {
   parseStructureSpecText,
@@ -287,6 +292,117 @@ describe('buildStructurePlan', () => {
     assert.match(doc.contents, /\\startdocument/);
   });
 
+  it('omits product \\startdocument stub when documentStub is off', async () => {
+    const dir = await tempDir();
+    const plan = buildStructurePlan({
+      tier: 'product',
+      baseDir: dir,
+      name: 'book',
+      documentStub: false,
+      documentMetadata: 'title=Ignored',
+    });
+    const product = plan.files.find((f) => f.role === 'product')!;
+    assert.doesNotMatch(product.contents, /\\startdocument/);
+    assert.doesNotMatch(product.contents, /\\stopdocument/);
+    const spec = JSON.parse(plan.files.find((f) => f.role === 'spec')!.contents);
+    assert.equal(spec.documentStub, undefined);
+    assert.equal(spec.documentMetadata, undefined);
+  });
+
+  it('wraps product components in empty \\startdocument when stub on and metadata empty', async () => {
+    const dir = await tempDir();
+    const plan = buildStructurePlan({
+      tier: 'product',
+      baseDir: dir,
+      name: 'book',
+      documentStub: true,
+      documentMetadata: '',
+    });
+    const product = plan.files.find((f) => f.role === 'product')!;
+    assert.match(
+      product.contents,
+      /\\environment env_book\n\n\\startdocument\n\\component chapter-01\n\\component chapter-02\n\\stopdocument\n\n\\stopproduct/,
+    );
+    assert.doesNotMatch(product.contents, /\\startdocument\[/);
+    const spec = JSON.parse(plan.files.find((f) => f.role === 'spec')!.contents);
+    assert.equal(spec.documentStub, true);
+    assert.equal(spec.documentMetadata, undefined);
+  });
+
+  it('emits \\startdocument metadata from key=value lines in product and project tiers', async () => {
+    const dir = await tempDir();
+    const meta = 'title=My Book\nauthor={Jane Doe}\nlogo=\\externalfigure[cover]\n\nskipped\nbadline\n';
+    const productPlan = buildStructurePlan({
+      tier: 'product',
+      baseDir: dir,
+      name: 'book',
+      documentStub: true,
+      documentMetadata: meta,
+    });
+    const product = productPlan.files.find((f) => f.role === 'product')!;
+    assert.match(
+      product.contents,
+      /\\startdocument\[\n  title=\{My Book\},\n  author=\{Jane Doe\},\n  logo=\\externalfigure\[cover\],\n\]\n\\component chapter-01/,
+    );
+    assert.match(product.contents, /\\stopdocument\n\n\\stopproduct/);
+    const productSpec = JSON.parse(
+      productPlan.files.find((f) => f.role === 'spec')!.contents,
+    );
+    assert.equal(productSpec.documentStub, true);
+    assert.deepEqual(productSpec.documentMetadata, {
+      title: 'My Book',
+      author: '{Jane Doe}',
+      logo: '\\externalfigure[cover]',
+    });
+
+    const projectPlan = buildStructurePlan({
+      tier: 'project',
+      baseDir: dir,
+      name: 'series',
+      documentStub: true,
+      documentMetadata: 'title=Series Book',
+    });
+    const products = projectPlan.files.filter((f) => f.role === 'product');
+    assert.equal(products.length, 2);
+    for (const p of products) {
+      assert.match(p.contents, /\\startdocument\[\n  title=\{Series Book\},\n\]/);
+      assert.match(p.contents, /\\component chapter-01/);
+      assert.match(p.contents, /\\stopdocument/);
+    }
+    const projectSpec = JSON.parse(
+      projectPlan.files.find((f) => f.role === 'spec')!.contents,
+    );
+    assert.equal(projectSpec.documentStub, true);
+    assert.deepEqual(projectSpec.documentMetadata, { title: 'Series Book' });
+  });
+
+  it('ignores documentStub for single and env-doc tiers', async () => {
+    const dir = await tempDir();
+    const single = buildStructurePlan({
+      tier: 'single',
+      baseDir: dir,
+      name: 'note',
+      documentStub: true,
+      documentMetadata: 'title=Nope',
+    });
+    const singleSpec = JSON.parse(
+      single.files.find((f) => f.role === 'spec')!.contents,
+    );
+    assert.equal(singleSpec.documentStub, undefined);
+
+    const envDoc = buildStructurePlan({
+      tier: 'env-doc',
+      baseDir: dir,
+      name: 'essay',
+      documentStub: true,
+      documentMetadata: 'title=Nope',
+    });
+    const envSpec = JSON.parse(
+      envDoc.files.find((f) => f.role === 'spec')!.contents,
+    );
+    assert.equal(envSpec.documentStub, undefined);
+  });
+
   it('preserves layered environment order in all loaders', async () => {
     const dir = await tempDir();
     const plan = buildStructurePlan({
@@ -377,6 +493,22 @@ describe('buildStructurePlan', () => {
     // Entry is product; should climb to project and list products
     const kinds = model.roots.map((r) => r.kind);
     assert.ok(kinds.includes('project') || kinds.includes('product'));
+  });
+});
+
+describe('document metadata parsing', () => {
+  it('parses one key=value per line and formats values', () => {
+    assert.deepEqual(
+      parseDocumentMetadataLines('title=My Book\nauthor={Jane}\nlogo=\\fig[x]\n\nok\n'),
+      [
+        { key: 'title', value: 'My Book' },
+        { key: 'author', value: '{Jane}' },
+        { key: 'logo', value: '\\fig[x]' },
+      ],
+    );
+    assert.equal(formatDocumentMetadataValue('plain'), '{plain}');
+    assert.equal(formatDocumentMetadataValue('{braced}'), '{braced}');
+    assert.equal(formatDocumentMetadataValue('\\command'), '\\command');
   });
 });
 

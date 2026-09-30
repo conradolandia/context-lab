@@ -27,6 +27,12 @@ export type PlannedFileRole =
   | 'project'
   | 'spec';
 
+/** One `\startdocument[key=value]` metadata entry. */
+export interface DocumentMetadataPair {
+  key: string;
+  value: string;
+}
+
 export interface PlannedFile {
   /** Absolute path. */
   path: string;
@@ -64,6 +70,16 @@ export interface StructurePlanInput {
    * Default `flat`. `by-role` uses role folders + `\\usepath`.
    */
   layout?: DirectoryLayout;
+  /**
+   * Product / project tiers only: wrap components in `\startdocument` …
+   * `\stopdocument` inside each product. Ignored for `single` / `env-doc`.
+   */
+  documentStub?: boolean;
+  /**
+   * Metadata for `\startdocument[...]` when `documentStub` is true.
+   * Line-oriented `key=value` string or pre-parsed pairs.
+   */
+  documentMetadata?: string | DocumentMetadataPair[];
   /** File extension including the dot. v1: `.tex` only. */
   extension?: string;
   /** Absolute paths that already exist (conflict detection). */
@@ -204,11 +220,81 @@ export function envDocContents(envStems: string[], body = '% Document body'): st
   ].join('\n');
 }
 
+/**
+ * Parse line-oriented `key=value` metadata (one pair per line).
+ * Blank lines and lines without `=` are skipped.
+ */
+export function parseDocumentMetadataLines(
+  raw: string | DocumentMetadataPair[] | undefined,
+): DocumentMetadataPair[] {
+  if (!raw) {
+    return [];
+  }
+  if (Array.isArray(raw)) {
+    return raw
+      .map((p) => ({ key: p.key.trim(), value: p.value.trim() }))
+      .filter((p) => p.key.length > 0);
+  }
+  const pairs: DocumentMetadataPair[] = [];
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+    const eq = trimmed.indexOf('=');
+    if (eq <= 0) {
+      continue;
+    }
+    const key = trimmed.slice(0, eq).trim();
+    const value = trimmed.slice(eq + 1).trim();
+    if (!key) {
+      continue;
+    }
+    pairs.push({ key, value });
+  }
+  return pairs;
+}
+
+/**
+ * Format a metadata value for `\startdocument[...]`.
+ * Bare values get `{…}`; already-braced or command-like (`\…`) values are left as-is.
+ */
+export function formatDocumentMetadataValue(value: string): string {
+  const v = value.trim();
+  if (!v) {
+    return '{}';
+  }
+  if (v.startsWith('{') && v.endsWith('}')) {
+    return v;
+  }
+  if (v.startsWith('\\')) {
+    return v;
+  }
+  return `{${v}}`;
+}
+
+/** Emit `\startdocument` / `\startdocument[…]` opening line(s). */
+export function formatStartDocument(metadata: DocumentMetadataPair[]): string {
+  if (metadata.length === 0) {
+    return '\\startdocument';
+  }
+  const opts = metadata
+    .map((p) => `  ${p.key}=${formatDocumentMetadataValue(p.value)},`)
+    .join('\n');
+  return `\\startdocument[\n${opts}\n]`;
+}
+
 export function productContents(
   productStem: string,
   envStems: string[],
   componentStems: string[],
-  opts?: { projectStem?: string },
+  opts?: {
+    projectStem?: string;
+    /** Wrap components in `\startdocument` … `\stopdocument`. */
+    documentStub?: boolean;
+    /** Metadata pairs for `\startdocument[...]` (when documentStub). */
+    documentMetadata?: DocumentMetadataPair[];
+  },
 ): string {
   const lines = [`\\startproduct ${productStem}`, ''];
   if (opts?.projectStem) {
@@ -216,8 +302,16 @@ export function productContents(
   } else {
     lines.push(envLoadLines(envStems), '');
   }
+  const stub = opts?.documentStub === true;
+  const metadata = stub ? (opts?.documentMetadata ?? []) : [];
+  if (stub) {
+    lines.push(formatStartDocument(metadata));
+  }
   for (const c of componentStems) {
     lines.push(`\\component ${c}`);
+  }
+  if (stub) {
+    lines.push('\\stopdocument');
   }
   lines.push('', '\\stopproduct', '');
   return lines.join('\n');
@@ -319,8 +413,19 @@ function appendSpecFile(
     environments: string[];
     createdBy: StructureSpecCreatedBy;
     now?: Date;
+    documentStub?: boolean;
+    documentMetadata?: DocumentMetadataPair[];
   },
 ): void {
+  const emitStub =
+    opts.documentStub === true &&
+    (opts.tier === 'product' || opts.tier === 'project');
+  const metaObj =
+    emitStub && opts.documentMetadata && opts.documentMetadata.length > 0
+      ? Object.fromEntries(
+          opts.documentMetadata.map((p) => [p.key, p.value]),
+        )
+      : undefined;
   const spec = buildStructureSpec({
     tier: opts.tier,
     rootFile: relativeRootFile(scaffoldRoot, opts.rootFileAbs),
@@ -328,6 +433,8 @@ function appendSpecFile(
     environments: opts.tier === 'single' ? undefined : opts.environments,
     createdBy: opts.createdBy,
     now: opts.now,
+    documentStub: emitStub ? true : undefined,
+    documentMetadata: metaObj,
   });
   pushFile(
     files,
@@ -376,6 +483,16 @@ export function buildStructurePlan(input: StructurePlanInput): StructurePlan {
       : DEFAULT_PRODUCTS
   ).map(sanitizeStem);
 
+  const documentStub =
+    input.documentStub === true &&
+    (input.tier === 'product' || input.tier === 'project');
+  const documentMetadata = documentStub
+    ? parseDocumentMetadataLines(input.documentMetadata)
+    : [];
+  const productStubOpts = documentStub
+    ? { documentStub: true as const, documentMetadata }
+    : {};
+
   const files: PlannedFile[] = [];
   let rootFile = '';
 
@@ -421,7 +538,9 @@ export function buildStructurePlan(input: StructurePlanInput): StructurePlan {
       // Scaffold folder is the product folder — product .tex at root (no products/).
       const prodRel = `${prodStem}${ext}`;
       const compFileStems = componentStems.map((c) => componentFileStem(c, prefixed));
-      let prodContents = productContents(prodStem, envStems, compFileStems);
+      let prodContents = productContents(prodStem, envStems, compFileStems, {
+        ...productStubOpts,
+      });
       if (byRole) {
         // Compile cwd = scaffold root; reach role folders beside the product.
         prodContents = withUsePath(prodContents, ['environments', 'components']);
@@ -472,6 +591,7 @@ export function buildStructurePlan(input: StructurePlanInput): StructurePlan {
         const dir = p; // product stem as folder at series root (not under products/)
         let prodContents = productContents(prodStem, envStems, compFileStems, {
           projectStem: projStem,
+          ...productStubOpts,
         });
         if (byRole) {
           prodContents = withUsePath(prodContents, [
@@ -518,6 +638,8 @@ export function buildStructurePlan(input: StructurePlanInput): StructurePlan {
     environments: envStems,
     createdBy,
     now: input.now,
+    documentStub,
+    documentMetadata,
   });
 
   // Safety: generated contents must not inject magic root comments

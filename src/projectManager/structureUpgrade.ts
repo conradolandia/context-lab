@@ -155,6 +155,8 @@ function pushSpec(
     createdBy: 'context.projectManager.upgrade',
     createdAt: previous.createdAt,
     now,
+    documentStub: previous.documentStub,
+    documentMetadata: previous.documentMetadata,
   });
   pushFile(
     files,
@@ -266,7 +268,19 @@ export function buildUpgradePlan(input: UpgradePlanInput): StructurePlan {
 
     // Scaffold folder is the product folder — product .tex at root (no products/).
     const prodRel = `${prodStem}${ext}`;
-    let prodContents = productContents(prodStem, envStems, compFileStems);
+    const stubOpts =
+      input.spec.documentStub === true
+        ? {
+            documentStub: true as const,
+            documentMetadata: input.spec.documentMetadata
+              ? Object.entries(input.spec.documentMetadata).map(([key, value]) => ({
+                  key,
+                  value,
+                }))
+              : [],
+          }
+        : {};
+    let prodContents = productContents(prodStem, envStems, compFileStems, stubOpts);
     if (byRole) {
       prodContents = withUsePath(prodContents, ['environments', 'components']);
     }
@@ -358,8 +372,20 @@ export function buildUpgradePlan(input: UpgradePlanInput): StructurePlan {
     for (const p of extra) {
       const prodStem = productFileStem(p, prefixed);
       const dir = p;
+      const stubOpts =
+        input.spec.documentStub === true
+          ? {
+              documentStub: true as const,
+              documentMetadata: input.spec.documentMetadata
+                ? Object.entries(input.spec.documentMetadata).map(
+                    ([key, value]) => ({ key, value }),
+                  )
+                : [],
+            }
+          : {};
       let newProd = productContents(prodStem, envStems, componentStems, {
         projectStem: projStem,
+        ...stubOpts,
       });
       if (byRole) {
         newProd = withUsePath(newProd, ['../environments', 'components']);
