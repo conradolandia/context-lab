@@ -2,7 +2,7 @@
   "name": "context-tools",
   "displayName": "ConTeXt Tools",
   "description": "ConTeXt SyncTeX PDF preview, DigestiF language server, TextMate grammar, and snippets",
-  "version": "0.1.32",
+  "version": "0.1.33",
   "publisher": "context-lab",
   "license": "GPL-2.0-only",
   "repository": {
@@ -278,6 +278,11 @@
           "type": "boolean",
           "default": true,
           "description": "Enable SyncTeX forward and backward navigation."
+        },
+        "context.debugOutput": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, write verbose internal traces (viewer, artifact gate, SyncTeX dumps, project scan timing) to the ConTeXt debug output channel. Build and user-facing messages stay on ConTeXt."
         },
         "context.digestif.enabled": {
           "type": "boolean",

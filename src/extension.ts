@@ -33,6 +33,7 @@ import type { ProjectNode } from './project/projectModel';
 import { registerProjectManager } from './projectManager/projectManagerPanel';
 import { refreshCommandKeywords } from './syntax/refreshKeywords';
 import { maybeWarnLatexWorkshopConflict } from './compat/latexWorkshopConflict';
+import { initOutputLog, logDebug, logUser } from './outputLog';
 
 /** Bump when shipping a SyncTeX/viewer/LSP/diagnostics/project-view behavior change Sir must verify in Output. */
 export const BUILD_ID = 'project-manager-v1';
@@ -137,7 +138,7 @@ async function pickRootFile(): Promise<void> {
   const cfg = vscode.workspace.getConfiguration('context');
   if (pick.value === '') {
     await cfg.update('rootFile', '', vscode.ConfigurationTarget.Workspace);
-    output.appendLine('[root] cleared context.rootFile (auto-detect)');
+    logUser('[root] cleared context.rootFile (auto-detect)');
   } else {
     const uris = await vscode.window.showOpenDialog({
       canSelectMany: false,
@@ -155,7 +156,7 @@ async function pickRootFile(): Promise<void> {
       rel = path.relative(folders[0], rel);
     }
     await cfg.update('rootFile', rel, vscode.ConfigurationTarget.Workspace);
-    output.appendLine(`[root] set context.rootFile=${rel}`);
+    logUser(`[root] set context.rootFile=${rel}`);
   }
   updateRootStatus();
 }
@@ -169,12 +170,12 @@ async function afterSuccessfulBuild(
     snapshot = await gateJobArtifacts(result.pdfPath, generation);
   } catch (gateErr) {
     const msg = gateErr instanceof Error ? gateErr.message : String(gateErr);
-    output.appendLine(`[artifact gate] ${msg}`);
+    logUser(`[artifact gate] ${msg}`);
     void vscode.window.showErrorMessage(`Build succeeded but PDF gate failed: ${msg}`);
     return;
   }
 
-  output.appendLine(
+  logDebug(
     `[gate] PDF → ${snapshot.pdfPath}` +
       (snapshot.synctexPath ? `; synctex → ${snapshot.synctexPath}` : '') +
       `; jobDir=${snapshot.jobDir}`,
@@ -204,7 +205,7 @@ async function showPdf(): Promise<void> {
       extensionContext,
       root.rootFile,
       openDoc?.languageId,
-      (line) => output.appendLine(line),
+      logUser,
     );
   }
   const pdfPath = root.rootFile.replace(/\.[^.]+$/, '.pdf');
@@ -263,7 +264,7 @@ async function doForwardSync(opts?: {
     return;
   }
 
-  output.appendLine(
+  logDebug(
     `[synctex find] file=${file} line=${line} synctex=${snapshot.synctexPath} jobDir=${snapshot.jobDir}`,
   );
 
@@ -275,14 +276,14 @@ async function doForwardSync(opts?: {
       line,
       snapshot.jobDir,
     );
-    output.appendLine(`[synctex find] cwd=${cwd} argv=${JSON.stringify(argv)}`);
-    output.appendLine(
+    logDebug(`[synctex find] cwd=${cwd} argv=${JSON.stringify(argv)}`);
+    logDebug(
       `[synctex find] page=${hit.page} llx=${hit.llx} lly=${hit.lly} urx=${hit.urx} ury=${hit.ury} (mtx y is top-down)`,
     );
     await pdfPanel.forwardSync(hit);
   } catch (err) {
     const msg = err instanceof SynctexError || err instanceof Error ? err.message : String(err);
-    output.appendLine(`[synctex find] ${msg}`);
+    logDebug(`[synctex find] ${msg}`);
     void vscode.window.showWarningMessage(msg);
   }
 }
@@ -360,7 +361,7 @@ async function setRootFromProjectNode(node: ProjectNode): Promise<void> {
   }
   const cfg = vscode.workspace.getConfiguration('context');
   await cfg.update('rootFile', rel, vscode.ConfigurationTarget.Workspace);
-  output.appendLine(`[root] set context.rootFile=${rel} (from Project view)`);
+  logUser(`[root] set context.rootFile=${rel} (from Project view)`);
   updateRootStatus();
 }
 
@@ -371,7 +372,7 @@ async function handlePdfClick(
   meta?: { pdfY?: number; pageHeight?: number },
 ): Promise<void> {
   if (backwardInFlight) {
-    output.appendLine('[synctex report] ignored duplicate click (in flight)');
+    logDebug('[synctex report] ignored duplicate click (in flight)');
     return;
   }
   const cfg = vscode.workspace.getConfiguration('context');
@@ -392,7 +393,7 @@ async function handlePdfClick(
   }
 
   backwardInFlight = true;
-  output.appendLine(
+  logDebug(
     `[synctex report] page=${page} x=${x} y=${y}` +
       (meta?.pdfY != null ? ` pdfY=${meta.pdfY}` : '') +
       (meta?.pageHeight != null ? ` pageHeight=${meta.pageHeight}` : '') +
@@ -408,14 +409,14 @@ async function handlePdfClick(
       y,
       snapshot.jobDir,
     );
-    output.appendLine(`[synctex report] cwd=${cwd} argv=${JSON.stringify(argv)}`);
-    output.appendLine(
+    logDebug(`[synctex report] cwd=${cwd} argv=${JSON.stringify(argv)}`);
+    logDebug(
       `[synctex report] file=${hit.filename} line=${hit.linenumber} tol=${hit.tolerance}` +
         (hit.refined ? ' refined=1' : '') +
         (hit.coarseFloatLine ? ' coarseFloatLine=1' : ''),
     );
     if (note) {
-      output.appendLine(`[synctex report] ${note}`);
+      logDebug(`[synctex report] ${note}`);
     }
 
     // Coarse float/caption tags (line ≤ 1 mid-page) are not useful navigation
@@ -438,7 +439,7 @@ async function handlePdfClick(
     ed.revealRange(range, vscode.TextEditorRevealType.InCenter);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    output.appendLine(`[synctex report] ${msg}`);
+    logDebug(`[synctex report] ${msg}`);
     if (err instanceof SynctexError && err.kind === 'empty') {
       void vscode.window.showWarningMessage(EMPTY_BACKWARD_USER_MESSAGE);
     } else {
@@ -460,7 +461,7 @@ function isContextLike(doc: vscode.TextDocument): boolean {
 
 export function activate(context: vscode.ExtensionContext): void {
   extensionContext = context;
-  output = vscode.window.createOutputChannel('ConTeXt');
+  output = initOutputLog(context.subscriptions).user;
   digestifOutput = vscode.window.createOutputChannel('ConTeXt DigestiF');
 
   rootStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
@@ -478,9 +479,7 @@ export function activate(context: vscode.ExtensionContext): void {
     (page, x, y, meta) => {
       void handlePdfClick(page, x, y, meta);
     },
-    (message) => {
-      output.appendLine(message);
-    },
+    logDebug,
   );
 
   digestif = createDigestifClient({
@@ -506,7 +505,7 @@ export function activate(context: vscode.ExtensionContext): void {
           extensionContext,
           root.rootFile,
           openDoc?.languageId,
-          (line) => output.appendLine(line),
+          logUser,
         );
       }
     },
@@ -526,7 +525,6 @@ export function activate(context: vscode.ExtensionContext): void {
   ];
 
   context.subscriptions.push(
-    output,
     digestifOutput,
     rootStatus,
     buildStatus,
@@ -589,12 +587,11 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!isContextLike(doc)) {
         return;
       }
-      void maybeWarnLatexWorkshopConflict(context, (line) => output.appendLine(line));
+      void maybeWarnLatexWorkshopConflict(context, logUser);
     }),
   );
 
   const projectView = registerProjectView(context, {
-    output,
     workspaceFolderPaths,
     activeTexPath,
     getRootFileSetting: () =>
@@ -619,20 +616,18 @@ export function activate(context: vscode.ExtensionContext): void {
   } catch {
     // keep unknown
   }
-  output.appendLine(
-    `ConTeXt Tools activated  version=${version}  BUILD_ID=${BUILD_ID}`,
-  );
-  output.appendLine(`extensionPath=${context.extensionPath}`);
+  logUser(`ConTeXt Tools activated  version=${version}  BUILD_ID=${BUILD_ID}`);
+  logDebug(`extensionPath=${context.extensionPath}`);
   digestifOutput.appendLine(
     `ConTeXt DigestiF channel  BUILD_ID=${BUILD_ID} (build uses the ConTeXt channel only)`,
   );
   updateRootStatus();
   const r = lastRootResolution;
   if (r) {
-    output.appendLine(`[root] ${r.rootFile} (rule=${r.rule})`);
+    logUser(`[root] ${r.rootFile} (rule=${r.rule})`);
   }
   digestif.scheduleStart();
-  void maybeWarnLatexWorkshopConflict(context, (line) => output.appendLine(line));
+  void maybeWarnLatexWorkshopConflict(context, logUser);
   output.show(true);
 }
 
