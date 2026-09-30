@@ -498,8 +498,8 @@ export class ProjectManagerPanel {
     <div id="layoutFields">
       <label class="block">Directory layout</label>
       <label class="row"><input type="radio" name="layout" id="layoutFlat" value="flat" checked /> Flat — wiki §4/§5 default (files beside each other)</label>
-      <label class="row"><input type="radio" name="layout" id="layoutByRole" value="by-role" /> By role — <code>environments/</code>, <code>products/</code> or product folders, <code>components/</code> with <code>\\usepath</code></label>
-      <p class="hint" id="layoutHint">Hidden for a single document (no-op). Product tier puts the product under <code>products/</code>; project tier keeps each product folder at the series root.</p>
+      <label class="row"><input type="radio" name="layout" id="layoutByRole" value="by-role" /> By role — <code>environments/</code>, product at scaffold root or product folders, <code>components/</code> with <code>\\usepath</code></label>
+      <p class="hint" id="layoutHint">Hidden for a single document (no-op). Product tier keeps the product <code>.tex</code> at the scaffold root (no <code>products/</code> folder); project tier keeps each product folder at the series root.</p>
     </div>
     <label class="row"><input type="checkbox" id="usePrefixedNames" /> Prefer denser prefixes (product_*, component_*)</label>
     <label class="row"><input type="checkbox" id="setRootFile" checked /> Set <code>context.rootFile</code> to the compile root (product or document — never the \\startproject file)</label>

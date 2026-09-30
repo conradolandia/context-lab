@@ -264,16 +264,14 @@ export function buildUpgradePlan(input: UpgradePlanInput): StructurePlan {
       }
     }
 
-    const prodRel = byRole ? `products/${prodStem}${ext}` : `${prodStem}${ext}`;
+    // Scaffold folder is the product folder — product .tex at root (no products/).
+    const prodRel = `${prodStem}${ext}`;
     let prodContents = productContents(prodStem, envStems, compFileStems);
     if (byRole) {
-      prodContents = withUsePath(prodContents, [
-        '../environments',
-        '../components',
-      ]);
+      prodContents = withUsePath(prodContents, ['environments', 'components']);
     }
     pushFile(files, scaffoldRoot, prodRel, prodContents, 'product');
-    rootFile = path.join(scaffoldRoot, ...prodRel.split('/'));
+    rootFile = path.join(scaffoldRoot, prodRel);
 
     for (let i = 0; i < compFileStems.length; i++) {
       const fileStem = compFileStems[i];
@@ -283,7 +281,7 @@ export function buildUpgradePlan(input: UpgradePlanInput): StructurePlan {
         : `${fileStem}${ext}`;
       let compContents = componentContents(fileStem, envStems, chapBody);
       if (byRole) {
-        compContents = withUsePath(compContents, ['../environments']);
+        compContents = withUsePath(compContents, ['..', '../environments']);
       }
       pushFile(files, scaffoldRoot, compRel, compContents, 'component');
     }
@@ -333,16 +331,19 @@ export function buildUpgradePlan(input: UpgradePlanInput): StructurePlan {
     );
 
     // Keep existing product at its current path; ensure \\project directive.
-    // If by-role product lacked usepath, refresh paths for sibling role folders.
+    // Refresh by-role usepath from the product file's directory.
     let updatedProduct = ensureProjectDirective(productText, projStem);
     if (byRole) {
-      const fromProductsDir =
-        input.spec.rootFile.replace(/\\/g, '/').startsWith('products/');
+      const rootRel = input.spec.rootFile.replace(/\\/g, '/');
+      const fromProductsDir = rootRel.startsWith('products/');
+      const atScaffoldRoot = !rootRel.includes('/');
       updatedProduct = withUsePath(
         updatedProduct,
         fromProductsDir
-          ? ['../environments', '../components']
-          : ['../environments', 'components'],
+          ? ['../environments', '../components'] // legacy products/ layout
+          : atScaffoldRoot
+            ? ['environments', 'components'] // product-tier by-role (product at root)
+            : ['../environments', 'components'], // product folder at series root
       );
     }
     pushFile(
