@@ -52,6 +52,7 @@ Resolution: absolute `context.contextPath` / `context.mtxrunPath` overrides, the
 | `context.build.args` | `[]` | Extra args after `--synctex=repeat` |
 | `context.build.onSave` | `false` | Save starts a build; rapid saves coalesce |
 | `context.synctex.enabled` | `true` | Toggle SyncTeX |
+| `context.debugOutput` | `false` | Verbose traces on **ConTeXt debug** (viewer, gate, SyncTeX dumps) |
 | `context.digestif.enabled` | `true` | Start DigestiF LSP |
 | `context.digestifPath` | `""` | Absolute DigestiF binary; empty = PATH / luarocks |
 
@@ -91,7 +92,7 @@ SyncTeX marks text, not pure image areas; clicks on figures with no text usually
 
 ## DigestiF
 
-Optional. DigestiF never blocks build, preview, or SyncTeX. Logs go to the **ConTeXt DigestiF** output channel; build logs stay on **ConTeXt**.
+Optional. DigestiF never blocks build, preview, or SyncTeX. Logs go to the **ConTeXt DigestiF** output channel; build logs stay on **ConTeXt**. Set `context.debugOutput` to send viewer / gate / SyncTeX internal traces to **ConTeXt debug**.
 
 Language id **`context`** (aliases: ConTeXt) covers `.mkiv`, `.mkxl`, `.mkvi`, `.mklx`, `.mkii`. The extension does not claim `*.tex` globally. DigestiF maps `context` → ConTeXt tags and `tex` / `latex` → LaTeX. For `.tex` ConTeXt sources, associate them:
 

@@ -12,6 +12,7 @@ import {
 } from './projectAnchor';
 import { treeId } from './projectTreeIds';
 import { scanStructure } from './structureScan';
+import { logDebug } from '../outputLog';
 import * as fs from 'node:fs';
 
 export { collectTreeIds, localTreeId, treeId } from './projectTreeIds';
@@ -158,7 +159,6 @@ function isWeakModel(model: ProjectModelResult): boolean {
 }
 
 export interface ProjectTreeProviderDeps {
-  output: vscode.OutputChannel;
   workspaceFolderPaths: () => string[];
   activeTexPath: () => string | undefined;
   getRootFileSetting: () => string;
@@ -476,7 +476,7 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<ProjectTreeI
     indexParents(this.model.roots, undefined, undefined, this.parentOf);
 
     const m = this.model;
-    this.deps.output.appendLine(
+    logDebug(
       `[projectView] entry=${m.entryFile} files=${m.fileCount} unresolved=${m.unresolvedCount}` +
         (m.truncated ? ' truncated=1' : '') +
         ` reason=${anchor.reason}` +
