@@ -67,7 +67,7 @@ class SafeLanguageClient extends LanguageClient {
 
 /**
  * DigestiF manager. Fire-and-forget; never blocks build.
- * Uses its own OutputChannel (never the ConTeXt build channel).
+ * Uses its own OutputChannel (not the ConTeXt build channel).
  * LanguageClient owns the child process so stderr is logged once.
  */
 export function createDigestifClient(options: {

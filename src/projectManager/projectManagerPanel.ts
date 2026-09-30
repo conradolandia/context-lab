@@ -522,7 +522,7 @@ export class ProjectManagerPanel {
       </div>
     </div>
     <label class="row"><input type="checkbox" id="usePrefixedNames" /> Prefer denser prefixes (product_*, component_*)</label>
-    <label class="row"><input type="checkbox" id="setRootFile" checked /> Set <code>context.rootFile</code> to the compile root (product or document — never the \\startproject file)</label>
+    <label class="row"><input type="checkbox" id="setRootFile" checked /> Set <code>context.rootFile</code> to the compile root (product or document)</label>
     <div class="actions">
       <button class="secondary" id="backRec">Back</button>
       <button id="toPreview">Preview</button>

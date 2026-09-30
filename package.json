@@ -232,7 +232,7 @@
         "context.projectManager.setRootFileOnCreate": {
           "type": "boolean",
           "default": true,
-          "description": "When true, after creating a structure set context.rootFile to the compile root (document or product — never the \\startproject coordination file). Does not write % !TEX root into files."
+          "description": "When true, after creating a structure set context.rootFile to the compile root (document or product). Does not write % !TEX root into files."
         },
         "context.projectView.enabled": {
           "type": "boolean",
