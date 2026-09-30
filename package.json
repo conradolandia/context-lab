@@ -213,48 +213,26 @@
           "default": "",
           "description": "Absolute path to the mtxrun executable. Overrides root/PATH when set."
         },
-        "context.synctex.enabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enable SyncTeX forward and backward navigation."
-        },
-        "context.build.args": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": [],
-          "description": "Extra arguments appended after --synctex=repeat when building."
-        },
-        "context.build.onSave": {
-          "type": "boolean",
-          "default": false,
-          "description": "When true, save of a ConTeXt/TeX file starts a build. While a build runs, further saves queue one follow-up build (rapid saves coalesce)."
-        },
         "context.rootFile": {
           "type": "string",
           "default": "",
           "description": "Main ConTeXt file to compile (workspace-relative or absolute). Empty = auto-detect via % !TEX root, \\startcomponent->\\product, or the active file."
         },
-        "context.digestif.enabled": {
+        "context.projectManager.defaultExtension": {
+          "type": "string",
+          "default": ".tex",
+          "enum": [".tex"],
+          "description": "File extension for Project Manager scaffolds. v1 writes .tex only."
+        },
+        "context.projectManager.usePrefixedNames": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, Project Manager uses denser prefixes (product_*, component_*). Default matches wiki §4/§5 names (env_*/project_* only)."
+        },
+        "context.projectManager.setRootFileOnCreate": {
           "type": "boolean",
           "default": true,
-          "description": "Start the Digestif language server for ConTeXt/TeX completion and hover. Build and SyncTeX keep working if Digestif is missing."
-        },
-        "context.digestifPath": {
-          "type": "string",
-          "default": "",
-          "description": "Absolute path to the Digestif executable. Empty = resolve ~/.luarocks/bin/digestif then digestif on PATH."
-        },
-        "context.texAssociation.dontAsk": {
-          "type": "boolean",
-          "default": false,
-          "description": "If true, never prompt to associate *.tex with the ConTeXt language for DigestiF. Also set via the prompt's Don't ask again action (workspace state)."
-        },
-        "context.latexWorkshopConflict.dontAsk": {
-          "type": "boolean",
-          "default": false,
-          "description": "If true, never warn when LaTeX Workshop (James-Yu.latex-workshop) is enabled and also contributes language id context. Also set via the warning's Don't show again action (global state)."
+          "description": "When true, after creating a structure set context.rootFile to the compile root (document or product — never the \\startproject coordination file). Does not write % !TEX root into files."
         },
         "context.projectView.enabled": {
           "type": "boolean",
@@ -283,21 +261,43 @@
           "minimum": 0,
           "description": "Debounce interval (ms) before rescanning the project graph after edits or saves."
         },
-        "context.projectManager.defaultExtension": {
-          "type": "string",
-          "default": ".tex",
-          "enum": [".tex"],
-          "description": "File extension for Project Manager scaffolds. v1 writes .tex only."
+        "context.build.args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Extra arguments appended after --synctex=repeat when building."
         },
-        "context.projectManager.usePrefixedNames": {
+        "context.build.onSave": {
           "type": "boolean",
           "default": false,
-          "description": "When true, Project Manager uses denser prefixes (product_*, component_*). Default matches wiki §4/§5 names (env_*/project_* only)."
+          "description": "When true, save of a ConTeXt/TeX file starts a build. While a build runs, further saves queue one follow-up build (rapid saves coalesce)."
         },
-        "context.projectManager.setRootFileOnCreate": {
+        "context.synctex.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "When true, after creating a structure set context.rootFile to the compile root (document or product — never the \\startproject coordination file). Does not write % !TEX root into files."
+          "description": "Enable SyncTeX forward and backward navigation."
+        },
+        "context.digestif.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Start the Digestif language server for ConTeXt/TeX completion and hover. Build and SyncTeX keep working if Digestif is missing."
+        },
+        "context.digestifPath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to the Digestif executable. Empty = resolve ~/.luarocks/bin/digestif then digestif on PATH."
+        },
+        "context.texAssociation.dontAsk": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, never prompt to associate *.tex with the ConTeXt language for DigestiF. Also set via the prompt's Don't ask again action (workspace state)."
+        },
+        "context.latexWorkshopConflict.dontAsk": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, never warn when LaTeX Workshop (James-Yu.latex-workshop) is enabled and also contributes language id context. Also set via the warning's Don't show again action (global state)."
         }
       }
     }

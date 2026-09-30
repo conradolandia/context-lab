@@ -40,20 +40,20 @@ Resolution: absolute `context.contextPath` / `context.mtxrunPath` overrides, the
 | `context.root` | `""` | ConTeXt installation root (parent of `tex/`) |
 | `context.contextPath` | `""` | Absolute `context` binary |
 | `context.mtxrunPath` | `""` | Absolute `mtxrun` binary |
-| `context.synctex.enabled` | `true` | Toggle SyncTeX |
-| `context.build.args` | `[]` | Extra args after `--synctex=repeat` |
-| `context.build.onSave` | `false` | Save starts a build; rapid saves coalesce |
 | `context.rootFile` | `""` | Main file to compile; empty = auto-detect |
-| `context.digestif.enabled` | `true` | Start DigestiF LSP |
-| `context.digestifPath` | `""` | Absolute DigestiF binary; empty = PATH / luarocks |
+| `context.projectManager.defaultExtension` | `".tex"` | Scaffold extension (`.tex` only) |
+| `context.projectManager.usePrefixedNames` | `false` | `product_*` / `component_*` prefixes when true |
+| `context.projectManager.setRootFileOnCreate` | `true` | Set `context.rootFile` after create |
 | `context.projectView.enabled` | `true` | ConTeXt activity-bar Project TreeView |
 | `context.projectView.includeInputs` | `false` | Show `\input` children under products |
 | `context.projectView.includeModules` | `false` | Reserved |
 | `context.projectView.maxFiles` | `500` | Cap on files visited while expanding the graph |
 | `context.projectView.refreshDebounceMs` | `300` | Debounce before rescan after edits/saves |
-| `context.projectManager.defaultExtension` | `".tex"` | Scaffold extension (`.tex` only) |
-| `context.projectManager.usePrefixedNames` | `false` | `product_*` / `component_*` prefixes when true |
-| `context.projectManager.setRootFileOnCreate` | `true` | Set `context.rootFile` after create |
+| `context.build.args` | `[]` | Extra args after `--synctex=repeat` |
+| `context.build.onSave` | `false` | Save starts a build; rapid saves coalesce |
+| `context.synctex.enabled` | `true` | Toggle SyncTeX |
+| `context.digestif.enabled` | `true` | Start DigestiF LSP |
+| `context.digestifPath` | `""` | Absolute DigestiF binary; empty = PATH / luarocks |
 
 ```json
 {
