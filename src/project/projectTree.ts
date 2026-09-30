@@ -168,8 +168,9 @@ export interface ProjectTreeProviderDeps {
  * TreeDataProvider for the ConTeXt Project view.
  *
  * The tree is anchored to a product/project root (`context.rootFile` or the
- * last discovered strong structure file). Focusing a component only reveals
- * that node; it does not re-root the tree.
+ * last discovered strong structure file). Focusing a component updates the
+ * anchor/message only; it does not reveal or show the Project view.
+ * Use `context.projectView.revealActive` to reveal on demand.
  */
 export class ProjectTreeProvider implements vscode.TreeDataProvider<ProjectTreeItem> {
   private readonly _onDidChangeTreeData = new vscode.EventEmitter<
@@ -214,6 +215,9 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<ProjectTreeI
   /**
    * Active-editor change: keep the anchored tree; only rebuild when the
    * resolved entry actually changes to a new strong product/project.
+   * Does not call `treeView.reveal` — that would show/activate the Project
+   * view container even with `focus: false`. Manual reveal stays on
+   * `context.projectView.revealActive`.
    */
   onActiveEditorChanged(): void {
     const active = this.deps.activeTexPath();
@@ -244,7 +248,6 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<ProjectTreeI
     });
 
     if (!anchor) {
-      void this.revealActive();
       return;
     }
 
@@ -254,7 +257,6 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<ProjectTreeI
 
     if (sameEntry || (this.model && !anchor.outsideGraph && graph?.has(path.resolve(active ?? '')))) {
       this.applyOutsideMessage(anchor.outsideGraph, active);
-      void this.revealActive();
       return;
     }
 
@@ -265,14 +267,12 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<ProjectTreeI
       if (strong || this.deps.getRootFileSetting().trim()) {
         this.anchoredEntry = path.resolve(anchor.entryFile);
         this.refresh();
-        void this.revealActive();
         return;
       }
     }
 
     // Weak / unrelated: keep current tree.
     this.applyOutsideMessage(true, active);
-    void this.revealActive();
   }
 
   getModel(): ProjectModelResult | undefined {

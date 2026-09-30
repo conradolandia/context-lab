@@ -113,7 +113,7 @@ Activity bar **ConTeXt** → **Project**. Scans English structure commands (`\pr
 | environment | no |
 | project | refused (offers first listed product if any) |
 
-Click a node to open. Actions: Build, Forward SyncTeX, Set as Main (Root) File. Title bar: **New Document Structure…**, **Reveal Active**, **Refresh**.
+Click a node to open. Actions: Build, Forward SyncTeX, Set as Main (Root) File. Title bar: **New Document Structure…**, **Reveal Active**, **Refresh**. Focusing a `.tex` file does not switch to this view; use **Reveal Active** when you want that.
 
 ## Document structure wizard
 
