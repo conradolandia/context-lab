@@ -18,11 +18,19 @@ export type StructureSpecCreatedBy =
   | 'context.projectManager.upgrade'
   | string;
 
+/** Scaffold directory layout. Absent / unknown → treat as `flat` (old scaffolds). */
+export type DirectoryLayout = 'flat' | 'by-role';
+
 export interface StructureSpec {
   schemaVersion: number;
   tier: StructureTier;
   /** Scaffold-relative path to the default/active compile product or document. */
   rootFile: string;
+  /**
+   * Directory layout. Default `flat` when absent (pre-layout scaffolds).
+   * Omitted for tier `single` (no-op).
+   */
+  layout?: DirectoryLayout;
   environments?: string[];
   createdBy?: StructureSpecCreatedBy;
   createdAt?: string;
@@ -55,10 +63,26 @@ export function relativeRootFile(
   return path.relative(scaffoldRoot, absoluteRootFile).split(path.sep).join('/');
 }
 
+export function isDirectoryLayout(value: unknown): value is DirectoryLayout {
+  return value === 'flat' || value === 'by-role';
+}
+
+/** Resolve layout for a tier; `single` is always flat. Absent → flat. */
+export function resolveDirectoryLayout(
+  tier: StructureTier,
+  layout?: DirectoryLayout | string,
+): DirectoryLayout {
+  if (tier === 'single') {
+    return 'flat';
+  }
+  return layout === 'by-role' ? 'by-role' : 'flat';
+}
+
 export function buildStructureSpec(opts: {
   tier: StructureTier;
   /** Scaffold-relative compile root (product or document). */
   rootFile: string;
+  layout?: DirectoryLayout;
   environments?: string[];
   createdBy: StructureSpecCreatedBy;
   /** Preserve on upgrade when present. */
@@ -78,6 +102,9 @@ export function buildStructureSpec(opts: {
     createdAt: opts.createdAt ?? now,
     updatedAt: now,
   };
+  if (opts.tier !== 'single') {
+    spec.layout = resolveDirectoryLayout(opts.tier, opts.layout);
+  }
   if (opts.environments && opts.environments.length > 0) {
     spec.environments = [...opts.environments];
   }
@@ -115,11 +142,17 @@ export function validateStructureSpec(raw: unknown): StructureSpecValidation {
   ) {
     return { ok: false, reason: 'environments must be an array of strings when present.' };
   }
+  if (obj.layout !== undefined && !isDirectoryLayout(obj.layout)) {
+    return { ok: false, reason: 'layout must be flat | by-role when present.' };
+  }
   const spec: StructureSpec = {
     schemaVersion: STRUCTURE_SCHEMA_VERSION,
     tier: obj.tier,
     rootFile: obj.rootFile.trim().replace(/\\/g, '/'),
   };
+  if (obj.layout !== undefined) {
+    spec.layout = resolveDirectoryLayout(obj.tier, obj.layout);
+  }
   if (obj.environments) {
     spec.environments = obj.environments as string[];
   }
