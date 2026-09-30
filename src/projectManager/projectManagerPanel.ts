@@ -502,7 +502,7 @@ export class ProjectManagerPanel {
       <p class="hint" id="layoutHint">Hidden for a single document (no-op). Product tier keeps the product <code>.tex</code> at the scaffold root (no <code>products/</code> folder); project tier keeps each product folder at the series root.</p>
     </div>
     <label class="row"><input type="checkbox" id="usePrefixedNames" /> Prefer denser prefixes (product_*, component_*)</label>
-    <label class="row"><input type="checkbox" id="setRootFile" checked /> Set <code>context.rootFile</code> to the compile root (product or document — never the \\startproject file)</label>
+    <label class="row"><input type="checkbox" id="setRootFile" checked /> Set <code>context.rootFile</code> to the compile root (product or document)</label>
     <div class="actions">
       <button class="secondary" id="backRec">Back</button>
       <button id="toPreview">Preview</button>

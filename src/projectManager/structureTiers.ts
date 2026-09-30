@@ -63,7 +63,7 @@ export const TIER_INFO: Record<StructureTier, TierInfo> = {
     summary:
       'Several related products share setup and need a coordination project file.',
     compileHint:
-      'Compile each product (active/default product is the compile root) — never the \\startproject coordination file.',
+      'Compile each product (active/default product is the compile root)',
   },
 };
 
