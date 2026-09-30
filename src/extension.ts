@@ -4,7 +4,11 @@ import * as fs from 'node:fs';
 import { resolveToolchain, ToolchainError, type Toolchain } from './toolchain/discover';
 import type { BuildResult } from './build/compiler';
 import { gateJobArtifacts, type JobSnapshot } from './build/artifactGate';
-import { BuildController } from './build/buildController';
+import {
+  BuildController,
+  preserveFocusForBuildTrigger,
+  type BuildTrigger,
+} from './build/buildController';
 import {
   forwardSync,
   backwardSync,
@@ -156,7 +160,10 @@ async function pickRootFile(): Promise<void> {
   updateRootStatus();
 }
 
-async function afterSuccessfulBuild(result: BuildResult): Promise<void> {
+async function afterSuccessfulBuild(
+  result: BuildResult,
+  trigger: BuildTrigger,
+): Promise<void> {
   generation += 1;
   try {
     snapshot = await gateJobArtifacts(result.pdfPath, generation);
@@ -172,7 +179,13 @@ async function afterSuccessfulBuild(result: BuildResult): Promise<void> {
       (snapshot.synctexPath ? `; synctex → ${snapshot.synctexPath}` : '') +
       `; jobDir=${snapshot.jobDir}`,
   );
-  await pdfPanel.showJobPdf(snapshot.pdfPath, snapshot.jobDir);
+  // onSave / queued: always preserve editor focus. Manual command: omit opts so
+  // showJobPdf preserves focus only when refreshing an already-open panel.
+  await pdfPanel.showJobPdf(
+    snapshot.pdfPath,
+    snapshot.jobDir,
+    preserveFocusForBuildTrigger(trigger) ? { preserveFocus: true } : undefined,
+  );
 }
 
 async function showPdf(): Promise<void> {

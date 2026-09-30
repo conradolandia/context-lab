@@ -103,7 +103,8 @@ export class PdfPanel {
       const col = this.panel.viewColumn;
       this.panel.dispose();
       this.panel = undefined;
-      this.revealOrCreate(col);
+      // Internal root refresh — do not steal the editor.
+      this.revealOrCreate(col, true);
     }
   }
 
@@ -114,16 +115,26 @@ export class PdfPanel {
     ];
   }
 
-  public revealOrCreate(column?: vscode.ViewColumn): vscode.WebviewPanel {
+  /**
+   * Reveal an existing PDF panel or create one.
+   * @param preserveFocus When true, keep editor focus (VS Code reveal/create preserveFocus).
+   */
+  public revealOrCreate(
+    column?: vscode.ViewColumn,
+    preserveFocus = false,
+  ): vscode.WebviewPanel {
     if (this.panel) {
-      this.panel.reveal(column ?? vscode.ViewColumn.Beside);
+      this.panel.reveal(column ?? vscode.ViewColumn.Beside, preserveFocus);
       return this.panel;
     }
 
     this.panel = vscode.window.createWebviewPanel(
       PdfPanel.viewType,
       pdfPanelTitle(this.currentPdfPath),
-      column ?? vscode.ViewColumn.Beside,
+      {
+        viewColumn: column ?? vscode.ViewColumn.Beside,
+        preserveFocus,
+      },
       {
         enableScripts: true,
         retainContextWhenHidden: true,
@@ -163,9 +174,19 @@ export class PdfPanel {
     }
   }
 
-  public async showJobPdf(jobPdfPath: string, jobDir: string): Promise<void> {
+  /**
+   * Show / reload the gated job PDF.
+   * @param opts.preserveFocus When true, never take focus. When omitted, preserve
+   *   focus only if the panel already exists (reload/refresh); new panels take focus.
+   */
+  public async showJobPdf(
+    jobPdfPath: string,
+    jobDir: string,
+    opts?: { preserveFocus?: boolean },
+  ): Promise<void> {
     this.setJobDir(jobDir);
-    this.revealOrCreate();
+    const preserveFocus = opts?.preserveFocus ?? !!this.panel;
+    this.revealOrCreate(undefined, preserveFocus);
     if (this.panel) {
       this.panel.title = pdfPanelTitle(jobPdfPath);
     }

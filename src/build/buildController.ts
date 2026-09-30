@@ -4,8 +4,13 @@ import * as vscode from 'vscode';
 import type { Toolchain } from '../toolchain/discover';
 import { runContextBuild, type BuildResult } from './compiler';
 import { clearBuildDiagnostics, publishBuildDiagnostics } from './buildDiagnostics';
+import {
+  preserveFocusForBuildTrigger,
+  type BuildTrigger,
+} from './buildTrigger';
 
-export type BuildTrigger = 'command' | 'onSave' | 'queued';
+export type { BuildTrigger } from './buildTrigger';
+export { preserveFocusForBuildTrigger } from './buildTrigger';
 
 export interface BuildControllerDeps {
   output: vscode.OutputChannel;
@@ -15,7 +20,7 @@ export interface BuildControllerDeps {
   activeTexPath: () => string | undefined;
   onBuildStart: () => void;
   onBuildEnd: (ok: boolean) => void;
-  onBuildSuccess: (result: BuildResult) => Promise<void>;
+  onBuildSuccess: (result: BuildResult, trigger: BuildTrigger) => Promise<void>;
   buildId: string;
   /** Status bar item updated with build state / last duration. */
   buildStatus: vscode.StatusBarItem;
@@ -155,7 +160,7 @@ export class BuildController {
         );
       } else {
         ok = true;
-        await this.deps.onBuildSuccess(result);
+        await this.deps.onBuildSuccess(result, trigger);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
