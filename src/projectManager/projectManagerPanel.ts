@@ -62,6 +62,8 @@ type WebToHost =
       products: string;
       usePrefixedNames: boolean;
       layout: DirectoryLayout;
+      documentStub: boolean;
+      documentMetadata: string;
     }
   | {
       type: 'create';
@@ -74,6 +76,8 @@ type WebToHost =
       products: string;
       usePrefixedNames: boolean;
       layout: DirectoryLayout;
+      documentStub: boolean;
+      documentMetadata: string;
       setRootFile: boolean;
       overwriteConfirmed?: boolean;
     }
@@ -113,12 +117,15 @@ function planInputFromMessage(msg: {
   products: string;
   usePrefixedNames: boolean;
   layout?: DirectoryLayout;
+  documentStub?: boolean;
+  documentMetadata?: string;
 }): StructurePlanInput {
   const envs = splitList(msg.environments);
   const components = splitList(msg.components);
   const products = splitList(msg.products);
   const layout: DirectoryLayout =
     msg.layout === 'by-role' ? 'by-role' : 'flat';
+  const productTier = msg.tier === 'product' || msg.tier === 'project';
   return {
     tier: msg.tier,
     name: msg.name.trim() || 'book',
@@ -128,6 +135,11 @@ function planInputFromMessage(msg: {
     products: products.length ? products : undefined,
     usePrefixedNames: msg.usePrefixedNames,
     layout,
+    documentStub: productTier && msg.documentStub === true,
+    documentMetadata:
+      productTier && msg.documentStub === true
+        ? msg.documentMetadata ?? ''
+        : undefined,
     extension: '.tex',
     existingPaths: (abs) => fs.existsSync(abs),
   };
@@ -501,6 +513,14 @@ export class ProjectManagerPanel {
       <label class="row"><input type="radio" name="layout" id="layoutByRole" value="by-role" /> By role — <code>environments/</code>, product at scaffold root or product folders, <code>components/</code> with <code>\\usepath</code></label>
       <p class="hint" id="layoutHint">Hidden for a single document (no-op). Product tier keeps the product <code>.tex</code> at the scaffold root (no <code>products/</code> folder); project tier keeps each product folder at the series root.</p>
     </div>
+    <div id="documentStubFields">
+      <label class="row"><input type="checkbox" id="documentStub" /> Include <code>\\startdocument</code> metadata stub in product files</label>
+      <div id="documentMetadataWrap" style="display:none">
+        <label class="block" for="documentMetadata">Document metadata (<code>key=value</code>, one per line)</label>
+        <textarea id="documentMetadata" spellcheck="false" placeholder="title=My Book&#10;author=Jane Doe"></textarea>
+        <p class="hint">Emitted as <code>\\startdocument[…]</code> around <code>\\component</code> lines. Bare values are wrapped in braces; already-braced or command values are left as-is. Empty field still emits <code>\\startdocument</code> / <code>\\stopdocument</code>.</p>
+      </div>
+    </div>
     <label class="row"><input type="checkbox" id="usePrefixedNames" /> Prefer denser prefixes (product_*, component_*)</label>
     <label class="row"><input type="checkbox" id="setRootFile" checked /> Set <code>context.rootFile</code> to the compile root (product or document — never the \\startproject file)</label>
     <div class="actions">
@@ -572,6 +592,10 @@ function syncNameFields() {
   $('productFields').style.display = (tier === 'product' || tier === 'project') ? 'block' : 'none';
   $('projectFields').style.display = tier === 'project' ? 'block' : 'none';
   $('layoutFields').style.display = tier === 'single' ? 'none' : 'block';
+  const showStub = tier === 'product' || tier === 'project';
+  $('documentStubFields').style.display = showStub ? 'block' : 'none';
+  $('documentMetadataWrap').style.display =
+    showStub && $('documentStub').checked ? 'block' : 'none';
   const info = tiers[tier];
   if (info) {
     $('tierHint').textContent = info.summary + ' — ' + info.compileHint;
@@ -587,6 +611,8 @@ function applyDefaults(d) {
   $('products').value = d.products;
   $('usePrefixedNames').checked = !!d.usePrefixedNames;
   $('setRootFile').checked = d.setRootFileOnCreate !== false;
+  $('documentStub').checked = false;
+  $('documentMetadata').value = '';
   const layout = d.layout === 'by-role' ? 'by-role' : 'flat';
   $('layoutFlat').checked = layout === 'flat';
   $('layoutByRole').checked = layout === 'by-role';
@@ -607,6 +633,8 @@ function collectNames() {
     products: $('products').value,
     usePrefixedNames: $('usePrefixedNames').checked,
     layout: readLayout(),
+    documentStub: $('documentStub').checked,
+    documentMetadata: $('documentMetadata').value,
     setRootFile: $('setRootFile').checked,
   };
 }
@@ -706,6 +734,7 @@ $('createBtn').onclick = () => {
   vscode.postMessage(payload);
 };
 $('pickFolder').onclick = () => vscode.postMessage({ type: 'pickFolder' });
+$('documentStub').onchange = () => syncNameFields();
 ['cancel1','cancel2','cancel3','cancel4'].forEach((id) => {
   $(id).onclick = () => vscode.postMessage({ type: 'cancel' });
 });

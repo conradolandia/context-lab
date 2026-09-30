@@ -32,6 +32,13 @@ export interface StructureSpec {
    */
   layout?: DirectoryLayout;
   environments?: string[];
+  /**
+   * Product / project create: product files wrap components in
+   * `\startdocument` … `\stopdocument`. Absent = false / legacy.
+   */
+  documentStub?: boolean;
+  /** Metadata key → value emitted into `\startdocument[...]` when documentStub. */
+  documentMetadata?: Record<string, string>;
   createdBy?: StructureSpecCreatedBy;
   createdAt?: string;
   updatedAt?: string;
@@ -84,6 +91,9 @@ export function buildStructureSpec(opts: {
   rootFile: string;
   layout?: DirectoryLayout;
   environments?: string[];
+  /** Product/project: optional `\startdocument` stub in products. */
+  documentStub?: boolean;
+  documentMetadata?: Record<string, string>;
   createdBy: StructureSpecCreatedBy;
   /** Preserve on upgrade when present. */
   createdAt?: string;
@@ -107,6 +117,15 @@ export function buildStructureSpec(opts: {
   }
   if (opts.environments && opts.environments.length > 0) {
     spec.environments = [...opts.environments];
+  }
+  if (
+    opts.documentStub === true &&
+    (opts.tier === 'product' || opts.tier === 'project')
+  ) {
+    spec.documentStub = true;
+    if (opts.documentMetadata && Object.keys(opts.documentMetadata).length > 0) {
+      spec.documentMetadata = { ...opts.documentMetadata };
+    }
   }
   return spec;
 }
@@ -145,6 +164,29 @@ export function validateStructureSpec(raw: unknown): StructureSpecValidation {
   if (obj.layout !== undefined && !isDirectoryLayout(obj.layout)) {
     return { ok: false, reason: 'layout must be flat | by-role when present.' };
   }
+  if (obj.documentStub !== undefined && typeof obj.documentStub !== 'boolean') {
+    return { ok: false, reason: 'documentStub must be a boolean when present.' };
+  }
+  if (obj.documentMetadata !== undefined) {
+    if (
+      obj.documentMetadata === null ||
+      typeof obj.documentMetadata !== 'object' ||
+      Array.isArray(obj.documentMetadata)
+    ) {
+      return {
+        ok: false,
+        reason: 'documentMetadata must be an object of string values when present.',
+      };
+    }
+    for (const v of Object.values(obj.documentMetadata as Record<string, unknown>)) {
+      if (typeof v !== 'string') {
+        return {
+          ok: false,
+          reason: 'documentMetadata must be an object of string values when present.',
+        };
+      }
+    }
+  }
   const spec: StructureSpec = {
     schemaVersion: STRUCTURE_SCHEMA_VERSION,
     tier: obj.tier,
@@ -155,6 +197,14 @@ export function validateStructureSpec(raw: unknown): StructureSpecValidation {
   }
   if (obj.environments) {
     spec.environments = obj.environments as string[];
+  }
+  if (obj.documentStub === true) {
+    spec.documentStub = true;
+  }
+  if (obj.documentMetadata) {
+    spec.documentMetadata = {
+      ...(obj.documentMetadata as Record<string, string>),
+    };
   }
   if (typeof obj.createdBy === 'string') {
     spec.createdBy = obj.createdBy;

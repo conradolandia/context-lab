@@ -119,9 +119,11 @@ Click a node to open. Actions: Build, Forward SyncTeX, Set as Main (Root) File. 
 
 **ConTeXt: New Document Structure…** scaffolds the simplest structure that matches the job (wiki *Project and file management* §1): single document; document + environment; product + components; or project tier (several products — compile each product, not the `\startproject` file).
 
-After create: writes `.context/structure.json` (tier, optional `layout`, compile root), opens the compile root, sets `context.rootFile` when enabled, refreshes the Project view, and may offer `files.associations["*.tex"] = "context"`. Scaffolds use `.tex` only and do not insert `% !TEX root`.
+After create: writes `.context/structure.json` (tier, optional `layout`, optional `documentStub` / `documentMetadata`, compile root), opens the compile root, sets `context.rootFile` when enabled, refreshes the Project view, and may offer `files.associations["*.tex"] = "context"`. Scaffolds use `.tex` only and do not insert `% !TEX root`.
 
 On the names step (tiers other than single), **Directory layout** is **Flat** (default, wiki §4/§5) or **By role** (`environments/`, product `.tex` at scaffold root or product folders at series root, `components/` with `\usepath`). Absent `layout` means flat; upgrade preserves it.
+
+For **product** and **project** tiers, an optional checkbox includes a `\startdocument` metadata stub in each product file (components stay between `\startdocument` / `\stopdocument`). Metadata is entered as `key=value` lines. Off by default; hidden for `single` / `env-doc` (those already use `\startdocument`).
 
 **ConTeXt: Upgrade Document Structure…** moves a scaffold one rung up when `.context/structure.json` is present.
 
