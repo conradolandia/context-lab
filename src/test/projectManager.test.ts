@@ -118,7 +118,7 @@ describe('buildStructurePlan', () => {
     assert.doesNotMatch(chap.contents, /\\startdocument/);
   });
 
-  it('builds by-role product tree with products/environments/components and usepath', async () => {
+  it('builds by-role product tree with product at scaffold root and usepath', async () => {
     const dir = await tempDir();
     const plan = buildStructurePlan({
       tier: 'product',
@@ -129,28 +129,29 @@ describe('buildStructurePlan', () => {
     const rels = plan.files.map((f) => f.relativePath).sort();
     assert.deepEqual(rels, [
       '.context/structure.json',
+      'book.tex',
       'components/chapter-01.tex',
       'components/chapter-02.tex',
       'environments/env_book.tex',
-      'products/book.tex',
     ]);
+    assert.ok(!rels.some((r) => r.startsWith('products/')));
     assert.equal(plan.layout, 'by-role');
-    assert.equal(plan.rootFile, path.join(dir, 'book', 'products', 'book.tex'));
+    assert.equal(plan.rootFile, path.join(dir, 'book', 'book.tex'));
     const spec = JSON.parse(plan.files.find((f) => f.role === 'spec')!.contents);
     assert.equal(spec.layout, 'by-role');
-    assert.equal(spec.rootFile, 'products/book.tex');
-    const product = plan.files.find((f) => f.relativePath === 'products/book.tex')!;
-    assert.match(product.contents, /\\usepath\[\.\.\/environments,\.\.\/components\]/);
+    assert.equal(spec.rootFile, 'book.tex');
+    const product = plan.files.find((f) => f.relativePath === 'book.tex')!;
+    assert.match(product.contents, /\\usepath\[environments,components\]/);
     assert.match(product.contents, /\\component chapter-01/);
     const chap = plan.files.find((f) => f.relativePath === 'components/chapter-01.tex')!;
-    assert.match(chap.contents, /\\usepath\[\.\.\/environments\]/);
+    assert.match(chap.contents, /\\usepath\[\.\.,\.\.\/environments\]/);
 
     for (const f of plan.files) {
       fs.mkdirSync(path.dirname(f.path), { recursive: true });
       fs.writeFileSync(f.path, f.contents);
     }
     const scan = scanStructure(product.contents);
-    assert.deepEqual(scan.usePaths, ['../environments', '../components']);
+    assert.deepEqual(scan.usePaths, ['environments', 'components']);
     const hit = resolveIncludePath({
       fromFile: product.path,
       name: 'chapter-01',
@@ -530,13 +531,18 @@ describe('structure spec + upgrade', () => {
     });
     assert.equal(upgrade.tier, 'product');
     assert.equal(upgrade.layout, 'by-role');
-    assert.ok(upgrade.files.some((f) => f.relativePath === 'products/essay.tex'));
+    assert.ok(upgrade.files.some((f) => f.relativePath === 'essay.tex'));
     assert.ok(upgrade.files.some((f) => f.relativePath === 'components/chapter-01.tex'));
+    assert.ok(!upgrade.files.some((f) => f.relativePath.startsWith('products/')));
     const product = upgrade.files.find((f) => f.role === 'product')!;
-    assert.match(product.contents, /\\usepath\[\.\.\/environments,\.\.\/components\]/);
+    assert.match(product.contents, /\\usepath\[environments,components\]/);
+    const chap = upgrade.files.find(
+      (f) => f.relativePath === 'components/chapter-01.tex',
+    )!;
+    assert.match(chap.contents, /\\usepath\[\.\.,\.\.\/environments\]/);
     const spec = JSON.parse(upgrade.files.find((f) => f.role === 'spec')!.contents);
     assert.equal(spec.layout, 'by-role');
-    assert.equal(spec.rootFile, 'products/essay.tex');
+    assert.equal(spec.rootFile, 'essay.tex');
   });
 
   it('accepts old specs without layout as flat', () => {

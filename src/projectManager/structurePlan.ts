@@ -418,20 +418,16 @@ export function buildStructurePlan(input: StructurePlanInput): StructurePlan {
         );
       }
       const prodStem = productFileStem(name, prefixed);
-      const prodRel = byRole
-        ? `products/${prodStem}${ext}`
-        : `${prodStem}${ext}`;
+      // Scaffold folder is the product folder — product .tex at root (no products/).
+      const prodRel = `${prodStem}${ext}`;
       const compFileStems = componentStems.map((c) => componentFileStem(c, prefixed));
       let prodContents = productContents(prodStem, envStems, compFileStems);
       if (byRole) {
-        // Compile cwd = products/; reach sibling role folders.
-        prodContents = withUsePath(prodContents, [
-          '../environments',
-          '../components',
-        ]);
+        // Compile cwd = scaffold root; reach role folders beside the product.
+        prodContents = withUsePath(prodContents, ['environments', 'components']);
       }
       pushFile(files, scaffoldRoot, prodRel, prodContents, 'product');
-      rootFile = path.join(scaffoldRoot, ...prodRel.split('/'));
+      rootFile = path.join(scaffoldRoot, prodRel);
       for (let i = 0; i < componentStems.length; i++) {
         const fileStem = compFileStems[i];
         const compRel = byRole
@@ -439,7 +435,8 @@ export function buildStructurePlan(input: StructurePlanInput): StructurePlan {
           : `${fileStem}${ext}`;
         let compContents = componentContents(fileStem, envStems);
         if (byRole) {
-          compContents = withUsePath(compContents, ['../environments']);
+          // cwd = components/; env folder + parent (sibling components live here).
+          compContents = withUsePath(compContents, ['..', '../environments']);
         }
         pushFile(files, scaffoldRoot, compRel, compContents, 'component');
       }

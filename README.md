@@ -121,7 +121,7 @@ Click a node to open. Actions: Build, Forward SyncTeX, Set as Main (Root) File. 
 
 After create: writes `.context/structure.json` (tier, optional `layout`, compile root), opens the compile root, sets `context.rootFile` when enabled, refreshes the Project view, and may offer `files.associations["*.tex"] = "context"`. Scaffolds use `.tex` only and do not insert `% !TEX root`.
 
-On the names step (tiers other than single), **Directory layout** is **Flat** (default, wiki §4/§5) or **By role** (`environments/`, `products/<stem>.tex` or product folders at series root, `components/` with `\usepath`). Absent `layout` means flat; upgrade preserves it.
+On the names step (tiers other than single), **Directory layout** is **Flat** (default, wiki §4/§5) or **By role** (`environments/`, product `.tex` at scaffold root or product folders at series root, `components/` with `\usepath`). Absent `layout` means flat; upgrade preserves it.
 
 **ConTeXt: Upgrade Document Structure…** moves a scaffold one rung up when `.context/structure.json` is present.
 
