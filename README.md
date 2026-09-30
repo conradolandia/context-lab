@@ -82,6 +82,7 @@ Status bar shows `ConTeXt: <rootname>` (click to set or clear). Build / Show PDF
 | Show last gated PDF | **ConTeXt: Show PDF** |
 | Forward SyncTeX (source → PDF) | **ConTeXt: Forward SyncTeX** — `Ctrl+Alt+J` (macOS: `Cmd+Alt+J`) |
 | Backward SyncTeX (PDF → source) | **Ctrl+click** (macOS: **Cmd+click**) in the PDF webview |
+| Zoom PDF | Toolbar **+/-** / **Fit**, editable `%`, **Ctrl+wheel** (macOS: **Cmd+wheel**) |
 | Refresh TextMate keywords from LMTX | **ConTeXt: Refresh command keywords** (then reload the window) |
 
 Build uses `context --synctex=repeat` plus `context.build.args`. The viewer keeps the last good PDF while a build runs, then reloads after a stability gate.

@@ -5,7 +5,7 @@ const statusText = document.getElementById('statusText');
 const viewer = document.getElementById('viewer');
 const pageInput = document.getElementById('pageInput');
 const pageTotal = document.getElementById('pageTotal');
-const zoomLabel = document.getElementById('zoomLabel');
+const zoomInput = document.getElementById('zoomInput');
 const btnPrev = document.getElementById('btnPrev');
 const btnNext = document.getElementById('btnNext');
 const btnZoomIn = document.getElementById('btnZoomIn');
@@ -21,6 +21,8 @@ const BUFFER = 1; // render visible ±1
 let pdfDoc = null;
 let currentScale = 1.25;
 let currentPage = 1;
+/** Avoid stacking setScale from rapid Ctrl/Cmd+wheel */
+let scaleInFlight = false;
 /** @type {number[]} base (scale=1) page heights */
 let pageHeights = [];
 /** @type {number[]} base (scale=1) page widths */
@@ -62,10 +64,46 @@ function updateToolbar() {
   pageInput.disabled = pages === 0;
   btnPrev.disabled = pages === 0 || currentPage <= 1;
   btnNext.disabled = pages === 0 || currentPage >= pages;
-  zoomLabel.textContent = `${Math.round(currentScale * 100)}%`;
+  if (document.activeElement !== zoomInput) {
+    zoomInput.value = formatZoomPercent(currentScale);
+  }
+  zoomInput.disabled = !pdfDoc;
   btnZoomIn.disabled = !pdfDoc || currentScale >= SCALE_MAX - 1e-9;
   btnZoomOut.disabled = !pdfDoc || currentScale <= SCALE_MIN + 1e-9;
   btnFitWidth.disabled = !pdfDoc;
+}
+
+function formatZoomPercent(scale) {
+  return `${Math.round(scale * 100)}%`;
+}
+
+/**
+ * Parse toolbar zoom text (`125`, `125%`). Returns scale or null.
+ */
+function parseZoomInput(raw) {
+  const text = String(raw ?? '')
+    .trim()
+    .replace(/\s+/g, '')
+    .replace(/%$/, '');
+  if (!text) {
+    return null;
+  }
+  const n = Number(text);
+  if (!Number.isFinite(n) || n <= 0) {
+    return null;
+  }
+  return n / 100;
+}
+
+function commitZoomInput() {
+  const parsed = parseZoomInput(zoomInput.value);
+  if (parsed == null) {
+    zoomInput.value = formatZoomPercent(currentScale);
+    return;
+  }
+  const clamped = Math.min(SCALE_MAX, Math.max(SCALE_MIN, parsed));
+  zoomInput.value = formatZoomPercent(clamped);
+  void setScale(parsed);
 }
 
 /**
@@ -564,7 +602,7 @@ async function openDocument(source, cacheKey, useRange) {
   }
 }
 
-async function setScale(nextScale) {
+async function setScale(nextScale, anchor) {
   if (!pdfDoc) {
     return;
   }
@@ -573,16 +611,23 @@ async function setScale(nextScale) {
     updateToolbar();
     return;
   }
+  const prevScale = currentScale;
   currentScale = clamped;
   updateToolbar();
   setStatus('Zooming…');
   const t0 = performance.now();
-  // Keep scroll position roughly by page, not pixel.
   const keepPage = currentPage;
   layoutPlaceholders();
-  const el = pageEls.get(keepPage);
-  if (el) {
-    el.scrollIntoView({ behavior: 'instant', block: 'start' });
+  if (anchor && prevScale > 0) {
+    const ratio = currentScale / prevScale;
+    viewer.scrollLeft = Math.max(0, anchor.contentX * ratio - anchor.viewX);
+    viewer.scrollTop = Math.max(0, anchor.contentY * ratio - anchor.viewY);
+  } else {
+    // Keep scroll position roughly by page, not pixel.
+    const el = pageEls.get(keepPage);
+    if (el) {
+      el.scrollIntoView({ behavior: 'instant', block: 'start' });
+    }
   }
   await syncVisiblePages();
   const renderMs = Math.round(performance.now() - t0);
@@ -682,6 +727,56 @@ pageInput.addEventListener('keydown', (ev) => {
     void goToPage(Number(pageInput.value) || 1);
   }
 });
+zoomInput.addEventListener('change', () => {
+  commitZoomInput();
+});
+zoomInput.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Enter') {
+    ev.preventDefault();
+    zoomInput.blur();
+  } else if (ev.key === 'Escape') {
+    zoomInput.value = formatZoomPercent(currentScale);
+    zoomInput.blur();
+  }
+});
+zoomInput.addEventListener('blur', () => {
+  // change handles commits; restore display if the value never changed (invalid kept).
+  if (parseZoomInput(zoomInput.value) == null) {
+    zoomInput.value = formatZoomPercent(currentScale);
+  }
+});
+
+// Ctrl/Cmd+wheel zooms; plain wheel keeps vertical scroll.
+viewer.addEventListener(
+  'wheel',
+  (ev) => {
+    if (!ev.ctrlKey && !ev.metaKey) {
+      return;
+    }
+    ev.preventDefault();
+    if (!pdfDoc || scaleInFlight) {
+      return;
+    }
+    const direction = ev.deltaY < 0 ? 1 : ev.deltaY > 0 ? -1 : 0;
+    if (direction === 0) {
+      return;
+    }
+    const rect = viewer.getBoundingClientRect();
+    const viewX = ev.clientX - rect.left;
+    const viewY = ev.clientY - rect.top;
+    const anchor = {
+      contentX: viewer.scrollLeft + viewX,
+      contentY: viewer.scrollTop + viewY,
+      viewX,
+      viewY,
+    };
+    scaleInFlight = true;
+    void setScale(currentScale + direction * SCALE_STEP, anchor).finally(() => {
+      scaleInFlight = false;
+    });
+  },
+  { passive: false },
+);
 
 viewer.addEventListener('scroll', () => {
   scheduleSyncVisible();

@@ -62,8 +62,8 @@ body {
   cursor: default;
 }
 
-#pageInput {
-  width: 3.2em;
+#pageInput,
+#zoomInput {
   background: #1a1a1a;
   color: var(--fg);
   border: 1px solid #444;
@@ -73,7 +73,18 @@ body {
   text-align: center;
 }
 
-#zoomLabel,
+#pageInput {
+  width: 3.2em;
+}
+
+#zoomInput {
+  width: 4.2em;
+}
+
+#zoomInput:disabled {
+  opacity: 0.4;
+}
+
 #pageTotal,
 #statusText {
   color: #aaa;
