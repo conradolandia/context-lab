@@ -10,8 +10,11 @@ import {
   isStrongStructureRoot,
   resolveProjectAnchor,
 } from './projectAnchor';
+import { treeId } from './projectTreeIds';
 import { scanStructure } from './structureScan';
 import * as fs from 'node:fs';
+
+export { collectTreeIds, localTreeId, treeId } from './projectTreeIds';
 
 export const PROJECT_VIEW_ID = 'context.projectView';
 
@@ -30,13 +33,15 @@ export class ProjectTreeItem extends vscode.TreeItem {
   constructor(
     public readonly node: ProjectNode,
     collapsible: vscode.TreeItemCollapsibleState,
+    /** Full tree id of the parent occurrence; omit for roots. */
+    parentId?: string,
   ) {
     super(node.label, collapsible);
     this.tooltip = buildTooltip(node);
     this.description = describeNode(node);
     this.contextValue = contextValueFor(node);
     this.iconPath = iconFor(node);
-    this.id = treeId(node);
+    this.id = treeId(node, parentId);
 
     if (node.fsPath && !node.missing && node.kind !== 'message') {
       this.resourceUri = vscode.Uri.file(node.fsPath);
@@ -49,10 +54,8 @@ export class ProjectTreeItem extends vscode.TreeItem {
   }
 }
 
-function treeId(node: ProjectNode): string {
-  const base = node.fsPath ?? `missing:${node.kind}:${node.label}`;
-  return `${node.kind}:${base}:${node.commandStart ?? 0}`;
-}
+/** Parent lookup: child occurrence id → parent node + id arg for ProjectTreeItem. */
+type ParentRef = { parent: ProjectNode; parentId?: string };
 
 function contextValueFor(node: ProjectNode): ProjectTreeContextValue {
   switch (node.kind) {
@@ -180,8 +183,8 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<ProjectTreeI
   private anchoredEntry: string | undefined;
   private debounceTimer: ReturnType<typeof setTimeout> | undefined;
   private treeView: vscode.TreeView<ProjectTreeItem> | undefined;
-  /** path/id → parent node for reveal */
-  private parentOf = new Map<string, ProjectNode>();
+  /** child occurrence id → parent for reveal / getParent */
+  private parentOf = new Map<string, ParentRef>();
 
   constructor(private readonly deps: ProjectTreeProviderDeps) {}
 
@@ -346,15 +349,22 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<ProjectTreeI
       }
       return result.roots.map((n) => new ProjectTreeItem(n, collapsibleState(n)));
     }
-    return element.node.children.map((n) => new ProjectTreeItem(n, collapsibleState(n)));
+    const parentId = element.id;
+    return element.node.children.map(
+      (n) => new ProjectTreeItem(n, collapsibleState(n), parentId),
+    );
   }
 
   getParent(element: ProjectTreeItem): ProjectTreeItem | undefined {
-    const parent = this.parentOf.get(treeId(element.node));
-    if (!parent) {
+    const id = element.id;
+    if (!id) {
       return undefined;
     }
-    return new ProjectTreeItem(parent, collapsibleState(parent));
+    const ref = this.parentOf.get(id);
+    if (!ref) {
+      return undefined;
+    }
+    return new ProjectTreeItem(ref.parent, collapsibleState(ref.parent), ref.parentId);
   }
 
   async revealActive(): Promise<void> {
@@ -363,11 +373,11 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<ProjectTreeI
       return;
     }
     const result = this.ensureModel();
-    const hit = findNodeByPath(result.roots, active);
+    const hit = findNodeOccurrence(result.roots, active);
     if (!hit) {
       return;
     }
-    const item = new ProjectTreeItem(hit, collapsibleState(hit));
+    const item = new ProjectTreeItem(hit.node, collapsibleState(hit.node), hit.parentId);
     try {
       await this.treeView.reveal(item, { select: true, focus: false, expand: 2 });
     } catch {
@@ -463,7 +473,7 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<ProjectTreeI
 
     this.model = built;
     this.parentOf.clear();
-    indexParents(this.model.roots, undefined, this.parentOf);
+    indexParents(this.model.roots, undefined, undefined, this.parentOf);
 
     const m = this.model;
     this.deps.output.appendLine(
@@ -485,13 +495,17 @@ function readQuiet(p: string): string {
   }
 }
 
-function findNodeByPath(nodes: ProjectNode[], fsPath: string): ProjectNode | undefined {
+function findNodeOccurrence(
+  nodes: ProjectNode[],
+  fsPath: string,
+  parentId?: string,
+): { node: ProjectNode; parentId?: string } | undefined {
   const abs = path.resolve(fsPath);
   for (const n of nodes) {
     if (n.fsPath && path.resolve(n.fsPath) === abs) {
-      return n;
+      return { node: n, parentId };
     }
-    const child = findNodeByPath(n.children, fsPath);
+    const child = findNodeOccurrence(n.children, fsPath, treeId(n, parentId));
     if (child) {
       return child;
     }
@@ -502,13 +516,17 @@ function findNodeByPath(nodes: ProjectNode[], fsPath: string): ProjectNode | und
 function indexParents(
   nodes: ProjectNode[],
   parent: ProjectNode | undefined,
-  map: Map<string, ProjectNode>,
+  parentId: string | undefined,
+  map: Map<string, ParentRef>,
+  /** Id prefix used when constructing `parent` as a TreeItem (grandparent id). */
+  grandparentId?: string,
 ): void {
   for (const n of nodes) {
+    const id = treeId(n, parentId);
     if (parent) {
-      map.set(treeId(n), parent);
+      map.set(id, { parent, parentId: grandparentId });
     }
-    indexParents(n.children, n, map);
+    indexParents(n.children, n, id, map, parentId);
   }
 }
 
