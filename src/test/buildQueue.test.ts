@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { preserveFocusForBuildTrigger } from '../build/buildTrigger';
 
 /**
  * Pure coalesce rules mirrored by BuildController:
@@ -54,5 +55,16 @@ describe('build on-save coalesce', () => {
     assert.equal(finish(s), 'start-followup');
     assert.equal(s.followUp, false);
     assert.equal(finish(s), 'idle');
+  });
+});
+
+describe('preserveFocusForBuildTrigger', () => {
+  it('preserves focus for onSave and queued follow-ups', () => {
+    assert.equal(preserveFocusForBuildTrigger('onSave'), true);
+    assert.equal(preserveFocusForBuildTrigger('queued'), true);
+  });
+
+  it('does not force preserveFocus for manual command builds', () => {
+    assert.equal(preserveFocusForBuildTrigger('command'), false);
   });
 });
