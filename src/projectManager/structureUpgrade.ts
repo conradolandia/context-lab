@@ -1,6 +1,7 @@
 /**
  * Spec-gated structure upgrade deltas along the wiki §1 ladder.
  * Eligibility requires a valid `.context/structure.json` — never scan-guessed.
+ * Directory layout from the spec is preserved (default flat when absent).
  */
 
 import * as fs from 'node:fs';
@@ -23,6 +24,7 @@ import {
   projectFileStem,
   pushFile,
   sanitizeStem,
+  withUsePath,
 } from './structurePlan';
 import {
   STRUCTURE_SPEC_REL,
@@ -30,7 +32,9 @@ import {
   isUpgradeEdge,
   nextStructureTier,
   relativeRootFile,
+  resolveDirectoryLayout,
   serializeStructureSpec,
+  type DirectoryLayout,
   type StructureSpec,
 } from './structureSpec';
 
@@ -106,24 +110,31 @@ function listComponentStemsFromProduct(tex: string): string[] {
 function buildTreeLines(scaffoldRoot: string, files: PlannedFile[]): string[] {
   const name = scaffoldName(scaffoldRoot);
   const lines = [`${name}/`];
+  const seenDirs = new Set<string>();
   const sorted = [...files].sort((a, b) =>
     a.relativePath.localeCompare(b.relativePath),
   );
   for (const f of sorted) {
     const parts = f.relativePath.split('/');
-    if (parts.length === 1) {
-      lines.push(`|-- ${parts[0]}`);
-    } else {
-      const dir = parts[0];
-      const rest = parts.slice(1).join('/');
-      const dirLine = `|-- ${dir}/`;
-      if (!lines.includes(dirLine)) {
-        lines.push(dirLine);
+    for (let i = 0; i < parts.length; i++) {
+      const isFile = i === parts.length - 1;
+      const indent = '|   '.repeat(i);
+      if (isFile) {
+        lines.push(`${indent}|-- ${parts[i]}`);
+      } else {
+        const dirKey = parts.slice(0, i + 1).join('/');
+        if (!seenDirs.has(dirKey)) {
+          seenDirs.add(dirKey);
+          lines.push(`${indent}|-- ${parts[i]}/`);
+        }
       }
-      lines.push(`|   |-- ${rest}`);
     }
   }
   return lines;
+}
+
+function envRelPath(env: string, ext: string, layout: DirectoryLayout): string {
+  return layout === 'by-role' ? `environments/${env}${ext}` : `${env}${ext}`;
 }
 
 function pushSpec(
@@ -132,12 +143,14 @@ function pushSpec(
   tier: StructureTier,
   rootFileAbs: string,
   environments: string[],
+  layout: DirectoryLayout,
   previous: StructureSpec,
   now?: Date,
 ): void {
   const spec = buildStructureSpec({
     tier,
     rootFile: relativeRootFile(scaffoldRoot, rootFileAbs),
+    layout,
     environments: tier === 'single' ? undefined : environments,
     createdBy: 'context.projectManager.upgrade',
     createdAt: previous.createdAt,
@@ -154,6 +167,7 @@ function pushSpec(
 
 /**
  * Build an in-place upgrade plan. Throws if the edge is invalid or sources missing.
+ * Preserves `spec.layout` (absent → flat).
  */
 export function buildUpgradePlan(input: UpgradePlanInput): StructurePlan {
   const from = input.spec.tier;
@@ -180,6 +194,9 @@ export function buildUpgradePlan(input: UpgradePlanInput): StructurePlan {
   const scaffoldRoot = path.resolve(input.scaffoldRoot);
   const ext = '.tex';
   const prefixed = input.usePrefixedNames === true;
+  // Preserve layout from spec; resolve against *target* tier (single → flat).
+  const layout = resolveDirectoryLayout(to, input.spec.layout);
+  const byRole = layout === 'by-role';
   const envStems = resolveEnvStems(input.spec, scaffoldRoot, input.environments);
   const rootAbs = path.resolve(scaffoldRoot, input.spec.rootFile);
   if (!pathExists(rootAbs, input.exists)) {
@@ -197,16 +214,20 @@ export function buildUpgradePlan(input: UpgradePlanInput): StructurePlan {
       pushFile(
         files,
         scaffoldRoot,
-        `${env}${ext}`,
+        envRelPath(env, ext, layout),
         environmentContents(env),
         'environment',
       );
+    }
+    let docContents = envDocContents(envStems, body);
+    if (byRole) {
+      docContents = withUsePath(docContents, ['environments']);
     }
     pushFile(
       files,
       scaffoldRoot,
       input.spec.rootFile,
-      envDocContents(envStems, body),
+      docContents,
       'document',
     );
     rootFile = rootAbs;
@@ -225,9 +246,14 @@ export function buildUpgradePlan(input: UpgradePlanInput): StructurePlan {
     );
 
     for (const env of envStems) {
-      const envRel = `${env}${ext}`;
-      const envAbs = path.join(scaffoldRoot, envRel);
-      if (!pathExists(envAbs, input.exists)) {
+      const envRel = envRelPath(env, ext, layout);
+      const envAbs = path.join(scaffoldRoot, ...envRel.split('/'));
+      // Also accept a flat env left from an older layout if by-role path is missing.
+      const flatEnvAbs = path.join(scaffoldRoot, `${env}${ext}`);
+      if (
+        !pathExists(envAbs, input.exists) &&
+        !(byRole && pathExists(flatEnvAbs, input.exists))
+      ) {
         pushFile(
           files,
           scaffoldRoot,
@@ -238,25 +264,28 @@ export function buildUpgradePlan(input: UpgradePlanInput): StructurePlan {
       }
     }
 
-    pushFile(
-      files,
-      scaffoldRoot,
-      `${prodStem}${ext}`,
-      productContents(prodStem, envStems, compFileStems),
-      'product',
-    );
-    rootFile = path.join(scaffoldRoot, `${prodStem}${ext}`);
+    const prodRel = byRole ? `products/${prodStem}${ext}` : `${prodStem}${ext}`;
+    let prodContents = productContents(prodStem, envStems, compFileStems);
+    if (byRole) {
+      prodContents = withUsePath(prodContents, [
+        '../environments',
+        '../components',
+      ]);
+    }
+    pushFile(files, scaffoldRoot, prodRel, prodContents, 'product');
+    rootFile = path.join(scaffoldRoot, ...prodRel.split('/'));
 
     for (let i = 0; i < compFileStems.length; i++) {
       const fileStem = compFileStems[i];
       const chapBody = i === 0 ? body : '% Chapter body';
-      pushFile(
-        files,
-        scaffoldRoot,
-        `${fileStem}${ext}`,
-        componentContents(fileStem, envStems, chapBody),
-        'component',
-      );
+      const compRel = byRole
+        ? `components/${fileStem}${ext}`
+        : `${fileStem}${ext}`;
+      let compContents = componentContents(fileStem, envStems, chapBody);
+      if (byRole) {
+        compContents = withUsePath(compContents, ['../environments']);
+      }
+      pushFile(files, scaffoldRoot, compRel, compContents, 'component');
     }
 
     // Remove former document if it is not the new product path
@@ -291,17 +320,31 @@ export function buildUpgradePlan(input: UpgradePlanInput): StructurePlan {
       ).map(sanitizeStem);
     })();
 
+    let projContents = projectContents(projStem, envStems, productList);
+    if (byRole) {
+      projContents = withUsePath(projContents, ['environments']);
+    }
     pushFile(
       files,
       scaffoldRoot,
       `${projStem}${ext}`,
-      projectContents(projStem, envStems, productList),
+      projContents,
       'project',
     );
 
-    const updatedProduct = ensureProjectDirective(productText, projStem);
-    // Drop direct env loads when project will supply them via coordination —
-    // keep file compilable: product with \\project still works; leave envs if present.
+    // Keep existing product at its current path; ensure \\project directive.
+    // If by-role product lacked usepath, refresh paths for sibling role folders.
+    let updatedProduct = ensureProjectDirective(productText, projStem);
+    if (byRole) {
+      const fromProductsDir =
+        input.spec.rootFile.replace(/\\/g, '/').startsWith('products/');
+      updatedProduct = withUsePath(
+        updatedProduct,
+        fromProductsDir
+          ? ['../environments', '../components']
+          : ['../environments', 'components'],
+      );
+    }
     pushFile(
       files,
       scaffoldRoot,
@@ -314,24 +357,29 @@ export function buildUpgradePlan(input: UpgradePlanInput): StructurePlan {
     for (const p of extra) {
       const prodStem = productFileStem(p, prefixed);
       const dir = p;
+      let newProd = productContents(prodStem, envStems, componentStems, {
+        projectStem: projStem,
+      });
+      if (byRole) {
+        newProd = withUsePath(newProd, ['../environments', 'components']);
+      }
       pushFile(
         files,
         scaffoldRoot,
         `${dir}/${prodStem}${ext}`,
-        productContents(prodStem, envStems, componentStems, {
-          projectStem: projStem,
-        }),
+        newProd,
         'product',
       );
       for (const c of componentStems) {
         const fileStem = componentFileStem(c, prefixed);
-        pushFile(
-          files,
-          scaffoldRoot,
-          `${dir}/${fileStem}${ext}`,
-          componentContents(fileStem, envStems),
-          'component',
-        );
+        const compRel = byRole
+          ? `${dir}/components/${fileStem}${ext}`
+          : `${dir}/${fileStem}${ext}`;
+        let compContents = componentContents(fileStem, envStems);
+        if (byRole) {
+          compContents = withUsePath(compContents, ['../../environments']);
+        }
+        pushFile(files, scaffoldRoot, compRel, compContents, 'component');
       }
     }
   } else {
@@ -344,6 +392,7 @@ export function buildUpgradePlan(input: UpgradePlanInput): StructurePlan {
     to,
     rootFile,
     envStems,
+    layout,
     input.spec,
     input.now,
   );
@@ -378,6 +427,7 @@ export function buildUpgradePlan(input: UpgradePlanInput): StructurePlan {
     rootFile,
     conflicts,
     treeLines: buildTreeLines(scaffoldRoot, files),
+    layout,
     deletePaths: deletePaths.length > 0 ? deletePaths : undefined,
   };
 }

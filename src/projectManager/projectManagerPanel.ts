@@ -19,6 +19,7 @@ import {
   planToDryRunJson,
   type StructurePlanInput,
 } from './structurePlan';
+import type { DirectoryLayout } from './structureSpec';
 import { applyStructurePlan } from './applyPlan';
 import { runStructureUpgrade } from './upgradeCommand';
 
@@ -41,6 +42,7 @@ interface WizardDefaults {
   extension: string;
   usePrefixedNames: boolean;
   setRootFileOnCreate: boolean;
+  layout: DirectoryLayout;
   environments: string;
   components: string;
   products: string;
@@ -59,6 +61,7 @@ type WebToHost =
       components: string;
       products: string;
       usePrefixedNames: boolean;
+      layout: DirectoryLayout;
     }
   | {
       type: 'create';
@@ -70,6 +73,7 @@ type WebToHost =
       components: string;
       products: string;
       usePrefixedNames: boolean;
+      layout: DirectoryLayout;
       setRootFile: boolean;
       overwriteConfirmed?: boolean;
     }
@@ -93,6 +97,7 @@ function cfgDefaults(): WizardDefaults {
     extension: cfg.get<string>('projectManager.defaultExtension', '.tex') || '.tex',
     usePrefixedNames: cfg.get<boolean>('projectManager.usePrefixedNames', false),
     setRootFileOnCreate: cfg.get<boolean>('projectManager.setRootFileOnCreate', true),
+    layout: 'flat',
     environments: '',
     components: 'chapter-01, chapter-02',
     products: 'book-one, book-two',
@@ -107,10 +112,13 @@ function planInputFromMessage(msg: {
   components: string;
   products: string;
   usePrefixedNames: boolean;
+  layout?: DirectoryLayout;
 }): StructurePlanInput {
   const envs = splitList(msg.environments);
   const components = splitList(msg.components);
   const products = splitList(msg.products);
+  const layout: DirectoryLayout =
+    msg.layout === 'by-role' ? 'by-role' : 'flat';
   return {
     tier: msg.tier,
     name: msg.name.trim() || 'book',
@@ -119,6 +127,7 @@ function planInputFromMessage(msg: {
     components: components.length ? components : undefined,
     products: products.length ? products : undefined,
     usePrefixedNames: msg.usePrefixedNames,
+    layout,
     extension: '.tex',
     existingPaths: (abs) => fs.existsSync(abs),
   };
@@ -240,6 +249,7 @@ export class ProjectManagerPanel {
                 tier: msg.tier,
                 scaffoldRoot: '',
                 rootFile: '',
+                layout: 'flat',
                 conflicts: [],
                 treeLines: [],
                 files: [],
@@ -485,6 +495,12 @@ export class ProjectManagerPanel {
       <input type="text" id="products" spellcheck="false" />
       <p class="hint">Compile root is the first product. The coordination <code>\\startproject</code> file is not a build target.</p>
     </div>
+    <div id="layoutFields">
+      <label class="block">Directory layout</label>
+      <label class="row"><input type="radio" name="layout" id="layoutFlat" value="flat" checked /> Flat — wiki §4/§5 default (files beside each other)</label>
+      <label class="row"><input type="radio" name="layout" id="layoutByRole" value="by-role" /> By role — <code>environments/</code>, <code>products/</code> or product folders, <code>components/</code> with <code>\\usepath</code></label>
+      <p class="hint" id="layoutHint">Hidden for a single document (no-op). Product tier puts the product under <code>products/</code>; project tier keeps each product folder at the series root.</p>
+    </div>
     <label class="row"><input type="checkbox" id="usePrefixedNames" /> Prefer denser prefixes (product_*, component_*)</label>
     <label class="row"><input type="checkbox" id="setRootFile" checked /> Set <code>context.rootFile</code> to the compile root (product or document — never the \\startproject file)</label>
     <div class="actions">
@@ -555,6 +571,7 @@ function syncNameFields() {
   const tier = $('tierSelect').value || 'single';
   $('productFields').style.display = (tier === 'product' || tier === 'project') ? 'block' : 'none';
   $('projectFields').style.display = tier === 'project' ? 'block' : 'none';
+  $('layoutFields').style.display = tier === 'single' ? 'none' : 'block';
   const info = tiers[tier];
   if (info) {
     $('tierHint').textContent = info.summary + ' — ' + info.compileHint;
@@ -570,6 +587,13 @@ function applyDefaults(d) {
   $('products').value = d.products;
   $('usePrefixedNames').checked = !!d.usePrefixedNames;
   $('setRootFile').checked = d.setRootFileOnCreate !== false;
+  const layout = d.layout === 'by-role' ? 'by-role' : 'flat';
+  $('layoutFlat').checked = layout === 'flat';
+  $('layoutByRole').checked = layout === 'by-role';
+}
+
+function readLayout() {
+  return $('layoutByRole').checked ? 'by-role' : 'flat';
 }
 
 function collectNames() {
@@ -582,6 +606,7 @@ function collectNames() {
     components: $('components').value,
     products: $('products').value,
     usePrefixedNames: $('usePrefixedNames').checked,
+    layout: readLayout(),
     setRootFile: $('setRootFile').checked,
   };
 }

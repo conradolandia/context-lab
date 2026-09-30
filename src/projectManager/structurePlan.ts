@@ -1,6 +1,7 @@
 /**
  * Pure structure plan: wizard answers → file list + dry-run tree.
  * Templates follow wiki §1 / §4 / §5; layered environments §7.1.
+ * Directory layout: `flat` (default) or `by-role` (role folders + \\usepath).
  * Every plan includes `.context/structure.json` (compile root = product/document).
  */
 
@@ -10,9 +11,13 @@ import {
   STRUCTURE_SPEC_REL,
   buildStructureSpec,
   relativeRootFile,
+  resolveDirectoryLayout,
   serializeStructureSpec,
+  type DirectoryLayout,
   type StructureSpecCreatedBy,
 } from './structureSpec';
+
+export type { DirectoryLayout };
 
 export type PlannedFileRole =
   | 'document'
@@ -54,6 +59,11 @@ export interface StructurePlanInput {
    * (env_/project_ already match wiki §4/§5).
    */
   usePrefixedNames?: boolean;
+  /**
+   * Directory layout. Hidden / no-op for tier `single`.
+   * Default `flat`. `by-role` uses role folders + `\\usepath`.
+   */
+  layout?: DirectoryLayout;
   /** File extension including the dot. v1: `.tex` only. */
   extension?: string;
   /** Absolute paths that already exist (conflict detection). */
@@ -75,6 +85,8 @@ export interface StructurePlan {
   conflicts: string[];
   /** Dry-run tree lines (relative). */
   treeLines: string[];
+  /** Resolved directory layout used for this plan. */
+  layout: DirectoryLayout;
   /** Absolute paths to delete when applying an upgrade (optional). */
   deletePaths?: string[];
 }
@@ -123,6 +135,29 @@ export function componentFileStem(stem: string, prefixed: boolean): string {
 
 export function projectFileStem(name: string): string {
   return name.startsWith('project_') ? name : `project_${name}`;
+}
+
+/** Emit `\\usepath[a,b]` (no braces — matches pathResolve parsing). */
+export function usePathDirective(dirs: string[]): string {
+  return `\\usepath[${dirs.join(',')}]`;
+}
+
+/**
+ * Insert or replace `\\usepath[...]` so ConTeXt / TreeView resolve role folders
+ * when the compile cwd is the root file's directory.
+ */
+export function withUsePath(contents: string, dirs: string[]): string {
+  if (dirs.length === 0) {
+    return contents;
+  }
+  const line = usePathDirective(dirs);
+  if (/\\usepath\s*\[[^\]]*\]/.test(contents)) {
+    return contents.replace(/\\usepath\s*\[[^\]]*\]/, line);
+  }
+  if (/^\\start\w+/.test(contents)) {
+    return contents.replace(/^(\\start\w+[^\n]*\n)/, `$1\n${line}\n`);
+  }
+  return `${line}\n\n${contents}`;
 }
 
 function chapterTitle(stem: string): string {
@@ -251,21 +286,24 @@ export function pushFile(
 
 function buildTreeLines(scaffoldName: string, files: PlannedFile[]): string[] {
   const lines = [`${scaffoldName}/`];
+  const seenDirs = new Set<string>();
   const sorted = [...files].sort((a, b) =>
     a.relativePath.localeCompare(b.relativePath),
   );
   for (const f of sorted) {
     const parts = f.relativePath.split('/');
-    if (parts.length === 1) {
-      lines.push(`|-- ${parts[0]}`);
-    } else {
-      const dir = parts[0];
-      const rest = parts.slice(1).join('/');
-      const dirLine = `|-- ${dir}/`;
-      if (!lines.includes(dirLine)) {
-        lines.push(dirLine);
+    for (let i = 0; i < parts.length; i++) {
+      const isFile = i === parts.length - 1;
+      const indent = '|   '.repeat(i);
+      if (isFile) {
+        lines.push(`${indent}|-- ${parts[i]}`);
+      } else {
+        const dirKey = parts.slice(0, i + 1).join('/');
+        if (!seenDirs.has(dirKey)) {
+          seenDirs.add(dirKey);
+          lines.push(`${indent}|-- ${parts[i]}/`);
+        }
       }
-      lines.push(`|   |-- ${rest}`);
     }
   }
   return lines;
@@ -277,6 +315,7 @@ function appendSpecFile(
   opts: {
     tier: StructureTier;
     rootFileAbs: string;
+    layout: DirectoryLayout;
     environments: string[];
     createdBy: StructureSpecCreatedBy;
     now?: Date;
@@ -285,6 +324,7 @@ function appendSpecFile(
   const spec = buildStructureSpec({
     tier: opts.tier,
     rootFile: relativeRootFile(scaffoldRoot, opts.rootFileAbs),
+    layout: opts.layout,
     environments: opts.tier === 'single' ? undefined : opts.environments,
     createdBy: opts.createdBy,
     now: opts.now,
@@ -313,6 +353,8 @@ export function buildStructurePlan(input: StructurePlanInput): StructurePlan {
     throw new Error('v1 scaffolds use .tex only');
   }
   const prefixed = input.usePrefixedNames === true;
+  const layout = resolveDirectoryLayout(input.tier, input.layout);
+  const byRole = layout === 'by-role';
   const scaffoldRoot = path.resolve(input.baseDir, name);
   const exists = existsChecker(input.existingPaths);
   const createdBy = input.createdBy ?? 'context.projectManager.create';
@@ -346,95 +388,116 @@ export function buildStructurePlan(input: StructurePlanInput): StructurePlan {
     }
     case 'env-doc': {
       for (const env of envStems) {
+        const envRel = byRole ? `environments/${env}${ext}` : `${env}${ext}`;
         pushFile(
           files,
           scaffoldRoot,
-          `${env}${ext}`,
+          envRel,
           environmentContents(env),
           'environment',
         );
       }
       const docRel = `${name}${ext}`;
-      pushFile(files, scaffoldRoot, docRel, envDocContents(envStems), 'document');
+      let docContents = envDocContents(envStems);
+      if (byRole) {
+        docContents = withUsePath(docContents, ['environments']);
+      }
+      pushFile(files, scaffoldRoot, docRel, docContents, 'document');
       rootFile = path.join(scaffoldRoot, docRel);
       break;
     }
     case 'product': {
       for (const env of envStems) {
+        const envRel = byRole ? `environments/${env}${ext}` : `${env}${ext}`;
         pushFile(
           files,
           scaffoldRoot,
-          `${env}${ext}`,
+          envRel,
           environmentContents(env),
           'environment',
         );
       }
       const prodStem = productFileStem(name, prefixed);
-      const prodRel = `${prodStem}${ext}`;
+      const prodRel = byRole
+        ? `products/${prodStem}${ext}`
+        : `${prodStem}${ext}`;
       const compFileStems = componentStems.map((c) => componentFileStem(c, prefixed));
-      pushFile(
-        files,
-        scaffoldRoot,
-        prodRel,
-        productContents(prodStem, envStems, compFileStems),
-        'product',
-      );
-      rootFile = path.join(scaffoldRoot, prodRel);
+      let prodContents = productContents(prodStem, envStems, compFileStems);
+      if (byRole) {
+        // Compile cwd = products/; reach sibling role folders.
+        prodContents = withUsePath(prodContents, [
+          '../environments',
+          '../components',
+        ]);
+      }
+      pushFile(files, scaffoldRoot, prodRel, prodContents, 'product');
+      rootFile = path.join(scaffoldRoot, ...prodRel.split('/'));
       for (let i = 0; i < componentStems.length; i++) {
         const fileStem = compFileStems[i];
-        pushFile(
-          files,
-          scaffoldRoot,
-          `${fileStem}${ext}`,
-          componentContents(fileStem, envStems),
-          'component',
-        );
+        const compRel = byRole
+          ? `components/${fileStem}${ext}`
+          : `${fileStem}${ext}`;
+        let compContents = componentContents(fileStem, envStems);
+        if (byRole) {
+          compContents = withUsePath(compContents, ['../environments']);
+        }
+        pushFile(files, scaffoldRoot, compRel, compContents, 'component');
       }
       break;
     }
     case 'project': {
       for (const env of envStems) {
+        const envRel = byRole ? `environments/${env}${ext}` : `${env}${ext}`;
         pushFile(
           files,
           scaffoldRoot,
-          `${env}${ext}`,
+          envRel,
           environmentContents(env),
           'environment',
         );
       }
       const projStem = projectFileStem(name);
+      const productList = productStems.map((p) => productFileStem(p, prefixed));
+      let projContents = projectContents(projStem, envStems, productList);
+      if (byRole) {
+        projContents = withUsePath(projContents, ['environments']);
+      }
       pushFile(
         files,
         scaffoldRoot,
         `${projStem}${ext}`,
-        projectContents(
-          projStem,
-          envStems,
-          productStems.map((p) => productFileStem(p, prefixed)),
-        ),
+        projContents,
         'project',
       );
       const compFileStems = componentStems.map((c) => componentFileStem(c, prefixed));
       for (const p of productStems) {
         const prodStem = productFileStem(p, prefixed);
-        const dir = p; // folder uses the logical product name
+        const dir = p; // product stem as folder at series root (not under products/)
+        let prodContents = productContents(prodStem, envStems, compFileStems, {
+          projectStem: projStem,
+        });
+        if (byRole) {
+          prodContents = withUsePath(prodContents, [
+            '../environments',
+            'components',
+          ]);
+        }
         pushFile(
           files,
           scaffoldRoot,
           `${dir}/${prodStem}${ext}`,
-          productContents(prodStem, envStems, compFileStems, {
-            projectStem: projStem,
-          }),
+          prodContents,
           'product',
         );
         for (const fileStem of compFileStems) {
-          pushFile(
-            files,
-            scaffoldRoot,
-            `${dir}/${fileStem}${ext}`,
-            componentContents(fileStem, envStems),
-            'component',
-          );
+          const compRel = byRole
+            ? `${dir}/components/${fileStem}${ext}`
+            : `${dir}/${fileStem}${ext}`;
+          let compContents = componentContents(fileStem, envStems);
+          if (byRole) {
+            compContents = withUsePath(compContents, ['../../environments']);
+          }
+          pushFile(files, scaffoldRoot, compRel, compContents, 'component');
         }
       }
       // Compile root: first product file (never the coordination project file)
@@ -454,6 +517,7 @@ export function buildStructurePlan(input: StructurePlanInput): StructurePlan {
   appendSpecFile(files, scaffoldRoot, {
     tier: input.tier,
     rootFileAbs: rootFile,
+    layout,
     environments: envStems,
     createdBy,
     now: input.now,
@@ -478,6 +542,7 @@ export function buildStructurePlan(input: StructurePlanInput): StructurePlan {
     rootFile,
     conflicts,
     treeLines: buildTreeLines(name, files),
+    layout,
   };
 }
 
@@ -486,6 +551,7 @@ export function planToDryRunJson(plan: StructurePlan): {
   tier: StructureTier;
   scaffoldRoot: string;
   rootFile: string;
+  layout: DirectoryLayout;
   conflicts: string[];
   treeLines: string[];
   files: { relativePath: string; role: PlannedFileRole }[];
@@ -495,6 +561,7 @@ export function planToDryRunJson(plan: StructurePlan): {
     tier: plan.tier,
     scaffoldRoot: plan.scaffoldRoot,
     rootFile: plan.rootFile,
+    layout: plan.layout,
     conflicts: plan.conflicts,
     treeLines: plan.treeLines,
     files: plan.files.map((f) => ({

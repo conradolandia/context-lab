@@ -150,7 +150,16 @@ Command **ConTeXt: New Document Structure…** (`context.projectManager.create`)
 | Product + components | One output, split parts (no project tier) | Product file |
 | Project tier (§1.4) | Several related products | Each product (never the `\startproject` coordination file) |
 
-After create: writes `.context/structure.json` (tier + default compile root), opens that compile root, sets `context.rootFile` when enabled, refreshes the Project view, and may offer `files.associations["*.tex"] = "context"`. Scaffolds use `.tex` only and do not insert `% !TEX root`. Layered environments (ordered list) are supported.
+After create: writes `.context/structure.json` (tier, optional `layout`, default compile root), opens that compile root, sets `context.rootFile` when enabled, refreshes the Project view, and may offer `files.associations["*.tex"] = "context"`. Scaffolds use `.tex` only and do not insert `% !TEX root`. Layered environments (ordered list) are supported.
+
+On the names step (tiers other than single document), **Directory layout** chooses:
+
+| Layout | Behaviour |
+| --- | --- |
+| **Flat** (default) | Wiki §4/§5 trees — files beside each other |
+| **By role** | Role folders + `\usepath`. Product tier: `environments/`, `products/<stem>.tex`, `components/`. Project tier: `environments/` and `project_*.tex` at series root; each product as `<stem>/<stem>.tex` with `<stem>/components/` (not under `products/`) |
+
+Absent `layout` in older `.context/structure.json` means flat. Upgrade preserves the layout from the spec.
 
 **Upgrade:** **ConTeXt: Upgrade Document Structure…** (`context.projectManager.upgrade`) moves a scaffold one rung up the §1 ladder when a valid `.context/structure.json` is present. Without a spec, the command refuses and can open the create wizard. Multi-product series still use **one active** `context.rootFile` (a product); switch via the status bar or Project view **Set as Main (Root) File**.
 
