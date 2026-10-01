@@ -124,6 +124,15 @@ body {
   transition: opacity 0.4s ease;
 }
 
+/* Invisible PDF Link hit targets — no visible annotation layer */
+.pdf-link {
+  position: absolute;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  z-index: 1;
+}
+
 .building #statusText::before {
   content: "";
   display: inline-block;

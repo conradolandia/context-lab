@@ -21,6 +21,7 @@ export type ViewerMessage =
     }
   | { type: 'loadError'; message: string }
   | { type: 'click'; page: number; x: number; y: number; pdfY?: number; pageHeight?: number }
+  | { type: 'openExternal'; url: string }
   | {
       type: 'highlight';
       page: number;
@@ -448,6 +449,27 @@ export class PdfPanel {
           pageHeight: msg.pageHeight,
         });
         break;
+      case 'openExternal': {
+        const raw = typeof msg.url === 'string' ? msg.url.trim() : '';
+        if (!raw) {
+          break;
+        }
+        let uri: vscode.Uri;
+        try {
+          uri = vscode.Uri.parse(raw);
+        } catch {
+          this.onLog?.(`[viewer] openExternal rejected (parse): ${raw}`);
+          break;
+        }
+        const scheme = uri.scheme.toLowerCase();
+        if (scheme !== 'http' && scheme !== 'https' && scheme !== 'mailto') {
+          this.onLog?.(`[viewer] openExternal rejected (scheme=${scheme})`);
+          break;
+        }
+        this.onLog?.(`[viewer] openExternal ${uri.toString(true)}`);
+        void vscode.env.openExternal(uri);
+        break;
+      }
       default:
         break;
     }
