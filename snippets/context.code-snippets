@@ -6,6 +6,7 @@
       "\\project ${2:project}",
       "\\environment ${3:environment}",
       "\\component ${4:component}",
+      "$0",
       "\\stopproduct"
     ],
     "description": "Define a product (compile target) with common loads"
@@ -36,6 +37,7 @@
       "\\startproject ${1:name}",
       "\\environment ${2:environment}",
       "\\product ${3:product}",
+      "$0",
       "\\stopproject"
     ],
     "description": "Define a project coordination file"
@@ -58,6 +60,15 @@
       "\\stopdocument"
     ],
     "description": "Document environment"
+  },
+  "Start text": {
+    "prefix": "starttext",
+    "body": [
+      "\\starttext",
+      "$0",
+      "\\stoptext"
+    ],
+    "description": "Text body environment"
   },
   "Start chapter": {
     "prefix": "startchapter",
@@ -83,6 +94,7 @@
       "\\startitemize",
       "\\item ${1:first}",
       "\\item ${2:second}",
+      "$0",
       "\\stopitemize"
     ],
     "description": "Itemize list (use [n] for numbered)"
@@ -104,5 +116,87 @@
       "\\stopframed"
     ],
     "description": "Framed block"
+  },
+  "Start typing": {
+    "prefix": "starttyping",
+    "body": [
+      "\\starttyping",
+      "$0",
+      "\\stoptyping"
+    ],
+    "description": "Verbatim typing block"
+  },
+  "Start alignment": {
+    "prefix": "startalignment",
+    "body": [
+      "\\startalignment[${1:middle}]",
+      "$0",
+      "\\stopalignment"
+    ],
+    "description": "Alignment block"
+  },
+  "Start formula": {
+    "prefix": "startformula",
+    "body": [
+      "\\startformula",
+      "$0",
+      "\\stopformula"
+    ],
+    "description": "Display formula"
+  },
+  "Start placeformula": {
+    "prefix": "startplaceformula",
+    "body": [
+      "\\startplaceformula${1:[reference=${2:eq:1}]}",
+      "$0",
+      "\\stopplaceformula"
+    ],
+    "description": "Placed formula (optional [reference=…])"
+  },
+  "Start placefigure": {
+    "prefix": "startplacefigure",
+    "body": [
+      "\\startplacefigure[${1:location=here}]",
+      "$0",
+      "\\stopplacefigure"
+    ],
+    "description": "Placed figure float"
+  },
+  "Start placetable": {
+    "prefix": "startplacetable",
+    "body": [
+      "\\startplacetable[${1:location=here}]",
+      "$0",
+      "\\stopplacetable"
+    ],
+    "description": "Placed table float"
+  },
+  "Start tabulate": {
+    "prefix": "starttabulate",
+    "body": [
+      "\\starttabulate[${1:|l|l|}]",
+      "\\NC ${2:a} \\NC ${3:b} \\NC\\NR",
+      "$0",
+      "\\stoptabulate"
+    ],
+    "description": "Tabulate table"
+  },
+  "Start buffer": {
+    "prefix": "startbuffer",
+    "body": [
+      "\\startbuffer[${1:name}]",
+      "$0",
+      "\\stopbuffer"
+    ],
+    "description": "Named buffer"
+  },
+  "Start luacode": {
+    "prefix": "startluacode",
+    "body": [
+      "\\startluacode",
+      "$0",
+      "\\stopluacode"
+    ],
+    "description": "Lua code block"
   }
 }
