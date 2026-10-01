@@ -50,6 +50,12 @@ let workerMode = 'unknown';
 let loadedCacheKey = null;
 /** Prevent overlapping openDocument for the same key */
 let openInFlightKey = null;
+/**
+ * Cached Link annotations per page (PDF-space rect + dest/url).
+ * Cleared on document reload; overlays are remounted on each render/zoom.
+ * @type {Map<number, Array<{rect: number[], url?: string, dest?: unknown}>>}
+ */
+const pageLinkCache = new Map();
 
 function setStatus(text, building = false) {
   statusText.textContent = text;
@@ -221,6 +227,178 @@ function scaledSize(pageNum) {
   return { w, h };
 }
 
+function clearPageLinkCache() {
+  pageLinkCache.clear();
+}
+
+/**
+ * Fetch and cache Link-subtype annotations only (no full annotation layer).
+ * @param {import('pdfjs-dist').PDFPageProxy} page
+ * @param {number} pageNum
+ */
+async function ensurePageLinks(page, pageNum) {
+  if (pageLinkCache.has(pageNum)) {
+    return pageLinkCache.get(pageNum);
+  }
+  const annotations = await page.getAnnotations();
+  /** @type {Array<{rect: number[], url?: string, dest?: unknown}>} */
+  const links = [];
+  for (const ann of annotations) {
+    if (ann?.subtype !== 'Link') {
+      continue;
+    }
+    const rect = ann.rect;
+    if (!Array.isArray(rect) || rect.length < 4) {
+      continue;
+    }
+    /** @type {{rect: number[], url?: string, dest?: unknown}} */
+    const entry = { rect: [rect[0], rect[1], rect[2], rect[3]] };
+    if (typeof ann.url === 'string' && ann.url) {
+      entry.url = ann.url;
+    } else if (ann.dest != null) {
+      entry.dest = ann.dest;
+    } else {
+      continue;
+    }
+    links.push(entry);
+  }
+  pageLinkCache.set(pageNum, links);
+  return links;
+}
+
+/**
+ * Invisible hit targets over link rects (cursor:pointer only).
+ * @param {HTMLElement} pageDiv
+ * @param {{ convertToViewportRectangle: (r: number[]) => number[] }} viewport
+ * @param {Array<{rect: number[], url?: string, dest?: unknown}>} links
+ */
+function mountLinkOverlays(pageDiv, viewport, links) {
+  for (const link of links) {
+    const vr = viewport.convertToViewportRectangle(link.rect);
+    const left = Math.min(vr[0], vr[2]);
+    const top = Math.min(vr[1], vr[3]);
+    const width = Math.abs(vr[2] - vr[0]);
+    const height = Math.abs(vr[3] - vr[1]);
+    if (!(width > 0.5) || !(height > 0.5)) {
+      continue;
+    }
+    const el = document.createElement('div');
+    el.className = 'pdf-link';
+    el.setAttribute('role', 'link');
+    el.tabIndex = 0;
+    el.setAttribute(
+      'aria-label',
+      link.url ? `External link: ${link.url}` : 'Internal PDF link',
+    );
+    if (link.url) {
+      el.title = link.url;
+    }
+    el.style.left = `${left}px`;
+    el.style.top = `${top}px`;
+    el.style.width = `${width}px`;
+    el.style.height = `${height}px`;
+    el._pdfLink = link;
+    pageDiv.appendChild(el);
+  }
+}
+
+function isAllowedExternalUrl(url) {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'http:' || u.protocol === 'https:' || u.protocol === 'mailto:';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * @param {{url?: string, dest?: unknown}} link
+ */
+async function followPdfLink(link) {
+  if (!pdfDoc) {
+    return;
+  }
+  if (link.url) {
+    if (!isAllowedExternalUrl(link.url)) {
+      return;
+    }
+    vscode.postMessage({ type: 'openExternal', url: link.url });
+    return;
+  }
+  if (link.dest == null) {
+    return;
+  }
+  const resolved = await resolveDestination(link.dest);
+  if (!resolved) {
+    return;
+  }
+  await goToDestination(resolved);
+}
+
+/**
+ * @param {string | unknown[]} dest
+ * @returns {Promise<{pageNumber: number, explicit: unknown[]}|null>}
+ */
+async function resolveDestination(dest) {
+  if (!pdfDoc) {
+    return null;
+  }
+  let explicit = dest;
+  if (typeof dest === 'string') {
+    explicit = await pdfDoc.getDestination(dest);
+  }
+  if (!Array.isArray(explicit) || explicit.length === 0 || !explicit[0]) {
+    return null;
+  }
+  try {
+    const pageIndex = await pdfDoc.getPageIndex(explicit[0]);
+    return { pageNumber: pageIndex + 1, explicit };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Scroll to an internal destination using existing viewer scroll APIs.
+ * @param {{pageNumber: number, explicit: unknown[]}} resolved
+ */
+async function goToDestination(resolved) {
+  const { pageNumber, explicit } = resolved;
+  currentPage = pageNumber;
+  updateToolbar();
+  const pageDiv = pageEls.get(pageNumber);
+  if (pageDiv) {
+    pageDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  await ensurePageRendered(pageNumber);
+
+  const view = explicit[1];
+  const viewName =
+    view && typeof view === 'object' && 'name' in view
+      ? /** @type {{name?: string}} */ (view).name
+      : view;
+  if (viewName !== 'XYZ') {
+    return;
+  }
+  const left = explicit[2];
+  const top = explicit[3];
+  const el = pageEls.get(pageNumber);
+  const viewport = el?._viewport;
+  if (
+    !el ||
+    !viewport ||
+    typeof left !== 'number' ||
+    typeof top !== 'number' ||
+    !Number.isFinite(left) ||
+    !Number.isFinite(top)
+  ) {
+    return;
+  }
+  const [vx, vy] = viewport.convertToViewportPoint(left, top);
+  viewer.scrollTop = Math.max(0, el.offsetTop + vy - 48);
+  viewer.scrollLeft = Math.max(0, el.offsetLeft + vx - 48);
+}
+
 function layoutPlaceholders() {
   viewer.innerHTML = '';
   pageEls.clear();
@@ -302,6 +480,12 @@ async function renderPageCanvas(pageNum) {
 
     await page.render({ canvasContext: ctx, viewport }).promise;
     renderedPages.add(pageNum);
+
+    // Link hit targets only (invisible). No PDF.js AnnotationLayer.
+    const links = await ensurePageLinks(page, pageNum);
+    if (pageEls.get(pageNum) === pageDiv && renderedPages.has(pageNum)) {
+      mountLinkOverlays(pageDiv, viewport, links);
+    }
 
     if (pendingHighlight && pendingHighlight.page === pageNum) {
       paintHighlight();
@@ -530,6 +714,7 @@ async function openDocument(source, cacheKey, useRange) {
       }
       pdfDoc = null;
     }
+    clearPageLinkCache();
 
     let loadingTask;
     if (source.data != null) {
@@ -668,40 +853,53 @@ async function goToPage(pageNum) {
   await ensurePageRendered(n);
 }
 
-// Single delegated Ctrl/Cmd+click — never register per-page listeners (avoids doubles).
+// Single delegated click — never register per-page listeners (avoids doubles).
+// Ctrl/Cmd+click → SyncTeX (wins over links). Plain click → Link hit target only.
 viewer.addEventListener('click', (ev) => {
-  if (!ev.ctrlKey && !ev.metaKey) {
+  if (!pdfDoc) {
     return;
   }
-  const pageDiv = ev.target?.closest?.('.page');
-  if (!pageDiv || !pdfDoc) {
+
+  if (ev.ctrlKey || ev.metaKey) {
+    const pageDiv = ev.target?.closest?.('.page');
+    if (!pageDiv) {
+      return;
+    }
+    const pageNum = Number(pageDiv.dataset.page);
+    const viewport = pageDiv._viewport;
+    if (!viewport || !pageNum) {
+      return;
+    }
+    ev.preventDefault();
+    ev.stopPropagation();
+    const rect = pageDiv.getBoundingClientRect();
+    const cssX = ev.clientX - rect.left;
+    const cssY = ev.clientY - rect.top;
+    const [pdfX, pdfY] = viewport.convertToPdfPoint(cssX, cssY);
+    // mtx-synctex --y is top-down; PDF.js pdfY is bottom-up.
+    const view = pageDiv._pageView || viewport.viewBox || [0, 0, 612, 792];
+    const yMax = view[3];
+    const yMin = view[1];
+    const pageHeight = yMax - yMin;
+    const mtxY = yMax - pdfY;
+    vscode.postMessage({
+      type: 'click',
+      page: pageNum,
+      x: pdfX,
+      y: mtxY,
+      pdfY,
+      pageHeight,
+    });
     return;
   }
-  const pageNum = Number(pageDiv.dataset.page);
-  const viewport = pageDiv._viewport;
-  if (!viewport || !pageNum) {
+
+  const linkEl = ev.target?.closest?.('.pdf-link');
+  if (!linkEl || !linkEl._pdfLink) {
     return;
   }
   ev.preventDefault();
   ev.stopPropagation();
-  const rect = pageDiv.getBoundingClientRect();
-  const cssX = ev.clientX - rect.left;
-  const cssY = ev.clientY - rect.top;
-  const [pdfX, pdfY] = viewport.convertToPdfPoint(cssX, cssY);
-  // mtx-synctex --y is top-down; PDF.js pdfY is bottom-up.
-  const view = pageDiv._pageView || viewport.viewBox || [0, 0, 612, 792];
-  const yMax = view[3];
-  const yMin = view[1];
-  const pageHeight = yMax - yMin;
-  const mtxY = yMax - pdfY;
-  vscode.postMessage({
-    type: 'click',
-    page: pageNum,
-    x: pdfX,
-    y: mtxY,
-    pdfY,
-    pageHeight,
-  });
+  void followPdfLink(linkEl._pdfLink);
 });
 
 btnPrev.addEventListener('click', () => {
