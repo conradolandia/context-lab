@@ -1,6 +1,6 @@
 {
   "Start product": {
-    "prefix": "startproduct",
+    "prefix": ["startproduct", "\\startproduct"],
     "body": [
       "\\startproduct ${1:name}",
       "\\project ${2:project}",
@@ -12,7 +12,7 @@
     "description": "Define a product (compile target) with common loads"
   },
   "Start component": {
-    "prefix": "startcomponent",
+    "prefix": ["startcomponent", "\\startcomponent"],
     "body": [
       "\\startcomponent ${1:name}",
       "\\product ${2:product}",
@@ -23,7 +23,7 @@
     "description": "Define a component with product/project back-references"
   },
   "Start environment": {
-    "prefix": "startenvironment",
+    "prefix": ["startenvironment", "\\startenvironment"],
     "body": [
       "\\startenvironment ${1:name}",
       "$0",
@@ -32,7 +32,7 @@
     "description": "Define a shared environment file"
   },
   "Start project": {
-    "prefix": "startproject",
+    "prefix": ["startproject", "\\startproject"],
     "body": [
       "\\startproject ${1:name}",
       "\\environment ${2:environment}",
@@ -43,17 +43,17 @@
     "description": "Define a project coordination file"
   },
   "Load component": {
-    "prefix": "component",
+    "prefix": ["component", "\\component"],
     "body": "\\component ${1:name}",
     "description": "Load a component by name"
   },
   "Load environment": {
-    "prefix": "environment",
+    "prefix": ["environment", "\\environment"],
     "body": "\\environment ${1:name}",
     "description": "Load an environment by name"
   },
   "Start document": {
-    "prefix": "startdocument",
+    "prefix": ["startdocument", "\\startdocument"],
     "body": [
       "\\startdocument",
       "$0",
@@ -62,7 +62,7 @@
     "description": "Document environment"
   },
   "Start text": {
-    "prefix": "starttext",
+    "prefix": ["starttext", "\\starttext"],
     "body": [
       "\\starttext",
       "$0",
@@ -71,7 +71,7 @@
     "description": "Text body environment"
   },
   "Start chapter": {
-    "prefix": "startchapter",
+    "prefix": ["startchapter", "\\startchapter"],
     "body": [
       "\\startchapter[title={${1:Title}}]",
       "$0",
@@ -80,7 +80,7 @@
     "description": "Chapter with title"
   },
   "Start section": {
-    "prefix": "startsection",
+    "prefix": ["startsection", "\\startsection"],
     "body": [
       "\\startsection[title={${1:Title}}]",
       "$0",
@@ -89,7 +89,7 @@
     "description": "Section with title"
   },
   "Start itemize": {
-    "prefix": "startitemize",
+    "prefix": ["startitemize", "\\startitemize"],
     "body": [
       "\\startitemize",
       "\\item ${1:first}",
@@ -100,7 +100,7 @@
     "description": "Itemize list (use [n] for numbered)"
   },
   "Start narrower": {
-    "prefix": "startnarrower",
+    "prefix": ["startnarrower", "\\startnarrower"],
     "body": [
       "\\startnarrower",
       "$0",
@@ -109,7 +109,7 @@
     "description": "Narrower block"
   },
   "Start framed": {
-    "prefix": "startframed",
+    "prefix": ["startframed", "\\startframed"],
     "body": [
       "\\startframed",
       "$0",
@@ -118,7 +118,7 @@
     "description": "Framed block"
   },
   "Start typing": {
-    "prefix": "starttyping",
+    "prefix": ["starttyping", "\\starttyping"],
     "body": [
       "\\starttyping",
       "$0",
@@ -127,7 +127,7 @@
     "description": "Verbatim typing block"
   },
   "Start alignment": {
-    "prefix": "startalignment",
+    "prefix": ["startalignment", "\\startalignment"],
     "body": [
       "\\startalignment[${1:middle}]",
       "$0",
@@ -136,7 +136,7 @@
     "description": "Alignment block"
   },
   "Start formula": {
-    "prefix": "startformula",
+    "prefix": ["startformula", "\\startformula"],
     "body": [
       "\\startformula",
       "$0",
@@ -145,7 +145,7 @@
     "description": "Display formula"
   },
   "Start placeformula": {
-    "prefix": "startplaceformula",
+    "prefix": ["startplaceformula", "\\startplaceformula"],
     "body": [
       "\\startplaceformula${1:[reference=${2:eq:1}]}",
       "$0",
@@ -154,7 +154,7 @@
     "description": "Placed formula (optional [reference=…])"
   },
   "Start placefigure": {
-    "prefix": "startplacefigure",
+    "prefix": ["startplacefigure", "\\startplacefigure"],
     "body": [
       "\\startplacefigure[${1:location=here}]",
       "$0",
@@ -163,7 +163,7 @@
     "description": "Placed figure float"
   },
   "Start placetable": {
-    "prefix": "startplacetable",
+    "prefix": ["startplacetable", "\\startplacetable"],
     "body": [
       "\\startplacetable[${1:location=here}]",
       "$0",
@@ -172,7 +172,7 @@
     "description": "Placed table float"
   },
   "Start tabulate": {
-    "prefix": "starttabulate",
+    "prefix": ["starttabulate", "\\starttabulate"],
     "body": [
       "\\starttabulate[${1:|l|l|}]",
       "\\NC ${2:a} \\NC ${3:b} \\NC\\NR",
@@ -182,7 +182,7 @@
     "description": "Tabulate table"
   },
   "Start buffer": {
-    "prefix": "startbuffer",
+    "prefix": ["startbuffer", "\\startbuffer"],
     "body": [
       "\\startbuffer[${1:name}]",
       "$0",
@@ -191,7 +191,7 @@
     "description": "Named buffer"
   },
   "Start luacode": {
-    "prefix": "startluacode",
+    "prefix": ["startluacode", "\\startluacode"],
     "body": [
       "\\startluacode",
       "$0",

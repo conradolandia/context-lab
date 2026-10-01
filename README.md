@@ -132,7 +132,7 @@ For **product** and **project** tiers, an optional checkbox includes a `\startdo
 
 ## Snippets
 
-Built-in snippets for language id **`context`**: structure stubs (`startproduct`, `startcomponent`, …), sectioning (`startdocument`, `startchapter`, …), and common environments (`startitemize`, `startplaceformula`, `starttyping`, …). Environment-like `\start…` snippets insert a matching `\stop…` with the cursor between them. Load commands (`component`, `environment`) stay one-liners. They appear only when the editor language is `context`.
+Built-in snippets for language id **`context`**: structure stubs (`startproduct`, `startcomponent`, …), sectioning (`startdocument`, `startchapter`, …), and common environments (`startitemize`, `startplaceformula`, `starttyping`, …). Each trigger is registered with and without a leading `\`, so accepting after typing `\` does not leave a doubled backslash. Environment-like `\start…` snippets insert a matching `\stop…` with the cursor between them. Load commands (`component`, `environment`) stay one-liners. They appear only when the editor language is `context`.
 
 User/workspace snippets: **Snippets: Configure User Snippets** → **context**, or `.vscode/<name>.code-snippets` with `"scope": "context"`.
 
