@@ -2,7 +2,7 @@
   "name": "context-tools",
   "displayName": "ConTeXt Tools",
   "description": "ConTeXt SyncTeX PDF preview, DigestiF language server, TextMate grammar, and snippets",
-  "version": "0.1.42",
+  "version": "0.1.43",
   "publisher": "context-lab",
   "license": "GPL-2.0-only",
   "repository": {
@@ -105,6 +105,10 @@
         "title": "ConTeXt: Show PDF"
       },
       {
+        "command": "context.openPdfInViewer",
+        "title": "Open in ConTeXt PDF Viewer"
+      },
+      {
         "command": "context.pickRootFile",
         "title": "ConTeXt: Set Main (Root) File"
       },
@@ -147,6 +151,20 @@
       }
     ],
     "menus": {
+      "explorer/context": [
+        {
+          "command": "context.openPdfInViewer",
+          "when": "resourceExtname == .pdf && resourceScheme == file",
+          "group": "navigation@50"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "context.showPdf",
+          "when": "editorLangId == context || editorLangId == tex || editorLangId == latex",
+          "group": "navigation@50"
+        }
+      ],
       "view/title": [
         {
           "command": "context.projectManager.create",
@@ -283,6 +301,11 @@
           "type": "boolean",
           "default": true,
           "description": "Enable SyncTeX forward and backward navigation."
+        },
+        "context.viewer.openExistingOnActivate": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, on activation open the root job PDF in the ConTeXt viewer if PDF and sibling SyncTeX already pass the artifact gate (no rebuild). Default false: use ConTeXt: Show PDF or Explorer → Open in ConTeXt PDF Viewer."
         },
         "context.debugOutput": {
           "type": "boolean",

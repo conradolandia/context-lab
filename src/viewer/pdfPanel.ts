@@ -89,6 +89,11 @@ export interface ForwardSyncPayload {
   skipHighlight?: boolean;
 }
 
+export type PdfPanelState = {
+  pdfPath?: string;
+  jobDir?: string;
+};
+
 export { DEFAULT_PDF_PANEL_TITLE, pdfPanelTitle } from './pdfPanelTitle';
 
 /**
@@ -97,9 +102,16 @@ export { DEFAULT_PDF_PANEL_TITLE, pdfPanelTitle } from './pdfPanelTitle';
  * Happy path: serve the gated job PDF from a loopback range server so PDF.js
  * can fetch the first page without downloading the whole file via vscode-cdn.
  * Falls back to asWebviewUri, then bytes on 401.
+ *
+ * Singleton: one live webview for `context.pdfPreview`. Restored panels are
+ * adopted via {@link adoptPanel}; {@link setJobDir} updates resource roots
+ * without dispose+recreate.
  */
 export class PdfPanel {
   public static readonly viewType = 'context.pdfPreview';
+
+  /** Restored by serializer before (or instead of) createWebviewPanel. */
+  private static pendingRestored: vscode.WebviewPanel | undefined;
 
   private panel: vscode.WebviewPanel | undefined;
   private currentPdfPath: string | undefined;
@@ -117,6 +129,7 @@ export class PdfPanel {
   private loadInFlightKey: string | undefined;
   private readonly rangeServer = new PdfRangeServer();
   private messageSub: vscode.Disposable | undefined;
+  private disposeSub: vscode.Disposable | undefined;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -131,10 +144,47 @@ export class PdfPanel {
     this.jobDirRoots = (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri);
   }
 
+  /** Stash a panel from {@link vscode.window.registerWebviewPanelSerializer}. */
+  public static stashRestoredPanel(panel: vscode.WebviewPanel): void {
+    if (PdfPanel.pendingRestored && PdfPanel.pendingRestored !== panel) {
+      PdfPanel.pendingRestored.dispose();
+    }
+    PdfPanel.pendingRestored = panel;
+  }
+
   public dispose(): void {
     this.messageSub?.dispose();
+    this.disposeSub?.dispose();
     this.panel?.dispose();
+    this.panel = undefined;
     this.rangeServer.dispose();
+  }
+
+  public hasPanel(): boolean {
+    return !!this.panel;
+  }
+
+  /**
+   * Adopt a restored or pre-existing webview panel (serializer / reuse).
+   * If this controller already owns a different panel, the other is disposed
+   * so only one `context.pdfPreview` tab remains.
+   */
+  public adoptPanel(panel: vscode.WebviewPanel): void {
+    if (PdfPanel.pendingRestored === panel) {
+      PdfPanel.pendingRestored = undefined;
+    }
+    if (this.panel === panel) {
+      this.wirePanel(panel, false);
+      return;
+    }
+    if (this.panel && this.panel !== panel) {
+      const old = this.panel;
+      this.panel = undefined;
+      this.messageSub?.dispose();
+      this.disposeSub?.dispose();
+      old.dispose();
+    }
+    this.wirePanel(panel, false);
   }
 
   public setJobDir(jobDir: string): void {
@@ -143,14 +193,13 @@ export class PdfPanel {
       return;
     }
     this.jobDirRoots = [jobUri, ...this.jobDirRoots];
-    // Avoid tearing down the panel (causes duplicate ready→loadPdf). Roots are
-    // only needed for asWebviewUri fallback; happy path uses the range server.
+    // Update roots in place — dispose+recreate used to multiply tabs and
+    // retrigger ready→loadPdf. Range-server happy path does not need roots.
     if (this.panel && this.preferWebviewUri) {
-      const col = this.panel.viewColumn;
-      this.panel.dispose();
-      this.panel = undefined;
-      // Internal root refresh — do not steal the editor.
-      this.revealOrCreate(col, true);
+      this.panel.webview.options = {
+        enableScripts: true,
+        localResourceRoots: this.resourceRoots(),
+      };
     }
   }
 
@@ -161,6 +210,39 @@ export class PdfPanel {
     ];
   }
 
+  private wirePanel(panel: vscode.WebviewPanel, resetHtml: boolean): void {
+    this.panel = panel;
+    this.panel.webview.options = {
+      enableScripts: true,
+      localResourceRoots: this.resourceRoots(),
+    };
+    if (resetHtml || !this.panel.webview.html) {
+      this.panel.webview.html = this.getHtml(this.panel.webview);
+    }
+    this.messageSub?.dispose();
+    this.messageSub = this.panel.webview.onDidReceiveMessage((msg: ViewerMessage) => {
+      this.handleMessage(msg);
+    });
+    this.disposeSub?.dispose();
+    this.disposeSub = this.panel.onDidDispose(() => {
+      if (this.panel === panel) {
+        this.panel = undefined;
+        this.loadedCacheKey = undefined;
+        this.loadInFlightKey = undefined;
+      }
+    });
+    this.applyPanelTitle();
+  }
+
+  private findExistingViewTypePanel(): vscode.WebviewPanel | undefined {
+    if (PdfPanel.pendingRestored) {
+      const pending = PdfPanel.pendingRestored;
+      PdfPanel.pendingRestored = undefined;
+      return pending;
+    }
+    return undefined;
+  }
+
   /**
    * Reveal an existing PDF panel or create one.
    * @param preserveFocus When true, keep editor focus (VS Code reveal/create preserveFocus).
@@ -169,6 +251,13 @@ export class PdfPanel {
     column?: vscode.ViewColumn,
     preserveFocus = false,
   ): vscode.WebviewPanel {
+    if (!this.panel) {
+      const existing = this.findExistingViewTypePanel();
+      if (existing) {
+        this.adoptPanel(existing);
+      }
+    }
+
     if (this.panel) {
       this.panel.reveal(column ?? vscode.ViewColumn.Beside, preserveFocus);
       return this.panel;
@@ -188,17 +277,7 @@ export class PdfPanel {
       },
     );
 
-    this.panel.webview.html = this.getHtml(this.panel.webview);
-    this.messageSub?.dispose();
-    this.messageSub = this.panel.webview.onDidReceiveMessage((msg: ViewerMessage) => {
-      this.handleMessage(msg);
-    });
-    this.panel.onDidDispose(() => {
-      this.panel = undefined;
-      this.loadedCacheKey = undefined;
-      this.loadInFlightKey = undefined;
-    });
-
+    this.wirePanel(this.panel, true);
     return this.panel;
   }
 
@@ -297,6 +376,14 @@ export class PdfPanel {
 
   public getCurrentPdfPath(): string | undefined {
     return this.currentPdfPath;
+  }
+
+  /** Host-side state for serializer revive after reload. */
+  public getPersistedState(): PdfPanelState {
+    return {
+      pdfPath: this.currentPdfPath,
+      jobDir: this.currentPdfPath ? path.dirname(this.currentPdfPath) : undefined,
+    };
   }
 
   private async loadPdf(pdfPath: string, cacheKey: string): Promise<void> {
