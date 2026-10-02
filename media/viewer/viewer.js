@@ -488,9 +488,9 @@ async function renderPageCanvas(pageNum) {
     }
 
     if (pendingHighlight && pendingHighlight.page === pageNum) {
-      paintHighlight();
+      paintHighlight({ scroll: false });
     } else if (activeHighlight && activeHighlight.page === pageNum) {
-      paintHighlight();
+      paintHighlight({ scroll: false });
     }
   } finally {
     renderingPages.delete(pageNum);
@@ -563,8 +563,9 @@ function scheduleSyncVisible() {
   }, 50);
 }
 
-function paintHighlight() {
+function paintHighlight(opts) {
   clearHighlightDom();
+  const shouldScroll = opts?.scroll === true;
   const msg = activeHighlight;
   if (!msg || !pdfDoc) {
     return;
@@ -572,9 +573,9 @@ function paintHighlight() {
   const pageDiv = pageEls.get(msg.page);
   if (!pageDiv || !renderedPages.has(msg.page)) {
     pendingHighlight = msg;
-    void ensurePageRendered(msg.page).then(() => {
+    void ensurePageRendered(msg.page, { scroll: shouldScroll }).then(() => {
       if (activeHighlight && activeHighlight.page === msg.page) {
-        paintHighlight();
+        paintHighlight({ scroll: shouldScroll });
       }
     });
     return;
@@ -599,7 +600,11 @@ function paintHighlight() {
     hl.style.width = `${Math.max(box.width, 8)}px`;
     hl.style.height = `${Math.max(box.height, 8)}px`;
     still.appendChild(hl);
-    hl.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+    // Only scroll on a fresh forward SyncTeX (`applyHighlight`). Re-paints from
+    // virtualized render / zoom / layout must not fight the user's scroll.
+    if (shouldScroll) {
+      hl.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+    }
 
     vscode.postMessage({
       type: 'highlight',
@@ -629,15 +634,16 @@ function applyHighlight(raw) {
   if (el) {
     el.scrollIntoView({ behavior: 'instant', block: 'center' });
   }
-  paintHighlight();
+  paintHighlight({ scroll: true });
 }
 
-async function ensurePageRendered(pageNum) {
+async function ensurePageRendered(pageNum, opts) {
   if (!pdfDoc) {
     return;
   }
   const el = pageEls.get(pageNum);
-  if (el) {
+  // Default: nudge into view only when intentionally seeking a page.
+  if (el && opts?.scroll !== false) {
     el.scrollIntoView({ behavior: 'instant', block: 'nearest' });
   }
   await syncVisiblePages();
@@ -691,8 +697,9 @@ async function openDocument(source, cacheKey, useRange) {
       reused: true,
       virtual: true,
     });
+    // Reuse must not re-scroll to a stored SyncTeX target.
     if (activeHighlight) {
-      paintHighlight();
+      paintHighlight({ scroll: false });
     }
     return;
   }
@@ -700,6 +707,16 @@ async function openDocument(source, cacheKey, useRange) {
     return;
   }
   openInFlightKey = cacheKey || 'inflight';
+
+  // Preserve viewport across PDF reload (build finish). Do not replay SyncTeX.
+  const preserveViewport = !!pdfDoc && loadedCacheKey != null;
+  const savedScale = currentScale;
+  const savedScrollTop = viewer.scrollTop;
+  const savedScrollLeft = viewer.scrollLeft;
+  const savedPage = currentPage;
+  activeHighlight = null;
+  pendingHighlight = null;
+  clearHighlightDom();
 
   setStatus('Loading PDF…');
   const tStart = performance.now();
@@ -750,11 +767,23 @@ async function openDocument(source, cacheKey, useRange) {
     workerMode = detectWorkerMode(loadingTask);
     const loadMs = Math.round(performance.now() - tStart);
     loadedCacheKey = cacheKey || null;
-    currentPage = 1;
+    if (preserveViewport) {
+      currentScale = savedScale;
+      currentPage = Math.min(
+        Math.max(1, savedPage),
+        pdfDoc.numPages || savedPage,
+      );
+    } else {
+      currentPage = 1;
+    }
 
     const tMeasure = performance.now();
     await measurePages(pdfDoc);
     layoutPlaceholders();
+    if (preserveViewport) {
+      viewer.scrollTop = savedScrollTop;
+      viewer.scrollLeft = savedScrollLeft;
+    }
     const t0 = performance.now();
     await syncVisiblePages();
     const firstPageMs = Math.round(performance.now() - t0);
@@ -772,11 +801,8 @@ async function openDocument(source, cacheKey, useRange) {
       worker: workerMode,
       virtual: true,
       useRange: !!useRange,
+      preservedViewport: preserveViewport,
     });
-
-    if (activeHighlight) {
-      paintHighlight();
-    }
   } catch (err) {
     loadedCacheKey = null;
     const message = err instanceof Error ? err.message : String(err);
@@ -826,7 +852,7 @@ async function setScale(nextScale, anchor) {
     reused: true,
   });
   if (activeHighlight) {
-    paintHighlight();
+    paintHighlight({ scroll: false });
   }
 }
 

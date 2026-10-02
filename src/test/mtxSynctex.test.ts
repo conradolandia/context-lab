@@ -18,8 +18,11 @@ import {
   SynctexError,
   parseSynctexPageBoxes,
   nearestSynctexBox,
+  preferCentralForwardBox,
+  synctexFilenamesMatch,
   isSuspiciousFileStartHit,
   distanceToBox,
+  FORWARD_EDGE_BAND_FRAC,
 } from '../synctex/mtxSynctex';
 
 const fixturesDir = path.join(__dirname, 'fixtures');
@@ -202,6 +205,33 @@ describe('synctex page boxes (caption / float refine)', () => {
     assert.equal(isSuspiciousFileStartHit(1, 343), true);
     assert.equal(isSuspiciousFileStartHit(1, 10), false);
     assert.equal(isSuspiciousFileStartHit(88, 343), false);
+  });
+});
+
+describe('forward SyncTeX central-box preference', () => {
+  const text = readFixture('page-with-header-footer.synctex.txt');
+
+  it('prefers mid-page same-line box over header/footer band hits', () => {
+    const boxes = parseSynctexPageBoxes(text, 10);
+    const hit = preferCentralForwardBox(boxes, 'chapter.tex', 42, 800);
+    assert.ok(hit);
+    assert.equal(hit!.y, 400);
+    assert.ok(hit!.w >= 300);
+  });
+
+  it('matches synctex paths by basename / relative suffix', () => {
+    assert.equal(synctexFilenamesMatch('chapter.tex', '/proj/chapter.tex'), true);
+    assert.equal(synctexFilenamesMatch('include/chapter.tex', 'chapter.tex'), true);
+    assert.equal(synctexFilenamesMatch('a.tex', 'b.tex'), false);
+  });
+
+  it('returns undefined when no box matches the line', () => {
+    const boxes = parseSynctexPageBoxes(text, 10);
+    assert.equal(preferCentralForwardBox(boxes, 'chapter.tex', 7, 800), undefined);
+  });
+
+  it('exposes a small edge-band fraction for forward picks', () => {
+    assert.ok(FORWARD_EDGE_BAND_FRAC > 0 && FORWARD_EDGE_BAND_FRAC < 0.2);
   });
 });
 

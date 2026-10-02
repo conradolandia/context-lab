@@ -87,9 +87,9 @@ Status bar shows `ConTeXt: <rootname>` (click to set or clear). Build / Show PDF
 | Zoom PDF | Toolbar **+/-** / **Fit**, editable `%`, **Ctrl+wheel** (macOS: **Cmd+wheel**) |
 | Refresh TextMate keywords from LMTX | **ConTeXt: Refresh command keywords** (then reload the window) |
 
-Build uses `context --synctex=repeat` plus `context.build.args`. The viewer keeps the last good PDF while a build runs, then reloads after a stability gate.
+Build uses `context --synctex=repeat` plus `context.build.args`. The viewer keeps the last good PDF while a build runs, then reloads after a stability gate and preserves the current scroll position and zoom (it does not replay the last Forward SyncTeX jump).
 
-SyncTeX marks text, not pure image areas; clicks on figures with no text usually show a short toast. Caption clicks may resolve coarsely.
+SyncTeX marks text, not pure image areas; clicks on figures with no text usually show a short toast. Caption clicks may resolve coarsely. Forward SyncTeX prefers same-line boxes nearer the vertical page middle so header/footer landings are less common.
 
 ## DigestiF
 
