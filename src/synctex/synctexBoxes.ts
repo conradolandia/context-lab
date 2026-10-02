@@ -3,8 +3,8 @@ import * as fs from 'node:fs';
 /**
  * One ConTeXt SyncTeX content box (`h` / `r` records from the `.synctex` file).
  * Raw file values are usually TeX scaled points (see {@link SYNCTEX_SP_PER_PT});
- * y increases downward from the page top (SyncTeX / mtx `--report` convention).
- * These are not mtx `--find` boxes (`--find` returns PDF bottom-up points).
+ * y increases downward from the page top (SyncTeX / mtx `--find` / `--report`).
+ * After unit scale, these share coordinate space with mtx `--find` boxes.
  */
 export interface SynctexBox {
   fileId: string;
@@ -120,9 +120,9 @@ export function readSynctexPageBoxes(
 }
 
 /**
- * Scale factor that converts raw `.synctex` box coords → PDF / mtx `--find` points.
- * Returns `1` when boxes already look pt-sized, `65536` when they look like sp,
- * or `null` when conversion is ambiguous (caller should skip refine).
+ * Scale factor that converts raw `.synctex` box coords → mtx `--find` points
+ * (same top-down space). Returns `1` when boxes already look pt-sized, `65536`
+ * when they look like sp, or `null` when conversion is ambiguous (skip refine).
  */
 export function synctexUnitScaleToPt(
   boxes: SynctexBox[],
@@ -320,6 +320,53 @@ export function isOversizedForwardBox(
   return boxArea(box) > pageArea * FORWARD_MAX_BOX_PAGE_FRAC;
 }
 
+/** Max |Δline| when widening forward edge-band refine past the exact line. */
+export const FORWARD_NEARBY_LINE_MAX = 8;
+
+function pickBestForwardBox(
+  pool: SynctexBox[],
+  pageHeight: number,
+  pageWidth: number,
+  near: { x: number; y: number },
+  /** When true, never return a box whose center sits in the edge band. */
+  requireNonEdge: boolean,
+): SynctexBox | undefined {
+  if (pool.length === 0) {
+    return undefined;
+  }
+  const band = Math.max(24, pageHeight * FORWARD_EDGE_BAND_FRAC);
+  const compact = pool.filter((b) => !isOversizedForwardBox(b, pageHeight, pageWidth));
+  const candidates = compact.length > 0 ? compact : pool;
+
+  let best: SynctexBox | undefined;
+  let bestInEdge = true;
+  let bestDist = Infinity;
+  let bestArea = Infinity;
+
+  for (const box of candidates) {
+    const cy = boxVerticalCenter(box);
+    const inEdge = cy < band || cy > pageHeight - band;
+    if (requireNonEdge && inEdge) {
+      continue;
+    }
+    const dist = distanceToBox(box, near.x, near.y);
+    const area = boxArea(box);
+    const better =
+      !best ||
+      (bestInEdge && !inEdge) ||
+      (inEdge === bestInEdge &&
+        (dist < bestDist - 1e-9 ||
+          (Math.abs(dist - bestDist) <= 1e-9 && area < bestArea)));
+    if (better) {
+      best = box;
+      bestInEdge = inEdge;
+      bestDist = dist;
+      bestArea = area;
+    }
+  }
+  return best;
+}
+
 /**
  * Among boxes for the same source file+line: skip page-sized boxes when a
  * compact candidate exists; prefer hits outside a thin top/bottom band; among
@@ -341,35 +388,47 @@ export function pickForwardSameLineBox(
   }
   const h = pageHeight ?? estimatePageHeightFromBoxes(boxes);
   const w = estimatePageWidthFromBoxes(boxes);
-  const band = Math.max(24, h * FORWARD_EDGE_BAND_FRAC);
-  const refX = near?.x ?? w / 2;
-  const refY = near?.y ?? h / 2;
+  const ref = {
+    x: near?.x ?? w / 2,
+    y: near?.y ?? h / 2,
+  };
+  return pickBestForwardBox(matching, h, w, ref, false);
+}
 
-  const compact = matching.filter((b) => !isOversizedForwardBox(b, h, w));
-  const pool = compact.length > 0 ? compact : matching;
+/**
+ * Widen forward refine: try nearby source lines (closer Δline first), then any
+ * same-file box on the page. Only returns non-edge, non-oversized candidates
+ * so a bad header/footer `--find` hit is not painted.
+ */
+export function pickForwardNonEdgeFallbackBox(
+  boxes: SynctexBox[],
+  sourceFile: string,
+  line: number,
+  near: { x: number; y: number },
+  pageHeight?: number,
+  maxLineDelta = FORWARD_NEARBY_LINE_MAX,
+): SynctexBox | undefined {
+  const h = pageHeight ?? estimatePageHeightFromBoxes(boxes);
+  const w = estimatePageWidthFromBoxes(boxes);
+  const sameFile = boxes.filter((b) =>
+    synctexFilenamesMatch(b.filename, sourceFile),
+  );
+  if (sameFile.length === 0) {
+    return undefined;
+  }
 
-  let best: SynctexBox | undefined;
-  let bestInEdge = true;
-  let bestDist = Infinity;
-  let bestArea = Infinity;
-
-  for (const box of pool) {
-    const cy = boxVerticalCenter(box);
-    const inEdge = cy < band || cy > h - band;
-    const dist = distanceToBox(box, refX, refY);
-    const area = boxArea(box);
-    const better =
-      !best ||
-      (bestInEdge && !inEdge) ||
-      (inEdge === bestInEdge &&
-        (dist < bestDist - 1e-9 ||
-          (Math.abs(dist - bestDist) <= 1e-9 && area < bestArea)));
-    if (better) {
-      best = box;
-      bestInEdge = inEdge;
-      bestDist = dist;
-      bestArea = area;
+  for (let delta = 1; delta <= maxLineDelta; delta++) {
+    for (const candidateLine of [line - delta, line + delta]) {
+      if (candidateLine <= 0) {
+        continue;
+      }
+      const matching = sameFile.filter((b) => b.linenumber === candidateLine);
+      const hit = pickBestForwardBox(matching, h, w, near, true);
+      if (hit) {
+        return hit;
+      }
     }
   }
-  return best;
+
+  return pickBestForwardBox(sameFile, h, w, near, true);
 }

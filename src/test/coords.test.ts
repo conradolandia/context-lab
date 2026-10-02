@@ -5,6 +5,7 @@ import {
   mtxYToPdfY,
   findBoxToPdfBox,
   findBoxToCss,
+  findBoxNormalize,
   mtxBoxToPdfBox,
   type PageBox,
 } from '../synctex/coords';
@@ -27,30 +28,49 @@ describe('mtx-synctex y-axis', () => {
     assert.ok(mtxY > 600, `expected large top-down y, got ${mtxY}`);
   });
 
-  it('treats --find boxes as PDF bottom-up (near-top lly stays near CSS top)', () => {
-    // Trace: top-of-page --find llx=74 lly=634 urx=274 ury=649 on ~680pt page
-    const topHit = { llx: 74, lly: 634, urx: 274, ury: 649 };
+  it('treats --find boxes as SyncTeX top-down (small lly → CSS near top)', () => {
+    // Retest: --find aligns with same-line synctex y (top-down), not PDF bottom-up.
+    const topHit = { llx: 74, lly: 20, urx: 274, ury: 35 };
     const css = findBoxToCss(topHit, page680, 1);
-    assert.ok(css.top < 60, `expected near CSS top, got ${css.top}`);
-    assert.ok(css.top + css.height < 80);
+    assert.ok(css.top < 40, `expected near CSS top, got ${css.top}`);
+    assert.ok(css.top + css.height < 55);
 
-    const pdf = findBoxToPdfBox(topHit);
-    assert.equal(pdf.lly, 634);
-    assert.equal(pdf.ury, 649);
-    // Deprecated wrapper must not flip
+    const pdf = findBoxToPdfBox(topHit, page680);
+    // PDF bottom-up: near top → high y
+    assert.ok(pdf.ury > 640, `expected PDF-near-top ury, got ${pdf.ury}`);
     assert.deepEqual(mtxBoxToPdfBox(topHit, page680), pdf);
   });
 
+  it('scales synctex pageH into PDF.js pageViewH', () => {
+    // Trace: synctex pageH≈651.4 vs pageView H≈680.3
+    const synctex = { width: 595, height: 651.4 };
+    const mid = { llx: 74, lly: 318, urx: 274, ury: 333 };
+    const css = findBoxToCss(mid, page680, 1, synctex);
+    const expectedTop = 318 * (680 / 651.4);
+    assert.ok(
+      Math.abs(css.top - expectedTop) < 0.5,
+      `expected css.top≈${expectedTop}, got ${css.top}`,
+    );
+  });
+
   it('places a lower-on-page --find box below a higher one in CSS', () => {
-    // PDF bottom-up: larger y is higher on the page
-    const higher = { llx: 304, lly: 538, urx: 344, ury: 553 };
-    const lower = { llx: 304, lly: 509, urx: 344, ury: 524 };
+    // Top-down: larger lly is lower on the page
+    const higher = { llx: 304, lly: 509, urx: 344, ury: 524 };
+    const lower = { llx: 304, lly: 538, urx: 344, ury: 553 };
     const cssHigh = findBoxToCss(higher, page680, 1);
     const cssLow = findBoxToCss(lower, page680, 1);
     assert.ok(
       cssLow.top > cssHigh.top,
       `lower box top ${cssLow.top} should be below higher ${cssHigh.top}`,
     );
+  });
+
+  it('does not invert bottom hits into middle-top (classic wrong flip)', () => {
+    // Bottom lly=513 must not become cssTop≈190 via (pageH-ury).
+    const bottom = { llx: 74, lly: 513, urx: 274, ury: 528 };
+    const css = findBoxToCss(bottom, page680, 1);
+    assert.ok(css.top > 480, `expected near bottom, got css.top=${css.top}`);
+    assert.ok(findBoxNormalize(bottom).lly === 513);
   });
 
   it('round-trips pdfY ↔ --report mtxY', () => {

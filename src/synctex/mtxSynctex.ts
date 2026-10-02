@@ -12,6 +12,7 @@ import {
   isOversizedForwardBox,
   isSuspiciousFileStartHit,
   nearestSynctexBox,
+  pickForwardNonEdgeFallbackBox,
   pickForwardSameLineBox,
   readSynctexPageBoxes,
   scaleSynctexBox,
@@ -28,10 +29,12 @@ export {
   estimatePageHeightFromBoxes,
   FORWARD_EDGE_BAND_FRAC,
   FORWARD_MAX_BOX_PAGE_FRAC,
+  FORWARD_NEARBY_LINE_MAX,
   isOversizedForwardBox,
   isSuspiciousFileStartHit,
   nearestSynctexBox,
   parseSynctexPageBoxes,
+  pickForwardNonEdgeFallbackBox,
   pickForwardSameLineBox,
   readSynctexPageBoxes,
   scaleSynctexBox,
@@ -301,12 +304,11 @@ export interface SynctexInvokeResult<T> {
 
 /**
  * Convert a synctex content box (top-down pt after unit scale) to an mtx
- * `--find`-style PDF bottom-up box for the viewer.
+ * `--find`-style box. Same top-down space as `--find` / `.synctex` (no PDF flip).
  */
 function synctexBoxToFindResult(
   box: SynctexBox,
   page: number,
-  pageHeightPt: number,
 ): ForwardSyncResult {
   const topFromTop = box.y - box.d;
   const bottomFromTop = box.y + box.h;
@@ -314,9 +316,8 @@ function synctexBoxToFindResult(
     page,
     llx: box.x,
     urx: box.x + box.w,
-    // PDF: larger y is higher on the page
-    lly: pageHeightPt - bottomFromTop,
-    ury: pageHeightPt - topFromTop,
+    lly: topFromTop,
+    ury: bottomFromTop,
   };
 }
 
@@ -354,13 +355,20 @@ export interface ForwardRefineDiag {
   sameLineBoxes: ForwardSameLineBoxDiag[];
   /** 1 (pt), 65536 (sp→pt), or null when refine skipped for units. */
   unitScale: number | null;
+  /**
+   * When true, the chosen box must not be painted (raw edge hit with no
+   * non-edge replacement). Viewer may still scroll to the page.
+   */
+  skipHighlight: boolean;
   action:
     | 'keep-raw'
     | 'no-boxes'
     | 'no-same-line'
+    | 'edge-unresolved'
     | 'oversized-skip'
     | 'units-skip'
-    | 'refined';
+    | 'refined'
+    | 'refined-nearby';
 }
 
 function summarizeSameLineBoxes(
@@ -394,12 +402,12 @@ function summarizeSameLineBoxes(
 
 /**
  * When mtx `--find` lands in a thin header/footer band, replace with a
- * same-line box outside that band closest to the mtx hit (not page middle).
- * Never replace with a near-full-page box (solid SyncTeX overlay in the viewer).
+ * same-line (then nearby-line / same-file) box outside that band closest to
+ * the mtx hit. Never paint an unreplaced edge-band `--find` box.
  *
  * Same-line candidates come from parsing the `.synctex` file (not mtx API).
  * Raw records are often TeX sp; convert to `--find` points before compare.
- * Synctex y is top-down; `--find` / viewer use PDF bottom-up — flip on output.
+ * `--find` and synctex boxes share top-down space after unit scale.
  */
 export function refineForwardHit(
   synctexPath: string,
@@ -411,6 +419,7 @@ export function refineForwardHit(
   const emptyDiag = (
     action: ForwardRefineDiag['action'],
     unitScale: number | null = null,
+    skipHighlight = false,
   ): ForwardRefineDiag => ({
     raw: hit,
     chosen: hit,
@@ -422,10 +431,12 @@ export function refineForwardHit(
     sameLineCount: 0,
     sameLineBoxes: [],
     unitScale,
+    skipHighlight,
     action,
   });
 
   if (boxesRaw.length === 0) {
+    // No page boxes to validate against — keep raw (viewer still has pageH scale).
     return { result: hit, diag: emptyDiag('no-boxes') };
   }
 
@@ -451,9 +462,8 @@ export function refineForwardHit(
         )
       : 612;
   const band = Math.max(24, pageHeight * FORWARD_EDGE_BAND_FRAC);
-  // `--find` hit is PDF bottom-up; synctex boxes are top-down (like `--report`).
-  const hitCyPdf = hitVerticalCenter(hit);
-  const hitCy = pageHeight - hitCyPdf;
+  // `--find` and synctex boxes are both top-down after unit scale.
+  const hitCy = hitVerticalCenter(hit);
   const hitInEdge = hitCy < band || hitCy > pageHeight - band;
   const sameLineBoxes = summarizeSameLineBoxes(
     boxes,
@@ -472,6 +482,7 @@ export function refineForwardHit(
     sameLineCount: sameLineBoxes.length,
     sameLineBoxes,
     unitScale,
+    skipHighlight: false,
   };
 
   if (!hitInEdge) {
@@ -485,25 +496,56 @@ export function refineForwardHit(
     x: (hit.llx + hit.urx) / 2,
     y: hitCy,
   };
-  const preferred = pickForwardSameLineBox(
+  let preferred = pickForwardSameLineBox(
     boxes,
     sourceFile,
     line,
     near,
     pageHeight,
   );
+  let viaNearby = false;
+  // Same-line may still be an edge box (header/footer tagged with the line).
+  if (preferred) {
+    const cy = boxVerticalCenter(preferred);
+    if (cy < band || cy > pageHeight - band) {
+      preferred = undefined;
+    }
+  }
   if (!preferred) {
+    preferred = pickForwardNonEdgeFallbackBox(
+      boxes,
+      sourceFile,
+      line,
+      near,
+      pageHeight,
+    );
+    viaNearby = !!preferred;
+  }
+  if (!preferred) {
+    // Do not paint the raw edge `--find` box (wrong page-top / header landings).
     return {
       result: hit,
-      diag: { ...baseDiag, chosen: hit, action: 'no-same-line' },
+      note: 'forward edge-band hit unresolved (skipping highlight paint)',
+      diag: {
+        ...baseDiag,
+        chosen: hit,
+        skipHighlight: true,
+        action: sameLineBoxes.length === 0 ? 'no-same-line' : 'edge-unresolved',
+      },
     };
   }
-  const next = synctexBoxToFindResult(preferred, hit.page, pageHeight);
+  const next = synctexBoxToFindResult(preferred, hit.page);
   const maxArea = pageHeight * pageWidth * FORWARD_MAX_BOX_PAGE_FRAC;
   if (hitArea(next) > maxArea && hitArea(next) > hitArea(hit) * 4) {
     return {
       result: hit,
-      diag: { ...baseDiag, chosen: hit, action: 'oversized-skip' },
+      note: 'forward edge-band refine oversized (skipping highlight paint)',
+      diag: {
+        ...baseDiag,
+        chosen: hit,
+        skipHighlight: true,
+        action: 'oversized-skip',
+      },
     };
   }
   const same =
@@ -512,15 +554,26 @@ export function refineForwardHit(
     Math.abs(next.urx - hit.urx) < 0.5 &&
     Math.abs(next.ury - hit.ury) < 0.5;
   if (same) {
+    // Refined box equals raw edge — still do not paint the edge hit.
     return {
       result: hit,
-      diag: { ...baseDiag, chosen: hit, action: 'keep-raw' },
+      note: 'forward edge-band refine matched raw edge (skipping highlight paint)',
+      diag: {
+        ...baseDiag,
+        chosen: hit,
+        skipHighlight: true,
+        action: 'edge-unresolved',
+      },
     };
   }
   return {
     result: next,
-    note: `forward edge-band refine (mtx llx=${hit.llx} lly=${hit.lly} → ${next.llx},${next.lly}; unitScale=${unitScale})`,
-    diag: { ...baseDiag, chosen: next, action: 'refined' },
+    note: `forward edge-band refine${viaNearby ? ' (nearby/same-file)' : ''} (mtx llx=${hit.llx} lly=${hit.lly} → ${next.llx},${next.lly}; unitScale=${unitScale})`,
+    diag: {
+      ...baseDiag,
+      chosen: next,
+      action: viaNearby ? 'refined-nearby' : 'refined',
+    },
   };
 }
 

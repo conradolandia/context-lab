@@ -81,6 +81,12 @@ export interface ForwardSyncPayload {
   lly: number;
   urx: number;
   ury: number;
+  /** Estimated synctex page height (pt, top-down space). Used to scale to PDF.js view. */
+  synctexPageH?: number;
+  /** Estimated synctex page width (pt). */
+  synctexPageW?: number;
+  /** When true, scroll to the page but do not paint an edge-band highlight. */
+  skipHighlight?: boolean;
 }
 
 export { DEFAULT_PDF_PANEL_TITLE, pdfPanelTitle } from './pdfPanelTitle';
@@ -283,6 +289,9 @@ export class PdfPanel {
       y: payload.lly,
       width: payload.urx - payload.llx,
       height: payload.ury - payload.lly,
+      synctexPageH: payload.synctexPageH,
+      synctexPageW: payload.synctexPageW,
+      skipHighlight: payload.skipHighlight === true,
     });
   }
 

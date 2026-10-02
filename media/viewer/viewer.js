@@ -197,12 +197,41 @@ function pdfBoxToViewport(pageViewport, llx, lly, urx, ury) {
 }
 
 /**
- * mtxrun --script synctex --find returns PDF user-space boxes (y bottom-up,
- * same as PDF.js). Do not flip — reverse SyncTeX is the path that converts
- * with pageHeight - y for `--report --y` (top-down).
+ * mtxrun --script synctex --find returns SyncTeX top-down boxes (same space as
+ * `.synctex` h/r after sp→pt). Map into PDF.js bottom-up via page.view, scaling
+ * when synctex page size differs from the PDF media box.
+ * Reverse SyncTeX still converts clicks with pageHeight - pdfY for `--report --y`.
  */
-function mtxFindBoxToViewport(pageViewport, llx, lly, urx, ury) {
-  return pdfBoxToViewport(pageViewport, llx, lly, urx, ury);
+function mtxFindBoxToViewport(
+  page,
+  pageViewport,
+  llx,
+  lly,
+  urx,
+  ury,
+  synctexPageH,
+  synctexPageW,
+) {
+  const view = Array.isArray(page.view)
+    ? page.view
+    : pageViewport.viewBox || [0, 0, 612, 792];
+  const xMin = view[0] ?? 0;
+  const yMin = view[1] ?? 0;
+  const xMax = view[2] ?? 612;
+  const yMax = view[3] ?? 792;
+  const pageViewW = xMax - xMin;
+  const pageViewH = yMax - yMin;
+  const sx =
+    synctexPageW != null && synctexPageW > 0 ? pageViewW / synctexPageW : 1;
+  const sy =
+    synctexPageH != null && synctexPageH > 0 ? pageViewH / synctexPageH : 1;
+  const topFromTop = Math.min(lly, ury) * sy;
+  const bottomFromTop = Math.max(lly, ury) * sy;
+  const pdfLlx = xMin + Math.min(llx, urx) * sx;
+  const pdfUrx = xMin + Math.max(llx, urx) * sx;
+  const pdfTop = yMax - topFromTop;
+  const pdfBottom = yMax - bottomFromTop;
+  return pdfBoxToViewport(pageViewport, pdfLlx, pdfBottom, pdfUrx, pdfTop);
 }
 
 function normalizeHighlight(msg) {
@@ -210,7 +239,22 @@ function normalizeHighlight(msg) {
   const lly = msg.lly ?? msg.y ?? 0;
   const urx = msg.urx ?? (msg.width != null ? llx + msg.width : llx + 40);
   const ury = msg.ury ?? (msg.height != null ? lly + msg.height : lly + 12);
-  return { page: Number(msg.page) || 1, llx, lly, urx, ury };
+  return {
+    page: Number(msg.page) || 1,
+    llx,
+    lly,
+    urx,
+    ury,
+    synctexPageH:
+      msg.synctexPageH != null && Number(msg.synctexPageH) > 0
+        ? Number(msg.synctexPageH)
+        : undefined,
+    synctexPageW:
+      msg.synctexPageW != null && Number(msg.synctexPageW) > 0
+        ? Number(msg.synctexPageW)
+        : undefined,
+    skipHighlight: msg.skipHighlight === true,
+  };
 }
 
 function clearHighlightDom() {
@@ -646,13 +690,51 @@ function paintHighlight(opts) {
       return;
     }
     const viewport = page.getViewport({ scale: currentScale });
-    const raw = mtxFindBoxToViewport(viewport, msg.llx, msg.lly, msg.urx, msg.ury);
+    if (msg.skipHighlight) {
+      // Edge-band `--find` with no safe replacement: scroll page only, no paint.
+      if (shouldScroll) {
+        still.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+      }
+      vscode.postMessage({
+        type: 'highlight',
+        page: msg.page,
+        viewportLeft: 0,
+        top: 0,
+        w: 0,
+        h: 0,
+        scale: currentScale,
+        llx: msg.llx,
+        lly: msg.lly,
+        urx: msg.urx,
+        ury: msg.ury,
+        skipHighlight: true,
+        pageView: Array.isArray(page.view) ? [...page.view] : undefined,
+        viewportHeight: viewport.height,
+        synctexPageH: msg.synctexPageH,
+        synctexPageW: msg.synctexPageW,
+      });
+      return;
+    }
+    const raw = mtxFindBoxToViewport(
+      page,
+      viewport,
+      msg.llx,
+      msg.lly,
+      msg.urx,
+      msg.ury,
+      msg.synctexPageH,
+      msg.synctexPageW,
+    );
     const box = clampHighlightBox(raw, viewport.width, viewport.height);
-    // PDF bottom-up → CSS top (no PDF.js): compare with raw.top in debug logs.
+    // Top-down synctex → CSS top (scale pageView vs synctex page size).
     const view = Array.isArray(page.view) ? page.view : viewport.viewBox || [0, 0, 612, 792];
-    const pageHpt = (view[3] ?? 792) - (view[1] ?? 0);
-    const pdfTop = Math.max(msg.lly, msg.ury);
-    const simpleMtxCssTop = (pageHpt - pdfTop) * currentScale;
+    const pageViewH = (view[3] ?? 792) - (view[1] ?? 0);
+    const synH =
+      msg.synctexPageH != null && msg.synctexPageH > 0
+        ? msg.synctexPageH
+        : pageViewH;
+    const topFromTop = Math.min(msg.lly, msg.ury);
+    const simpleMtxCssTop = topFromTop * (pageViewH / synH) * currentScale;
     const hl = document.createElement('div');
     hl.className = 'highlight';
     hl.style.left = `${box.left}px`;
@@ -701,6 +783,8 @@ function paintHighlight(opts) {
         intendedScrollTop,
         pageView: Array.isArray(page.view) ? [...page.view] : undefined,
         viewportHeight: viewport.height,
+        synctexPageH: msg.synctexPageH,
+        synctexPageW: msg.synctexPageW,
       });
     };
 

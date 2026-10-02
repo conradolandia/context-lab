@@ -27,6 +27,7 @@ import {
   FORWARD_MAX_BOX_PAGE_FRAC,
   refineForwardHit,
   synctexUnitScaleToPt,
+  pickForwardNonEdgeFallbackBox,
   SYNCTEX_SP_PER_PT,
 } from '../synctex/mtxSynctex';
 
@@ -306,27 +307,28 @@ describe('forward SyncTeX edge-band refine', () => {
     assert.ok(FORWARD_MAX_BOX_PAGE_FRAC > 0 && FORWARD_MAX_BOX_PAGE_FRAC < 0.5);
   });
 
-  it('refineForwardHit converts top-down synctex boxes to PDF bottom-up find space', () => {
-    // Page height from fixture ≈ 788. Top-of-page --find hit (PDF bottom-up).
+  it('refineForwardHit keeps synctex boxes in top-down --find space', () => {
+    // Top-of-page --find hit (SyncTeX top-down: small lly).
     const edgeHit = {
       page: 10,
       llx: 72,
-      lly: 760,
+      lly: 15,
       urx: 192,
-      ury: 780,
+      ury: 30,
     };
     const refined = refineForwardHit(fixturePath, 'chapter.tex', 42, edgeHit);
-    // Closest non-edge body box is synctex y≈100 → PDF lly ≈ pageH-112.
+    // Closest non-edge body box is synctex y≈100 (top-down).
     assert.equal(refined.diag.action, 'refined');
     assert.equal(refined.diag.hitInEdge, true);
+    assert.equal(refined.diag.skipHighlight, false);
     assert.equal(refined.diag.unitScale, 1);
     assert.ok(refined.diag.sameLineCount >= 2);
     assert.equal(refined.diag.raw, edgeHit);
     assert.ok(refined.note);
-    // Output must be PDF bottom-up near the top (high y), not raw synctex y=100.
+    // Output stays top-down near the body box (not PDF-flipped).
     assert.ok(
-      refined.result.lly > 600,
-      `expected PDF-near-top lly, got ${refined.result.lly}`,
+      refined.result.lly > 80 && refined.result.lly < 130,
+      `expected top-down body lly≈100, got ${refined.result.lly}`,
     );
     assert.ok(Math.abs(refined.result.ury - refined.result.lly) < 100);
 
@@ -342,6 +344,7 @@ describe('forward SyncTeX edge-band refine', () => {
     assert.equal(kept.note, undefined);
     assert.equal(kept.diag.action, 'keep-raw');
     assert.equal(kept.diag.hitInEdge, false);
+    assert.equal(kept.diag.skipHighlight, false);
     assert.equal(kept.diag.unitScale, 1);
   });
 
@@ -350,9 +353,9 @@ describe('forward SyncTeX edge-band refine', () => {
     const edgeHit = {
       page: 10,
       llx: 72,
-      lly: 760,
+      lly: 15,
       urx: 192,
-      ury: 780,
+      ury: 30,
     };
     const refined = refineForwardHit(spFixturePath, 'chapter.tex', 42, edgeHit);
     assert.equal(refined.diag.unitScale, 65536);
@@ -362,12 +365,59 @@ describe('forward SyncTeX edge-band refine', () => {
       `pageH should be in pt after scale, got ${refined.diag.pageHeight}`,
     );
     assert.ok(
-      refined.result.lly > 600 && refined.result.lly < 2000,
-      `refined lly should be PDF pt near top, got ${refined.result.lly}`,
+      refined.result.lly > 80 && refined.result.lly < 200,
+      `refined lly should be top-down pt near body, got ${refined.result.lly}`,
     );
     // Must not leak raw sp into the viewer box.
     assert.ok(refined.result.lly < 100_000);
     assert.ok(refined.result.llx < 1000);
+  });
+
+  it('refineForwardHit widens to nearby lines and skips unreplaced edge paints', () => {
+    // Line 43 has no same-line boxes; nearby line 42 has body boxes.
+    const edgeHit = {
+      page: 10,
+      llx: 72,
+      lly: 15,
+      urx: 192,
+      ury: 30,
+    };
+    const nearby = refineForwardHit(fixturePath, 'chapter.tex', 43, edgeHit);
+    assert.equal(nearby.diag.action, 'refined-nearby');
+    assert.equal(nearby.diag.hitInEdge, true);
+    assert.equal(nearby.diag.skipHighlight, false);
+    assert.equal(nearby.diag.sameLineCount, 0);
+    assert.ok(
+      nearby.result.lly > 80 && nearby.result.lly < 450,
+      `expected non-edge body box, got lly=${nearby.result.lly}`,
+    );
+
+    // Unknown file: no non-edge same-file boxes → skip highlight (do not paint edge).
+    const unresolved = refineForwardHit(
+      fixturePath,
+      'missing-chapter.tex',
+      42,
+      edgeHit,
+    );
+    assert.equal(unresolved.diag.skipHighlight, true);
+    assert.ok(
+      unresolved.diag.action === 'no-same-line' ||
+        unresolved.diag.action === 'edge-unresolved',
+    );
+  });
+
+  it('pickForwardNonEdgeFallbackBox finds nearby non-edge same-file boxes', () => {
+    const boxes = parseSynctexPageBoxes(text, 10);
+    const hit = pickForwardNonEdgeFallbackBox(
+      boxes,
+      'chapter.tex',
+      43,
+      { x: 100, y: 20 },
+      800,
+    );
+    assert.ok(hit);
+    assert.equal(hit!.linenumber, 42);
+    assert.ok(hit!.y >= 90 && hit!.y <= 420);
   });
 
   it('synctexUnitScaleToPt detects sp vs pt', () => {
@@ -378,9 +428,9 @@ describe('forward SyncTeX edge-band refine', () => {
     assert.equal(
       synctexUnitScaleToPt(spBoxes, {
         llx: 74,
-        lly: 634,
+        lly: 318,
         urx: 274,
-        ury: 649,
+        ury: 333,
       }),
       SYNCTEX_SP_PER_PT,
     );

@@ -36,7 +36,7 @@ import { maybeWarnLatexWorkshopConflict } from './compat/latexWorkshopConflict';
 import { initOutputLog, logDebug, logUser } from './outputLog';
 
 /** Bump when shipping a SyncTeX/viewer/LSP/diagnostics/project-view behavior change Sir must verify in Output. */
-export const BUILD_ID = 'synctex-forward-y-fix-v1';
+export const BUILD_ID = 'synctex-forward-y-fix-v2';
 
 let output: vscode.OutputChannel;
 let digestifOutput: vscode.OutputChannel;
@@ -294,7 +294,7 @@ async function doForwardSync(opts?: {
     logDebug(
       `[synctex find] raw mtx page=${raw.page} llx=${raw.llx} lly=${raw.lly} urx=${raw.urx} ury=${raw.ury}` +
         ` w=${(raw.urx - raw.llx).toFixed(2)} h=${Math.abs(raw.ury - raw.lly).toFixed(2)}` +
-        ` cyPdf=${((raw.lly + raw.ury) / 2).toFixed(2)} (mtx --find y is PDF bottom-up)`,
+        ` cyTopDown=${((raw.lly + raw.ury) / 2).toFixed(2)} (mtx --find y is SyncTeX top-down)`,
     );
     if (extraHits.length > 0) {
       logDebug(
@@ -309,6 +309,7 @@ async function doForwardSync(opts?: {
     }
     logDebug(
       `[synctex find] refine action=${diag.action} hitInEdge=${diag.hitInEdge}` +
+        ` skipHighlight=${diag.skipHighlight}` +
         ` unitScale=${diag.unitScale ?? 'null'}` +
         ` pageH=${diag.pageHeight.toFixed(1)} pageW=${diag.pageWidth.toFixed(1)}` +
         ` band=${diag.band.toFixed(1)} sameLine=${diag.sameLineCount}` +
@@ -335,12 +336,18 @@ async function doForwardSync(opts?: {
     }
     logDebug(
       `[synctex find] chosen page=${hit.page} llx=${hit.llx} lly=${hit.lly} urx=${hit.urx} ury=${hit.ury}` +
-        ` w=${(hit.urx - hit.llx).toFixed(2)} h=${Math.abs(hit.ury - hit.lly).toFixed(2)}`,
+        ` w=${(hit.urx - hit.llx).toFixed(2)} h=${Math.abs(hit.ury - hit.lly).toFixed(2)}` +
+        (diag.skipHighlight ? ' (skip paint)' : ''),
     );
     if (note) {
       logDebug(`[synctex find] ${note}`);
     }
-    await pdfPanel.forwardSync(hit);
+    await pdfPanel.forwardSync({
+      ...hit,
+      synctexPageH: diag.pageHeight > 0 ? diag.pageHeight : undefined,
+      synctexPageW: diag.pageWidth > 0 ? diag.pageWidth : undefined,
+      skipHighlight: diag.skipHighlight,
+    });
   } catch (err) {
     const msg = err instanceof SynctexError || err instanceof Error ? err.message : String(err);
     logDebug(`[synctex find] ${msg}`);
