@@ -23,6 +23,8 @@ import {
   isSuspiciousFileStartHit,
   distanceToBox,
   FORWARD_EDGE_BAND_FRAC,
+  FORWARD_MAX_BOX_PAGE_FRAC,
+  refineForwardHit,
 } from '../synctex/mtxSynctex';
 
 const fixturesDir = path.join(__dirname, 'fixtures');
@@ -210,6 +212,26 @@ describe('synctex page boxes (caption / float refine)', () => {
 
 describe('forward SyncTeX central-box preference', () => {
   const text = readFixture('page-with-header-footer.synctex.txt');
+  const fixturePath = (() => {
+    const candidates = [
+      path.join(fixturesDir, 'page-with-header-footer.synctex.txt'),
+      path.join(
+        __dirname,
+        '..',
+        '..',
+        'src',
+        'test',
+        'fixtures',
+        'page-with-header-footer.synctex.txt',
+      ),
+    ];
+    for (const c of candidates) {
+      if (fs.existsSync(c)) {
+        return c;
+      }
+    }
+    throw new Error('fixture not found: page-with-header-footer.synctex.txt');
+  })();
 
   it('prefers mid-page same-line box over header/footer band hits', () => {
     const boxes = parseSynctexPageBoxes(text, 10);
@@ -217,6 +239,8 @@ describe('forward SyncTeX central-box preference', () => {
     assert.ok(hit);
     assert.equal(hit!.y, 400);
     assert.ok(hit!.w >= 300);
+    // Must not pick the page-sized vbox (solid-fill overlay regression).
+    assert.ok(hit!.h < 100);
   });
 
   it('matches synctex paths by basename / relative suffix', () => {
@@ -232,6 +256,31 @@ describe('forward SyncTeX central-box preference', () => {
 
   it('exposes a small edge-band fraction for forward picks', () => {
     assert.ok(FORWARD_EDGE_BAND_FRAC > 0 && FORWARD_EDGE_BAND_FRAC < 0.2);
+    assert.ok(FORWARD_MAX_BOX_PAGE_FRAC > 0 && FORWARD_MAX_BOX_PAGE_FRAC < 0.5);
+  });
+
+  it('refineForwardHit only replaces edge-band mtx hits, never with a page vbox', () => {
+    const edgeHit = {
+      page: 10,
+      llx: 72,
+      lly: 10,
+      urx: 192,
+      ury: 30,
+    };
+    const refined = refineForwardHit(fixturePath, 'chapter.tex', 42, edgeHit);
+    assert.equal(refined.result.lly, 400);
+    assert.ok(Math.abs(refined.result.ury - refined.result.lly) < 100);
+
+    const midHit = {
+      page: 10,
+      llx: 80,
+      lly: 390,
+      urx: 200,
+      ury: 410,
+    };
+    const kept = refineForwardHit(fixturePath, 'chapter.tex', 42, midHit);
+    assert.equal(kept.result, midHit);
+    assert.equal(kept.note, undefined);
   });
 });
 

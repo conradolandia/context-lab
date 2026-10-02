@@ -180,6 +180,12 @@ export const COARSE_FLOAT_LINE_USER_MESSAGE =
  */
 export const FORWARD_EDGE_BAND_FRAC = 0.08;
 
+/**
+ * Ignore same-line boxes larger than this fraction of estimated page area when
+ * any smaller candidate exists — page-sized vboxes paint as a solid fill overlay.
+ */
+export const FORWARD_MAX_BOX_PAGE_FRAC = 0.2;
+
 export function boxVerticalCenter(box: SynctexBox): number {
   const yLo = box.y - box.d;
   const yHi = box.y + box.h;
@@ -198,6 +204,18 @@ export function estimatePageHeightFromBoxes(
   let max = 0;
   for (const b of boxes) {
     max = Math.max(max, b.y + b.h, b.y + b.d);
+  }
+  return max > 0 ? max : fallback;
+}
+
+/** Rough page width from boxes on the page. */
+export function estimatePageWidthFromBoxes(
+  boxes: SynctexBox[],
+  fallback = 612,
+): number {
+  let max = 0;
+  for (const b of boxes) {
+    max = Math.max(max, b.x + b.w);
   }
   return max > 0 ? max : fallback;
 }
@@ -221,10 +239,20 @@ export function synctexFilenamesMatch(a: string, b: string): boolean {
   return ba === bb && ba.length > 0;
 }
 
+function isOversizedForwardBox(
+  box: SynctexBox,
+  pageHeight: number,
+  pageWidth: number,
+): boolean {
+  const pageArea = Math.max(1, pageHeight * pageWidth);
+  return boxArea(box) > pageArea * FORWARD_MAX_BOX_PAGE_FRAC;
+}
+
 /**
  * Among boxes for the same source file+line, prefer hits outside a thin
  * top/bottom band and closest to the vertical page middle. On remaining ties,
- * prefer larger area (body block over a tiny edge glyph).
+ * prefer smaller area (line box over a page-sized vbox that would solid-fill
+ * the viewer highlight overlay).
  */
 export function preferCentralForwardBox(
   boxes: SynctexBox[],
@@ -239,15 +267,19 @@ export function preferCentralForwardBox(
     return undefined;
   }
   const h = pageHeight ?? estimatePageHeightFromBoxes(boxes);
+  const w = estimatePageWidthFromBoxes(boxes);
   const band = Math.max(24, h * FORWARD_EDGE_BAND_FRAC);
   const mid = h / 2;
+
+  const compact = matching.filter((b) => !isOversizedForwardBox(b, h, w));
+  const pool = compact.length > 0 ? compact : matching;
 
   let best: SynctexBox | undefined;
   let bestInEdge = true;
   let bestMidDist = Infinity;
-  let bestArea = -1;
+  let bestArea = Infinity;
 
-  for (const box of matching) {
+  for (const box of pool) {
     const cy = boxVerticalCenter(box);
     const inEdge = cy < band || cy > h - band;
     const midDist = Math.abs(cy - mid);
@@ -257,7 +289,7 @@ export function preferCentralForwardBox(
       (bestInEdge && !inEdge) ||
       (inEdge === bestInEdge &&
         (midDist < bestMidDist - 1e-9 ||
-          (Math.abs(midDist - bestMidDist) <= 1e-9 && area > bestArea)));
+          (Math.abs(midDist - bestMidDist) <= 1e-9 && area < bestArea)));
     if (better) {
       best = box;
       bestInEdge = inEdge;

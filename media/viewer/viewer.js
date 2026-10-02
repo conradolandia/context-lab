@@ -33,6 +33,11 @@ const pageEls = new Map();
 const renderedPages = new Set();
 /** @type {Set<number>} */
 const renderingPages = new Set();
+/**
+ * Bumped on every layoutPlaceholders() so in-flight page.render() callbacks
+ * from a destroyed DOM generation cannot mark the new placeholders as rendered.
+ */
+let layoutGeneration = 0;
 /** @type {ReturnType<typeof setTimeout>|null} */
 let highlightFadeTimer = null;
 /** @type {ReturnType<typeof setTimeout>|null} */
@@ -400,6 +405,7 @@ async function goToDestination(resolved) {
 }
 
 function layoutPlaceholders() {
+  layoutGeneration += 1;
   viewer.innerHTML = '';
   pageEls.clear();
   renderedPages.clear();
@@ -460,9 +466,14 @@ async function renderPageCanvas(pageNum) {
   if (!pageDiv) {
     return;
   }
+  const gen = layoutGeneration;
   renderingPages.add(pageNum);
   try {
     const page = await pdfDoc.getPage(pageNum);
+    if (gen !== layoutGeneration || pageEls.get(pageNum) !== pageDiv) {
+      // Layout/zoom/reload replaced this page node while we were awaiting.
+      return;
+    }
     const viewport = page.getViewport({ scale: currentScale });
     pageDiv.style.width = `${viewport.width}px`;
     pageDiv.style.height = `${viewport.height}px`;
@@ -473,17 +484,27 @@ async function renderPageCanvas(pageNum) {
     const ctx = canvas.getContext('2d', { alpha: false });
     canvas.width = viewport.width;
     canvas.height = viewport.height;
+    // alpha:false canvases start black; white fill avoids a dark flash if paint
+    // races ahead of pdf.js (black + yellow SyncTeX overlay reads as olive).
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
     pageDiv.appendChild(canvas);
     // Store viewport + page.view for delegated click conversion (mtx y is top-down).
     pageDiv._viewport = viewport;
     pageDiv._pageView = page.view; // [xMin, yMin, xMax, yMax]
 
     await page.render({ canvasContext: ctx, viewport }).promise;
+    if (gen !== layoutGeneration || pageEls.get(pageNum) !== pageDiv) {
+      return;
+    }
     renderedPages.add(pageNum);
 
     // Link hit targets only (invisible). No PDF.js AnnotationLayer.
     const links = await ensurePageLinks(page, pageNum);
-    if (pageEls.get(pageNum) === pageDiv && renderedPages.has(pageNum)) {
+    if (gen !== layoutGeneration || pageEls.get(pageNum) !== pageDiv) {
+      return;
+    }
+    if (renderedPages.has(pageNum)) {
       mountLinkOverlays(pageDiv, viewport, links);
     }
 
@@ -563,6 +584,32 @@ function scheduleSyncVisible() {
   }, 50);
 }
 
+/**
+ * True when the live page node still has a rendered canvas (not a placeholder).
+ * renderedPages alone is not enough — a stale in-flight render can poison it.
+ */
+function pageHasRenderedCanvas(pageNum) {
+  const el = pageEls.get(pageNum);
+  return !!(
+    el &&
+    renderedPages.has(pageNum) &&
+    !el.classList.contains('placeholder') &&
+    el.querySelector('canvas')
+  );
+}
+
+/** Clamp SyncTeX highlight CSS box to the page viewport (no full-bleed wipe). */
+function clampHighlightBox(box, pageWidth, pageHeight) {
+  const left = Math.min(Math.max(0, box.left), Math.max(0, pageWidth - 1));
+  const top = Math.min(Math.max(0, box.top), Math.max(0, pageHeight - 1));
+  const maxW = Math.max(8, pageWidth - left);
+  const maxH = Math.max(8, pageHeight - top);
+  // Cap runaway coords (wrong units / page-sized vboxes) to a readable band.
+  const width = Math.min(Math.max(box.width, 8), maxW, pageWidth * 0.95);
+  const height = Math.min(Math.max(box.height, 8), maxH, pageHeight * 0.35);
+  return { left, top, width, height };
+}
+
 function paintHighlight(opts) {
   clearHighlightDom();
   const shouldScroll = opts?.scroll === true;
@@ -571,7 +618,11 @@ function paintHighlight(opts) {
     return;
   }
   const pageDiv = pageEls.get(msg.page);
-  if (!pageDiv || !renderedPages.has(msg.page)) {
+  if (!pageDiv || !pageHasRenderedCanvas(msg.page)) {
+    // Stale renderedPages mark: force a real re-render of the live node.
+    if (renderedPages.has(msg.page) && !pageHasRenderedCanvas(msg.page)) {
+      renderedPages.delete(msg.page);
+    }
     pendingHighlight = msg;
     void ensurePageRendered(msg.page, { scroll: shouldScroll }).then(() => {
       if (activeHighlight && activeHighlight.page === msg.page) {
@@ -587,18 +638,27 @@ function paintHighlight(opts) {
       return;
     }
     const still = pageEls.get(msg.page);
-    if (!still || !renderedPages.has(msg.page)) {
+    if (!still || !pageHasRenderedCanvas(msg.page)) {
       pendingHighlight = msg;
+      if (renderedPages.has(msg.page) && !pageHasRenderedCanvas(msg.page)) {
+        renderedPages.delete(msg.page);
+      }
+      void ensurePageRendered(msg.page, { scroll: shouldScroll }).then(() => {
+        if (activeHighlight && activeHighlight.page === msg.page) {
+          paintHighlight({ scroll: shouldScroll });
+        }
+      });
       return;
     }
     const viewport = page.getViewport({ scale: currentScale });
-    const box = mtxBoxToViewport(page, viewport, msg.llx, msg.lly, msg.urx, msg.ury);
+    const raw = mtxBoxToViewport(page, viewport, msg.llx, msg.lly, msg.urx, msg.ury);
+    const box = clampHighlightBox(raw, viewport.width, viewport.height);
     const hl = document.createElement('div');
     hl.className = 'highlight';
     hl.style.left = `${box.left}px`;
     hl.style.top = `${box.top}px`;
-    hl.style.width = `${Math.max(box.width, 8)}px`;
-    hl.style.height = `${Math.max(box.height, 8)}px`;
+    hl.style.width = `${box.width}px`;
+    hl.style.height = `${box.height}px`;
     still.appendChild(hl);
     // Only scroll on a fresh forward SyncTeX (`applyHighlight`). Re-paints from
     // virtualized render / zoom / layout must not fight the user's scroll.
@@ -647,8 +707,18 @@ async function ensurePageRendered(pageNum, opts) {
     el.scrollIntoView({ behavior: 'instant', block: 'nearest' });
   }
   await syncVisiblePages();
-  if (!renderedPages.has(pageNum)) {
-    await renderPageCanvas(pageNum);
+  if (!pageHasRenderedCanvas(pageNum)) {
+    if (renderedPages.has(pageNum) && !pageHasRenderedCanvas(pageNum)) {
+      renderedPages.delete(pageNum);
+    }
+    // Wait out an in-flight render for this page before starting another.
+    const deadline = Date.now() + 5000;
+    while (renderingPages.has(pageNum) && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    if (!pageHasRenderedCanvas(pageNum)) {
+      await renderPageCanvas(pageNum);
+    }
   }
 }
 

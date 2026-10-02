@@ -3,6 +3,9 @@ import * as path from 'node:path';
 import type { Toolchain } from '../toolchain/discover';
 import {
   COARSE_FLOAT_LINE_USER_MESSAGE,
+  estimatePageHeightFromBoxes,
+  FORWARD_EDGE_BAND_FRAC,
+  FORWARD_MAX_BOX_PAGE_FRAC,
   isSuspiciousFileStartHit,
   nearestSynctexBox,
   preferCentralForwardBox,
@@ -15,6 +18,7 @@ export {
   distanceToBox,
   estimatePageHeightFromBoxes,
   FORWARD_EDGE_BAND_FRAC,
+  FORWARD_MAX_BOX_PAGE_FRAC,
   isSuspiciousFileStartHit,
   nearestSynctexBox,
   parseSynctexPageBoxes,
@@ -292,9 +296,18 @@ function boxToForwardResult(box: SynctexBox, page: number): ForwardSyncResult {
   };
 }
 
+function hitVerticalCenter(hit: ForwardSyncResult): number {
+  return (Math.min(hit.lly, hit.ury) + Math.max(hit.lly, hit.ury)) / 2;
+}
+
+function hitArea(hit: ForwardSyncResult): number {
+  return Math.abs(hit.urx - hit.llx) * Math.abs(hit.ury - hit.lly);
+}
+
 /**
- * When several synctex boxes share the source line, bias away from thin
- * header/footer bands toward the page vertical middle (largest/most central).
+ * When mtx `--find` lands in a thin header/footer band, prefer a same-line
+ * box nearer the page vertical middle. Never replace with a near-full-page
+ * box (that paints as a solid SyncTeX overlay in the viewer).
  */
 export function refineForwardHit(
   synctexPath: string,
@@ -306,11 +319,29 @@ export function refineForwardHit(
   if (boxes.length === 0) {
     return { result: hit };
   }
-  const preferred = preferCentralForwardBox(boxes, sourceFile, line);
+  const pageHeight = estimatePageHeightFromBoxes(boxes);
+  const band = Math.max(24, pageHeight * FORWARD_EDGE_BAND_FRAC);
+  const cy = hitVerticalCenter(hit);
+  const hitInEdge = cy < band || cy > pageHeight - band;
+  if (!hitInEdge) {
+    // mtx already landed mid-page; keep its box (avoids expanding to a vbox).
+    return { result: hit };
+  }
+  const preferred = preferCentralForwardBox(boxes, sourceFile, line, pageHeight);
   if (!preferred) {
     return { result: hit };
   }
   const next = boxToForwardResult(preferred, hit.page);
+  const pageWidth = Math.max(
+    612,
+    ...boxes.map((b) => b.x + b.w),
+    hit.urx,
+    hit.llx,
+  );
+  const maxArea = pageHeight * pageWidth * FORWARD_MAX_BOX_PAGE_FRAC;
+  if (hitArea(next) > maxArea && hitArea(next) > hitArea(hit) * 4) {
+    return { result: hit };
+  }
   const same =
     Math.abs(next.llx - hit.llx) < 0.5 &&
     Math.abs(next.lly - hit.lly) < 0.5 &&
