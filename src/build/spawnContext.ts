@@ -45,6 +45,9 @@ export function spawnContextBuild(options: SpawnContextBuildOptions): SpawnConte
     env: env ?? process.env,
     shell: false,
     stdio: ['ignore', 'pipe', 'pipe'],
+    // POSIX: new process group so cancel can SIGTERM/SIGKILL context + luametatex.
+    // Windows: tree kill uses taskkill /T instead (see killProcessTree).
+    detached: process.platform !== 'win32',
   });
 
   const promise = new Promise<ContextBuildResult>((resolve, reject) => {

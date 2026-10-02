@@ -7,6 +7,7 @@ import { preserveFocusForBuildTrigger } from '../build/buildTrigger';
  * - command while busy → reject (caller shows "already running")
  * - save while busy → queue one follow-up
  * - multiple saves while busy → still one follow-up
+ * - cancel while busy → clear follow-up; finish idle (no queued start)
  */
 
 type Trigger = 'command' | 'onSave';
@@ -14,12 +15,14 @@ type Trigger = 'command' | 'onSave';
 interface QueueState {
   building: boolean;
   followUp: boolean;
+  cancelRequested: boolean;
 }
 
 function request(state: QueueState, trigger: Trigger): 'start' | 'reject' | 'queued' {
   if (!state.building) {
     state.building = true;
     state.followUp = false;
+    state.cancelRequested = false;
     return 'start';
   }
   if (trigger === 'command') {
@@ -29,8 +32,23 @@ function request(state: QueueState, trigger: Trigger): 'start' | 'reject' | 'que
   return 'queued';
 }
 
+function cancel(state: QueueState): 'cancelling' | 'idle' {
+  if (!state.building) {
+    return 'idle';
+  }
+  state.cancelRequested = true;
+  state.followUp = false;
+  return 'cancelling';
+}
+
 function finish(state: QueueState): 'idle' | 'start-followup' {
+  const wasCancelled = state.cancelRequested;
   state.building = false;
+  state.cancelRequested = false;
+  if (wasCancelled) {
+    state.followUp = false;
+    return 'idle';
+  }
   if (state.followUp) {
     state.followUp = false;
     state.building = true;
@@ -41,13 +59,13 @@ function finish(state: QueueState): 'idle' | 'start-followup' {
 
 describe('build on-save coalesce', () => {
   it('rejects second command while building', () => {
-    const s: QueueState = { building: false, followUp: false };
+    const s: QueueState = { building: false, followUp: false, cancelRequested: false };
     assert.equal(request(s, 'command'), 'start');
     assert.equal(request(s, 'command'), 'reject');
   });
 
   it('queues one follow-up for saves during a build', () => {
-    const s: QueueState = { building: false, followUp: false };
+    const s: QueueState = { building: false, followUp: false, cancelRequested: false };
     assert.equal(request(s, 'onSave'), 'start');
     assert.equal(request(s, 'onSave'), 'queued');
     assert.equal(request(s, 'onSave'), 'queued');
@@ -55,6 +73,16 @@ describe('build on-save coalesce', () => {
     assert.equal(finish(s), 'start-followup');
     assert.equal(s.followUp, false);
     assert.equal(finish(s), 'idle');
+  });
+
+  it('cancel clears queued follow-up and finishes idle', () => {
+    const s: QueueState = { building: false, followUp: false, cancelRequested: false };
+    assert.equal(request(s, 'onSave'), 'start');
+    assert.equal(request(s, 'onSave'), 'queued');
+    assert.equal(cancel(s), 'cancelling');
+    assert.equal(s.followUp, false);
+    assert.equal(finish(s), 'idle');
+    assert.equal(s.building, false);
   });
 });
 
