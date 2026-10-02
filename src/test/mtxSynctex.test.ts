@@ -408,6 +408,33 @@ describe('forward SyncTeX edge-band refine', () => {
     assert.ok(refined.note?.includes('next page'));
   });
 
+  it('refineForwardHit prefers page N-1 for top-edge --find hits', () => {
+    // Header-like --find on page 72 top (lly≈20). Page 72 also has a low
+    // same-line box at y≈560 that old refine kept; page 71 has the real bottom.
+    const topEdgeHit = {
+      page: 72,
+      llx: 72,
+      lly: 16,
+      urx: 172,
+      ury: 28,
+    };
+    const refined = refineForwardHit(
+      boundaryFixturePath,
+      'chapter.tex',
+      10,
+      topEdgeHit,
+    );
+    assert.equal(refined.diag.action, 'refined-prev-page');
+    assert.equal(refined.diag.hitInEdge, true);
+    assert.equal(refined.diag.skipHighlight, false);
+    assert.equal(refined.result.page, 71);
+    assert.ok(
+      refined.result.lly > 500,
+      `expected bottom-of-71 body, got lly=${refined.result.lly}`,
+    );
+    assert.ok(refined.note?.includes('previous page'));
+  });
+
   it('pickForwardNonEdgeFallbackBox finds nearby non-edge same-file boxes', () => {
     const boxes = parseSynctexPageBoxes(text, 10);
     const hit = pickForwardNonEdgeFallbackBox(
