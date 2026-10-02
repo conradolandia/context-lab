@@ -369,7 +369,8 @@ export interface ForwardRefineDiag {
     | 'units-skip'
     | 'refined'
     | 'refined-nearby'
-    | 'refined-next-page';
+    | 'refined-next-page'
+    | 'refined-prev-page';
 }
 
 function summarizeSameLineBoxes(
@@ -497,10 +498,12 @@ export function refineForwardHit(
     x: (hit.llx + hit.urx) / 2,
     y: hitCy,
   };
+  const hitInTopEdge = hitCy < band;
   const hitInBottomEdge = hitCy > pageHeight - band;
   let preferred: SynctexBox | undefined;
   let viaNearby = false;
   let viaNextPage = false;
+  let viaPrevPage = false;
   let chosenPage = hit.page;
 
   // Bottom-of-page N often means the line starts on N+1 (top). Prefer a
@@ -543,6 +546,50 @@ export function refineForwardHit(
       if (preferred) {
         viaNextPage = true;
         chosenPage = hit.page + 1;
+      }
+    }
+  }
+
+  // Top-of-page N often means the line ends on N-1 (bottom). Prefer a
+  // non-edge box there before same-line/nearby refine that keeps a header-like
+  // top box on N.
+  if (!preferred && hitInTopEdge && hit.page > 1) {
+    const prevRaw = readSynctexPageBoxes(synctexPath, hit.page - 1);
+    if (prevRaw.length > 0) {
+      const prevScale = synctexUnitScaleToPt(prevRaw, hit) ?? unitScale;
+      const prevBoxes = prevRaw.map((b) => scaleSynctexBox(b, prevScale));
+      const prevH = estimatePageHeightFromBoxes(prevBoxes);
+      const prevBand = Math.max(24, prevH * FORWARD_EDGE_BAND_FRAC);
+      const prevNear = {
+        x: near.x,
+        // Bias toward the bottom body band on the previous page.
+        y: Math.max(prevBand * 1.5, prevH - prevBand * 1.5),
+      };
+      preferred = pickForwardSameLineBox(
+        prevBoxes,
+        sourceFile,
+        line,
+        prevNear,
+        prevH,
+      );
+      if (preferred) {
+        const cy = boxVerticalCenter(preferred);
+        if (cy < prevBand || cy > prevH - prevBand) {
+          preferred = undefined;
+        }
+      }
+      if (!preferred) {
+        preferred = pickForwardNonEdgeFallbackBox(
+          prevBoxes,
+          sourceFile,
+          line,
+          prevNear,
+          prevH,
+        );
+      }
+      if (preferred) {
+        viaPrevPage = true;
+        chosenPage = hit.page - 1;
       }
     }
   }
@@ -621,9 +668,11 @@ export function refineForwardHit(
   }
   const how = viaNextPage
     ? ' (next page)'
-    : viaNearby
-      ? ' (nearby/same-file)'
-      : '';
+    : viaPrevPage
+      ? ' (previous page)'
+      : viaNearby
+        ? ' (nearby/same-file)'
+        : '';
   return {
     result: next,
     note: `forward edge-band refine${how} (mtx page=${hit.page} llx=${hit.llx} lly=${hit.lly} → page=${next.page} ${next.llx},${next.lly}; unitScale=${unitScale})`,
@@ -632,9 +681,11 @@ export function refineForwardHit(
       chosen: next,
       action: viaNextPage
         ? 'refined-next-page'
-        : viaNearby
-          ? 'refined-nearby'
-          : 'refined',
+        : viaPrevPage
+          ? 'refined-prev-page'
+          : viaNearby
+            ? 'refined-nearby'
+            : 'refined',
     },
   };
 }
