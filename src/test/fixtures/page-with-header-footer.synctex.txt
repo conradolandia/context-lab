@@ -1,0 +1,13 @@
+SyncTeX Version 1
+Input:1:chapter.tex
+Output:main.pdf
+Magnification:1000
+Unit:1
+X Offset:0
+Y Offset:0
+{10
+h1,42:72.0,20.0:120.0,10.0,0.0
+h1,42:80.0,400.0:300.0,14.0,0.0
+h1,42:72.0,780.0:100.0,8.0,0.0
+h1,99:90.0,450.0:200.0,12.0,0.0
+}

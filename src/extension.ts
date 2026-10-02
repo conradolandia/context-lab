@@ -36,7 +36,7 @@ import { maybeWarnLatexWorkshopConflict } from './compat/latexWorkshopConflict';
 import { initOutputLog, logDebug, logUser } from './outputLog';
 
 /** Bump when shipping a SyncTeX/viewer/LSP/diagnostics/project-view behavior change Sir must verify in Output. */
-export const BUILD_ID = 'project-manager-v1';
+export const BUILD_ID = 'synctex-viewer-ux-v1';
 
 let output: vscode.OutputChannel;
 let digestifOutput: vscode.OutputChannel;
@@ -269,7 +269,7 @@ async function doForwardSync(opts?: {
   );
 
   try {
-    const { result: hit, argv, cwd } = await forwardSync(
+    const { result: hit, argv, cwd, note } = await forwardSync(
       toolchain,
       snapshot.synctexPath,
       file,
@@ -280,6 +280,9 @@ async function doForwardSync(opts?: {
     logDebug(
       `[synctex find] page=${hit.page} llx=${hit.llx} lly=${hit.lly} urx=${hit.urx} ury=${hit.ury} (mtx y is top-down)`,
     );
+    if (note) {
+      logDebug(`[synctex find] ${note}`);
+    }
     await pdfPanel.forwardSync(hit);
   } catch (err) {
     const msg = err instanceof SynctexError || err instanceof Error ? err.message : String(err);

@@ -172,3 +172,98 @@ export function isSuspiciousFileStartHit(
 
 export const COARSE_FLOAT_LINE_USER_MESSAGE =
   'No useful SyncTeX match here — ConTeXt often tags float/caption boxes with a coarse line (file start). Click nearby body text for a precise jump.';
+
+/**
+ * Fraction of estimated page height treated as a thin header/footer band when
+ * picking among forward SyncTeX boxes for the same source line. Not a real
+ * header/footer detector — only biases away from edge landings.
+ */
+export const FORWARD_EDGE_BAND_FRAC = 0.08;
+
+export function boxVerticalCenter(box: SynctexBox): number {
+  const yLo = box.y - box.d;
+  const yHi = box.y + box.h;
+  return (yLo + yHi) / 2;
+}
+
+export function boxArea(box: SynctexBox): number {
+  return Math.max(box.w, 0) * Math.max(box.h + box.d, 0);
+}
+
+/** Rough page height from boxes on the page (mtx y top-down). */
+export function estimatePageHeightFromBoxes(
+  boxes: SynctexBox[],
+  fallback = 792,
+): number {
+  let max = 0;
+  for (const b of boxes) {
+    max = Math.max(max, b.y + b.h, b.y + b.d);
+  }
+  return max > 0 ? max : fallback;
+}
+
+function normalizeSynctexPath(p: string): string {
+  return p.replace(/\\/g, '/').toLowerCase();
+}
+
+/** Match synctex Input paths against the editor path (relative or basename). */
+export function synctexFilenamesMatch(a: string, b: string): boolean {
+  const na = normalizeSynctexPath(a);
+  const nb = normalizeSynctexPath(b);
+  if (na === nb) {
+    return true;
+  }
+  if (na.endsWith('/' + nb) || nb.endsWith('/' + na)) {
+    return true;
+  }
+  const ba = na.split('/').pop() ?? na;
+  const bb = nb.split('/').pop() ?? nb;
+  return ba === bb && ba.length > 0;
+}
+
+/**
+ * Among boxes for the same source file+line, prefer hits outside a thin
+ * top/bottom band and closest to the vertical page middle. On remaining ties,
+ * prefer larger area (body block over a tiny edge glyph).
+ */
+export function preferCentralForwardBox(
+  boxes: SynctexBox[],
+  sourceFile: string,
+  line: number,
+  pageHeight?: number,
+): SynctexBox | undefined {
+  const matching = boxes.filter(
+    (b) => b.linenumber === line && synctexFilenamesMatch(b.filename, sourceFile),
+  );
+  if (matching.length === 0) {
+    return undefined;
+  }
+  const h = pageHeight ?? estimatePageHeightFromBoxes(boxes);
+  const band = Math.max(24, h * FORWARD_EDGE_BAND_FRAC);
+  const mid = h / 2;
+
+  let best: SynctexBox | undefined;
+  let bestInEdge = true;
+  let bestMidDist = Infinity;
+  let bestArea = -1;
+
+  for (const box of matching) {
+    const cy = boxVerticalCenter(box);
+    const inEdge = cy < band || cy > h - band;
+    const midDist = Math.abs(cy - mid);
+    const area = boxArea(box);
+    const better =
+      !best ||
+      (bestInEdge && !inEdge) ||
+      (inEdge === bestInEdge &&
+        (midDist < bestMidDist - 1e-9 ||
+          (Math.abs(midDist - bestMidDist) <= 1e-9 && area > bestArea)));
+    if (better) {
+      best = box;
+      bestInEdge = inEdge;
+      bestMidDist = midDist;
+      bestArea = area;
+    }
+  }
+  return best;
+}

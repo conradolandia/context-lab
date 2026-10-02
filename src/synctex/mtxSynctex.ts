@@ -5,6 +5,7 @@ import {
   COARSE_FLOAT_LINE_USER_MESSAGE,
   isSuspiciousFileStartHit,
   nearestSynctexBox,
+  preferCentralForwardBox,
   readSynctexPageBoxes,
   type SynctexBox,
 } from './synctexBoxes';
@@ -12,10 +13,14 @@ import {
 export {
   COARSE_FLOAT_LINE_USER_MESSAGE,
   distanceToBox,
+  estimatePageHeightFromBoxes,
+  FORWARD_EDGE_BAND_FRAC,
   isSuspiciousFileStartHit,
   nearestSynctexBox,
   parseSynctexPageBoxes,
+  preferCentralForwardBox,
   readSynctexPageBoxes,
+  synctexFilenamesMatch,
   SUSPICIOUS_TOP_LINE_MAX,
   MID_PAGE_MTX_Y_MIN,
 } from './synctexBoxes';
@@ -277,9 +282,53 @@ export interface SynctexInvokeResult<T> {
   note?: string;
 }
 
+function boxToForwardResult(box: SynctexBox, page: number): ForwardSyncResult {
+  return {
+    page,
+    llx: box.x,
+    lly: box.y - box.d,
+    urx: box.x + box.w,
+    ury: box.y + box.h,
+  };
+}
+
+/**
+ * When several synctex boxes share the source line, bias away from thin
+ * header/footer bands toward the page vertical middle (largest/most central).
+ */
+export function refineForwardHit(
+  synctexPath: string,
+  sourceFile: string,
+  line: number,
+  hit: ForwardSyncResult,
+): { result: ForwardSyncResult; note?: string } {
+  const boxes = readSynctexPageBoxes(synctexPath, hit.page);
+  if (boxes.length === 0) {
+    return { result: hit };
+  }
+  const preferred = preferCentralForwardBox(boxes, sourceFile, line);
+  if (!preferred) {
+    return { result: hit };
+  }
+  const next = boxToForwardResult(preferred, hit.page);
+  const same =
+    Math.abs(next.llx - hit.llx) < 0.5 &&
+    Math.abs(next.lly - hit.lly) < 0.5 &&
+    Math.abs(next.urx - hit.urx) < 0.5 &&
+    Math.abs(next.ury - hit.ury) < 0.5;
+  if (same) {
+    return { result: hit };
+  }
+  return {
+    result: next,
+    note: `forward prefer central box (mtx llx=${hit.llx} lly=${hit.lly} → ${next.llx},${next.lly})`,
+  };
+}
+
 /**
  * Forward SyncTeX: source file+line → PDF page and box.
  * Always runs with cwd = job/project directory against the project synctex file.
+ * After mtx `--find`, optionally prefer a same-line box nearer the page middle.
  */
 export async function forwardSync(
   toolchain: Toolchain,
@@ -297,7 +346,15 @@ export async function forwardSync(
       `Forward SyncTeX produced no match (exit ${exitCode}) cwd=${spec.cwd} argv=${JSON.stringify(spec.args)}: ${combined.trim() || '(empty output)'}`,
     );
   }
-  return { result: parsed, argv: spec.args, cwd: spec.cwd, stdout, stderr };
+  const refined = refineForwardHit(synctexPath, sourceFile, line, parsed);
+  return {
+    result: refined.result,
+    argv: spec.args,
+    cwd: spec.cwd,
+    stdout,
+    stderr,
+    note: refined.note,
+  };
 }
 
 export interface BackwardSyncOptions {
