@@ -239,7 +239,7 @@ export function synctexFilenamesMatch(a: string, b: string): boolean {
   return ba === bb && ba.length > 0;
 }
 
-function isOversizedForwardBox(
+export function isOversizedForwardBox(
   box: SynctexBox,
   pageHeight: number,
   pageWidth: number,

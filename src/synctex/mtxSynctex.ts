@@ -2,23 +2,30 @@ import { spawn } from 'node:child_process';
 import * as path from 'node:path';
 import type { Toolchain } from '../toolchain/discover';
 import {
+  boxArea,
+  boxVerticalCenter,
   COARSE_FLOAT_LINE_USER_MESSAGE,
   estimatePageHeightFromBoxes,
   FORWARD_EDGE_BAND_FRAC,
   FORWARD_MAX_BOX_PAGE_FRAC,
+  isOversizedForwardBox,
   isSuspiciousFileStartHit,
   nearestSynctexBox,
   pickForwardSameLineBox,
   readSynctexPageBoxes,
+  synctexFilenamesMatch,
   type SynctexBox,
 } from './synctexBoxes';
 
 export {
+  boxArea,
+  boxVerticalCenter,
   COARSE_FLOAT_LINE_USER_MESSAGE,
   distanceToBox,
   estimatePageHeightFromBoxes,
   FORWARD_EDGE_BAND_FRAC,
   FORWARD_MAX_BOX_PAGE_FRAC,
+  isOversizedForwardBox,
   isSuspiciousFileStartHit,
   nearestSynctexBox,
   parseSynctexPageBoxes,
@@ -304,6 +311,62 @@ function hitArea(hit: ForwardSyncResult): number {
   return Math.abs(hit.urx - hit.llx) * Math.abs(hit.ury - hit.lly);
 }
 
+/** Compact same-line box dump for ConTeXt debug (forward SyncTeX). */
+export interface ForwardSameLineBoxDiag {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  d: number;
+  cy: number;
+  area: number;
+  inEdge: boolean;
+  oversized: boolean;
+}
+
+/** Diagnostic detail for one forward refine pass (logged when debugOutput). */
+export interface ForwardRefineDiag {
+  raw: ForwardSyncResult;
+  chosen: ForwardSyncResult;
+  pageHeight: number;
+  pageWidth: number;
+  band: number;
+  hitCy: number;
+  hitInEdge: boolean;
+  sameLineCount: number;
+  sameLineBoxes: ForwardSameLineBoxDiag[];
+  action: 'keep-raw' | 'no-boxes' | 'no-same-line' | 'oversized-skip' | 'refined';
+}
+
+function summarizeSameLineBoxes(
+  boxes: SynctexBox[],
+  sourceFile: string,
+  line: number,
+  pageHeight: number,
+  pageWidth: number,
+): ForwardSameLineBoxDiag[] {
+  const band = Math.max(24, pageHeight * FORWARD_EDGE_BAND_FRAC);
+  return boxes
+    .filter(
+      (b) =>
+        b.linenumber === line && synctexFilenamesMatch(b.filename, sourceFile),
+    )
+    .map((b) => {
+      const cy = boxVerticalCenter(b);
+      return {
+        x: b.x,
+        y: b.y,
+        w: b.w,
+        h: b.h,
+        d: b.d,
+        cy,
+        area: boxArea(b),
+        inEdge: cy < band || cy > pageHeight - band,
+        oversized: isOversizedForwardBox(b, pageHeight, pageWidth),
+      };
+    });
+}
+
 /**
  * When mtx `--find` lands in a thin header/footer band, replace with a
  * same-line box outside that band closest to the mtx hit (not page middle).
@@ -314,22 +377,51 @@ export function refineForwardHit(
   sourceFile: string,
   line: number,
   hit: ForwardSyncResult,
-): { result: ForwardSyncResult; note?: string } {
+): { result: ForwardSyncResult; note?: string; diag: ForwardRefineDiag } {
   const boxes = readSynctexPageBoxes(synctexPath, hit.page);
-  if (boxes.length === 0) {
-    return { result: hit };
-  }
-  const pageHeight = estimatePageHeightFromBoxes(boxes);
+  const pageHeight =
+    boxes.length > 0 ? estimatePageHeightFromBoxes(boxes) : 792;
+  const pageWidth =
+    boxes.length > 0
+      ? Math.max(612, ...boxes.map((b) => b.x + b.w), hit.urx, hit.llx)
+      : 612;
   const band = Math.max(24, pageHeight * FORWARD_EDGE_BAND_FRAC);
-  const cy = hitVerticalCenter(hit);
-  const hitInEdge = cy < band || cy > pageHeight - band;
+  const hitCy = hitVerticalCenter(hit);
+  const hitInEdge = hitCy < band || hitCy > pageHeight - band;
+  const sameLineBoxes = summarizeSameLineBoxes(
+    boxes,
+    sourceFile,
+    line,
+    pageHeight,
+    pageWidth,
+  );
+  const baseDiag = {
+    raw: hit,
+    pageHeight,
+    pageWidth,
+    band,
+    hitCy,
+    hitInEdge,
+    sameLineCount: sameLineBoxes.length,
+    sameLineBoxes,
+  };
+
+  if (boxes.length === 0) {
+    return {
+      result: hit,
+      diag: { ...baseDiag, chosen: hit, action: 'no-boxes' },
+    };
+  }
   if (!hitInEdge) {
     // mtx already landed mid-page; keep its box (avoids expanding to a vbox).
-    return { result: hit };
+    return {
+      result: hit,
+      diag: { ...baseDiag, chosen: hit, action: 'keep-raw' },
+    };
   }
   const near = {
     x: (hit.llx + hit.urx) / 2,
-    y: cy,
+    y: hitCy,
   };
   const preferred = pickForwardSameLineBox(
     boxes,
@@ -339,18 +431,18 @@ export function refineForwardHit(
     pageHeight,
   );
   if (!preferred) {
-    return { result: hit };
+    return {
+      result: hit,
+      diag: { ...baseDiag, chosen: hit, action: 'no-same-line' },
+    };
   }
   const next = boxToForwardResult(preferred, hit.page);
-  const pageWidth = Math.max(
-    612,
-    ...boxes.map((b) => b.x + b.w),
-    hit.urx,
-    hit.llx,
-  );
   const maxArea = pageHeight * pageWidth * FORWARD_MAX_BOX_PAGE_FRAC;
   if (hitArea(next) > maxArea && hitArea(next) > hitArea(hit) * 4) {
-    return { result: hit };
+    return {
+      result: hit,
+      diag: { ...baseDiag, chosen: hit, action: 'oversized-skip' },
+    };
   }
   const same =
     Math.abs(next.llx - hit.llx) < 0.5 &&
@@ -358,12 +450,44 @@ export function refineForwardHit(
     Math.abs(next.urx - hit.urx) < 0.5 &&
     Math.abs(next.ury - hit.ury) < 0.5;
   if (same) {
-    return { result: hit };
+    return {
+      result: hit,
+      diag: { ...baseDiag, chosen: hit, action: 'keep-raw' },
+    };
   }
   return {
     result: next,
     note: `forward edge-band refine (mtx llx=${hit.llx} lly=${hit.lly} → ${next.llx},${next.lly})`,
+    diag: { ...baseDiag, chosen: next, action: 'refined' },
   };
+}
+
+export interface ForwardSyncInvokeResult
+  extends SynctexInvokeResult<ForwardSyncResult> {
+  /** First mtx `--find` box before edge-band refine. */
+  raw: ForwardSyncResult;
+  /** Edge-band refine diagnostics (for ConTeXt debug). */
+  diag: ForwardRefineDiag;
+  /** Extra `page=…` matches in mtx stdout beyond the first (rare). */
+  extraHits: ForwardSyncResult[];
+}
+
+/** Collect every `page=… llx=…` record in mtx `--find` output (first is primary). */
+export function parseAllFindHits(text: string): ForwardSyncResult[] {
+  const re =
+    /page\s*=\s*['"]?([-\d.]+)['"]?\s+llx\s*=\s*['"]?([-\d.]+)['"]?\s+lly\s*=\s*['"]?([-\d.]+)['"]?\s+urx\s*=\s*['"]?([-\d.]+)['"]?\s+ury\s*=\s*['"]?([-\d.]+)['"]?/gi;
+  const hits: ForwardSyncResult[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    hits.push({
+      page: Number(m[1]),
+      llx: Number(m[2]),
+      lly: Number(m[3]),
+      urx: Number(m[4]),
+      ury: Number(m[5]),
+    });
+  }
+  return hits;
 }
 
 /**
@@ -377,11 +501,12 @@ export async function forwardSync(
   sourceFile: string,
   line: number,
   jobDir: string,
-): Promise<SynctexInvokeResult<ForwardSyncResult>> {
+): Promise<ForwardSyncInvokeResult> {
   const spec = buildFindArgs(synctexPath, sourceFile, line, jobDir);
   const { stdout, stderr, exitCode } = await runMtx(toolchain, spec.args, spec.cwd);
   const combined = `${stdout}\n${stderr}`;
-  const parsed = parseFindOutput(combined);
+  const allHits = parseAllFindHits(combined);
+  const parsed = allHits[0] ?? parseFindOutput(combined);
   if (!parsed) {
     throw new SynctexError(
       `Forward SyncTeX produced no match (exit ${exitCode}) cwd=${spec.cwd} argv=${JSON.stringify(spec.args)}: ${combined.trim() || '(empty output)'}`,
@@ -390,6 +515,9 @@ export async function forwardSync(
   const refined = refineForwardHit(synctexPath, sourceFile, line, parsed);
   return {
     result: refined.result,
+    raw: parsed,
+    diag: refined.diag,
+    extraHits: allHits.slice(1),
     argv: spec.args,
     cwd: spec.cwd,
     stdout,

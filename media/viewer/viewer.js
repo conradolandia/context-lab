@@ -653,6 +653,8 @@ function paintHighlight(opts) {
     const viewport = page.getViewport({ scale: currentScale });
     const raw = mtxBoxToViewport(page, viewport, msg.llx, msg.lly, msg.urx, msg.ury);
     const box = clampHighlightBox(raw, viewport.width, viewport.height);
+    // Simple top-down CSS (no PDF.js convert) — compare with raw.top in debug logs.
+    const simpleMtxCssTop = Math.min(msg.lly, msg.ury) * currentScale;
     const hl = document.createElement('div');
     hl.className = 'highlight';
     hl.style.left = `${box.left}px`;
@@ -660,25 +662,56 @@ function paintHighlight(opts) {
     hl.style.width = `${box.width}px`;
     hl.style.height = `${box.height}px`;
     still.appendChild(hl);
+
+    const scrollTopBefore = viewer.scrollTop;
+    const pageOffsetTop = still.offsetTop;
+    const pageOffsetHeight = still.offsetHeight;
+    const canvasCenterY = box.top + box.height / 2;
+    const intendedScrollTop = Math.max(
+      0,
+      pageOffsetTop + canvasCenterY - viewer.clientHeight / 2,
+    );
+
     // Only scroll on a fresh forward SyncTeX (`applyHighlight`). Re-paints from
     // virtualized render / zoom / layout must not fight the user's scroll.
     if (shouldScroll) {
       hl.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
     }
 
-    vscode.postMessage({
-      type: 'highlight',
-      page: msg.page,
-      viewportLeft: box.left,
-      top: box.top,
-      w: box.width,
-      h: box.height,
-      scale: currentScale,
-      llx: msg.llx,
-      lly: msg.lly,
-      urx: msg.urx,
-      ury: msg.ury,
-    });
+    const postScroll = () => {
+      vscode.postMessage({
+        type: 'highlight',
+        page: msg.page,
+        viewportLeft: box.left,
+        top: box.top,
+        w: box.width,
+        h: box.height,
+        scale: currentScale,
+        llx: msg.llx,
+        lly: msg.lly,
+        urx: msg.urx,
+        ury: msg.ury,
+        scrollTopBefore,
+        scrollTopAfter: viewer.scrollTop,
+        clientHeight: viewer.clientHeight,
+        scrollHeight: viewer.scrollHeight,
+        pageOffsetTop,
+        pageOffsetHeight,
+        rawCanvasTop: raw.top,
+        clampedCanvasTop: box.top,
+        simpleMtxCssTop,
+        intendedScrollTop,
+        pageView: Array.isArray(page.view) ? [...page.view] : undefined,
+        viewportHeight: viewport.height,
+      });
+    };
+
+    if (shouldScroll) {
+      // smooth scrollIntoView settles asynchronously; sample after a short delay.
+      setTimeout(postScroll, 180);
+    } else {
+      postScroll();
+    }
 
     highlightFadeTimer = setTimeout(() => {
       hl.style.opacity = '0';
@@ -691,9 +724,30 @@ function applyHighlight(raw) {
   currentPage = activeHighlight.page;
   updateToolbar();
   const el = pageEls.get(activeHighlight.page);
+  const scrollTopBeforePage = viewer.scrollTop;
   if (el) {
     el.scrollIntoView({ behavior: 'instant', block: 'center' });
   }
+  // Page-centering pass (before highlight scroll). Helps diagnose identical landings.
+  vscode.postMessage({
+    type: 'forwardSyncDiag',
+    phase: 'page-center',
+    page: activeHighlight.page,
+    scale: currentScale,
+    llx: activeHighlight.llx,
+    lly: activeHighlight.lly,
+    urx: activeHighlight.urx,
+    ury: activeHighlight.ury,
+    scrollTopBefore: scrollTopBeforePage,
+    scrollTopAfter: viewer.scrollTop,
+    clientHeight: viewer.clientHeight,
+    scrollHeight: viewer.scrollHeight,
+    pageOffsetTop: el ? el.offsetTop : undefined,
+    pageOffsetHeight: el ? el.offsetHeight : undefined,
+    intendedScrollTop: el
+      ? Math.max(0, el.offsetTop + el.offsetHeight / 2 - viewer.clientHeight / 2)
+      : undefined,
+  });
   paintHighlight({ scroll: true });
 }
 

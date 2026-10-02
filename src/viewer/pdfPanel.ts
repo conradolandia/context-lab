@@ -34,6 +34,45 @@ export type ViewerMessage =
       lly?: number;
       urx?: number;
       ury?: number;
+      /** Forward SyncTeX scroll diagnostics (optional). */
+      scrollTopBefore?: number;
+      scrollTopAfter?: number;
+      clientHeight?: number;
+      scrollHeight?: number;
+      pageOffsetTop?: number;
+      pageOffsetHeight?: number;
+      rawCanvasTop?: number;
+      clampedCanvasTop?: number;
+      simpleMtxCssTop?: number;
+      intendedScrollTop?: number;
+      pageView?: number[];
+      viewportHeight?: number;
+    }
+  | {
+      type: 'forwardSyncDiag';
+      phase: 'page-center' | 'highlight';
+      page: number;
+      scale: number;
+      llx?: number;
+      lly?: number;
+      urx?: number;
+      ury?: number;
+      scrollTopBefore?: number;
+      scrollTopAfter?: number;
+      clientHeight?: number;
+      scrollHeight?: number;
+      pageOffsetTop?: number;
+      pageOffsetHeight?: number;
+      rawCanvasTop?: number;
+      clampedCanvasTop?: number;
+      simpleMtxCssTop?: number;
+      intendedScrollTop?: number;
+      pageView?: number[];
+      viewportHeight?: number;
+      viewportLeft?: number;
+      top?: number;
+      w?: number;
+      h?: number;
     };
 
 export interface ForwardSyncPayload {
@@ -383,6 +422,79 @@ export class PdfPanel {
     });
   }
 
+  private logForwardScrollDiag(
+    phase: string,
+    msg: {
+      page: number;
+      scale?: number;
+      llx?: number;
+      lly?: number;
+      urx?: number;
+      ury?: number;
+      scrollTopBefore?: number;
+      scrollTopAfter?: number;
+      clientHeight?: number;
+      scrollHeight?: number;
+      pageOffsetTop?: number;
+      pageOffsetHeight?: number;
+      rawCanvasTop?: number;
+      clampedCanvasTop?: number;
+      simpleMtxCssTop?: number;
+      intendedScrollTop?: number;
+      pageView?: number[];
+      viewportHeight?: number;
+      viewportLeft?: number;
+      top?: number;
+      w?: number;
+      h?: number;
+    },
+  ): void {
+    if (
+      msg.scrollTopBefore == null &&
+      msg.intendedScrollTop == null &&
+      msg.pageOffsetTop == null
+    ) {
+      return;
+    }
+    this.onLog?.(
+      `[viewer] forward-scroll (${phase}) page=${msg.page}` +
+        (msg.scrollTopBefore != null
+          ? ` scrollTopBefore=${msg.scrollTopBefore.toFixed(1)}`
+          : '') +
+        (msg.scrollTopAfter != null
+          ? ` scrollTopAfter=${msg.scrollTopAfter.toFixed(1)}`
+          : '') +
+        (msg.intendedScrollTop != null
+          ? ` intendedScrollTop=${msg.intendedScrollTop.toFixed(1)}`
+          : '') +
+        (msg.clientHeight != null
+          ? ` clientH=${msg.clientHeight.toFixed(1)}`
+          : '') +
+        (msg.scrollHeight != null
+          ? ` scrollH=${msg.scrollHeight.toFixed(1)}`
+          : '') +
+        (msg.pageOffsetTop != null
+          ? ` pageOffsetTop=${msg.pageOffsetTop.toFixed(1)}`
+          : '') +
+        (msg.pageOffsetHeight != null
+          ? ` pageOffsetH=${msg.pageOffsetHeight.toFixed(1)}`
+          : '') +
+        (msg.rawCanvasTop != null
+          ? ` rawCanvasY=${msg.rawCanvasTop.toFixed(1)}`
+          : '') +
+        (msg.clampedCanvasTop != null
+          ? ` clampedCanvasY=${msg.clampedCanvasTop.toFixed(1)}`
+          : '') +
+        (msg.simpleMtxCssTop != null
+          ? ` simpleMtxCssTop=${msg.simpleMtxCssTop.toFixed(1)}`
+          : '') +
+        (msg.viewportHeight != null
+          ? ` viewportH=${msg.viewportHeight.toFixed(1)}`
+          : '') +
+        (msg.pageView != null ? ` pageView=[${msg.pageView.join(',')}]` : ''),
+    );
+  }
+
   private handleMessage(msg: ViewerMessage): void {
     switch (msg.type) {
       case 'ready': {
@@ -439,6 +551,10 @@ export class PdfPanel {
               ? ` llx=${msg.llx} lly=${msg.lly} urx=${msg.urx} ury=${msg.ury}`
               : ''),
         );
+        this.logForwardScrollDiag('highlight', msg);
+        break;
+      case 'forwardSyncDiag':
+        this.logForwardScrollDiag(msg.phase, msg);
         break;
       case 'loadError':
         void this.recoverFromLoadError(msg.message);

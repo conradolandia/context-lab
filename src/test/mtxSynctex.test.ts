@@ -4,6 +4,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
   parseFindOutput,
+  parseAllFindHits,
   parseReportOutput,
   buildFindArgs,
   buildReportArgs,
@@ -65,6 +66,20 @@ describe('mtxSynctex parseFindOutput', () => {
   it('returns undefined for empty / unrelated output', () => {
     assert.equal(parseFindOutput(''), undefined);
     assert.equal(parseFindOutput('mtx-synctex | nothing found'), undefined);
+  });
+
+  it('parseAllFindHits collects every page= box in stdout', () => {
+    const text =
+      'page=1 llx=10 lly=20 urx=30 ury=40\n' +
+      'noise\n' +
+      "page='2' llx='50' lly='60' urx='70' ury='80'\n";
+    const hits = parseAllFindHits(text);
+    assert.equal(hits.length, 2);
+    assert.equal(hits[0].page, 1);
+    assert.equal(hits[0].llx, 10);
+    assert.equal(hits[1].page, 2);
+    assert.equal(hits[1].urx, 70);
+    assert.deepEqual(parseAllFindHits('nothing'), []);
   });
 });
 
@@ -282,6 +297,11 @@ describe('forward SyncTeX edge-band refine', () => {
     assert.equal(refined.result.lly, 100);
     assert.ok(Math.abs(refined.result.ury - refined.result.lly) < 100);
     assert.ok(refined.note);
+    assert.equal(refined.diag.action, 'refined');
+    assert.equal(refined.diag.hitInEdge, true);
+    assert.ok(refined.diag.sameLineCount >= 2);
+    assert.equal(refined.diag.raw, edgeHit);
+    assert.equal(refined.diag.chosen.lly, 100);
 
     const midHit = {
       page: 10,
@@ -293,6 +313,8 @@ describe('forward SyncTeX edge-band refine', () => {
     const kept = refineForwardHit(fixturePath, 'chapter.tex', 42, midHit);
     assert.equal(kept.result, midHit);
     assert.equal(kept.note, undefined);
+    assert.equal(kept.diag.action, 'keep-raw');
+    assert.equal(kept.diag.hitInEdge, false);
   });
 });
 

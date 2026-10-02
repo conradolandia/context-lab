@@ -36,7 +36,7 @@ import { maybeWarnLatexWorkshopConflict } from './compat/latexWorkshopConflict';
 import { initOutputLog, logDebug, logUser } from './outputLog';
 
 /** Bump when shipping a SyncTeX/viewer/LSP/diagnostics/project-view behavior change Sir must verify in Output. */
-export const BUILD_ID = 'synctex-forward-precision-v1';
+export const BUILD_ID = 'synctex-forward-debug-v1';
 
 let output: vscode.OutputChannel;
 let digestifOutput: vscode.OutputChannel;
@@ -269,7 +269,17 @@ async function doForwardSync(opts?: {
   );
 
   try {
-    const { result: hit, argv, cwd, note } = await forwardSync(
+    const {
+      result: hit,
+      raw,
+      diag,
+      extraHits,
+      argv,
+      cwd,
+      stdout,
+      stderr,
+      note,
+    } = await forwardSync(
       toolchain,
       snapshot.synctexPath,
       file,
@@ -277,8 +287,53 @@ async function doForwardSync(opts?: {
       snapshot.jobDir,
     );
     logDebug(`[synctex find] cwd=${cwd} argv=${JSON.stringify(argv)}`);
+    const mtxOut = `${stdout}\n${stderr}`.trim();
+    if (mtxOut) {
+      logDebug(`[synctex find] mtx stdout/stderr:\n${mtxOut}`);
+    }
     logDebug(
-      `[synctex find] page=${hit.page} llx=${hit.llx} lly=${hit.lly} urx=${hit.urx} ury=${hit.ury} (mtx y is top-down)`,
+      `[synctex find] raw mtx page=${raw.page} llx=${raw.llx} lly=${raw.lly} urx=${raw.urx} ury=${raw.ury}` +
+        ` w=${(raw.urx - raw.llx).toFixed(2)} h=${Math.abs(raw.ury - raw.lly).toFixed(2)}` +
+        ` cy=${diag.hitCy.toFixed(2)} (mtx y is top-down)`,
+    );
+    if (extraHits.length > 0) {
+      logDebug(
+        `[synctex find] extra mtx hits (${extraHits.length}): ` +
+          extraHits
+            .map(
+              (h) =>
+                `page=${h.page} llx=${h.llx} lly=${h.lly} urx=${h.urx} ury=${h.ury}`,
+            )
+            .join(' | '),
+      );
+    }
+    logDebug(
+      `[synctex find] refine action=${diag.action} hitInEdge=${diag.hitInEdge}` +
+        ` pageH=${diag.pageHeight.toFixed(1)} pageW=${diag.pageWidth.toFixed(1)}` +
+        ` band=${diag.band.toFixed(1)} sameLine=${diag.sameLineCount}`,
+    );
+    if (diag.sameLineBoxes.length > 0) {
+      const maxDump = 12;
+      const dump = diag.sameLineBoxes.slice(0, maxDump).map((b) => {
+        const flags =
+          (b.inEdge ? 'E' : '-') + (b.oversized ? 'O' : '-');
+        return (
+          `[${flags}] x=${b.x.toFixed(1)} y=${b.y.toFixed(1)}` +
+          ` w=${b.w.toFixed(1)} h=${b.h.toFixed(1)} d=${b.d.toFixed(1)}` +
+          ` cy=${b.cy.toFixed(1)} area=${b.area.toFixed(0)}`
+        );
+      });
+      logDebug(
+        `[synctex find] same-line boxes (E=edge O=oversized` +
+          (diag.sameLineBoxes.length > maxDump
+            ? `; showing ${maxDump}/${diag.sameLineBoxes.length}`
+            : '') +
+          `):\n  ${dump.join('\n  ')}`,
+      );
+    }
+    logDebug(
+      `[synctex find] chosen page=${hit.page} llx=${hit.llx} lly=${hit.lly} urx=${hit.urx} ury=${hit.ury}` +
+        ` w=${(hit.urx - hit.llx).toFixed(2)} h=${Math.abs(hit.ury - hit.lly).toFixed(2)}`,
     );
     if (note) {
       logDebug(`[synctex find] ${note}`);
