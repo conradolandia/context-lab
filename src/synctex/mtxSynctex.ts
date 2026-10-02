@@ -2,25 +2,45 @@ import { spawn } from 'node:child_process';
 import * as path from 'node:path';
 import type { Toolchain } from '../toolchain/discover';
 import {
+  boxArea,
+  boxVerticalCenter,
   COARSE_FLOAT_LINE_USER_MESSAGE,
+  estimatePageHeightFromBoxes,
+  estimatePageWidthFromBoxes,
+  FORWARD_EDGE_BAND_FRAC,
+  FORWARD_MAX_BOX_PAGE_FRAC,
+  isOversizedForwardBox,
   isSuspiciousFileStartHit,
   nearestSynctexBox,
-  preferCentralForwardBox,
+  pickForwardNonEdgeFallbackBox,
+  pickForwardSameLineBox,
   readSynctexPageBoxes,
+  scaleSynctexBox,
+  synctexFilenamesMatch,
+  synctexUnitScaleToPt,
   type SynctexBox,
 } from './synctexBoxes';
 
 export {
+  boxArea,
+  boxVerticalCenter,
   COARSE_FLOAT_LINE_USER_MESSAGE,
   distanceToBox,
   estimatePageHeightFromBoxes,
   FORWARD_EDGE_BAND_FRAC,
+  FORWARD_MAX_BOX_PAGE_FRAC,
+  FORWARD_NEARBY_LINE_MAX,
+  isOversizedForwardBox,
   isSuspiciousFileStartHit,
   nearestSynctexBox,
   parseSynctexPageBoxes,
-  preferCentralForwardBox,
+  pickForwardNonEdgeFallbackBox,
+  pickForwardSameLineBox,
   readSynctexPageBoxes,
+  scaleSynctexBox,
   synctexFilenamesMatch,
+  synctexUnitScaleToPt,
+  SYNCTEX_SP_PER_PT,
   SUSPICIOUS_TOP_LINE_MAX,
   MID_PAGE_MTX_Y_MIN,
 } from './synctexBoxes';
@@ -282,53 +302,375 @@ export interface SynctexInvokeResult<T> {
   note?: string;
 }
 
-function boxToForwardResult(box: SynctexBox, page: number): ForwardSyncResult {
+/**
+ * Convert a synctex content box (top-down pt after unit scale) to an mtx
+ * `--find`-style box. Same top-down space as `--find` / `.synctex` (no PDF flip).
+ */
+function synctexBoxToFindResult(
+  box: SynctexBox,
+  page: number,
+): ForwardSyncResult {
+  const topFromTop = box.y - box.d;
+  const bottomFromTop = box.y + box.h;
   return {
     page,
     llx: box.x,
-    lly: box.y - box.d,
     urx: box.x + box.w,
-    ury: box.y + box.h,
+    lly: topFromTop,
+    ury: bottomFromTop,
   };
 }
 
+function hitVerticalCenter(hit: ForwardSyncResult): number {
+  return (Math.min(hit.lly, hit.ury) + Math.max(hit.lly, hit.ury)) / 2;
+}
+
+function hitArea(hit: ForwardSyncResult): number {
+  return Math.abs(hit.urx - hit.llx) * Math.abs(hit.ury - hit.lly);
+}
+
+/** Compact same-line box dump for ConTeXt debug (forward SyncTeX, pt space). */
+export interface ForwardSameLineBoxDiag {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  d: number;
+  cy: number;
+  area: number;
+  inEdge: boolean;
+  oversized: boolean;
+}
+
+/** Diagnostic detail for one forward refine pass (logged when debugOutput). */
+export interface ForwardRefineDiag {
+  raw: ForwardSyncResult;
+  chosen: ForwardSyncResult;
+  pageHeight: number;
+  pageWidth: number;
+  band: number;
+  hitCy: number;
+  hitInEdge: boolean;
+  sameLineCount: number;
+  sameLineBoxes: ForwardSameLineBoxDiag[];
+  /** 1 (pt), 65536 (sp→pt), or null when refine skipped for units. */
+  unitScale: number | null;
+  /**
+   * When true, the chosen box must not be painted (raw edge hit with no
+   * non-edge replacement). Viewer may still scroll to the page.
+   */
+  skipHighlight: boolean;
+  action:
+    | 'keep-raw'
+    | 'no-boxes'
+    | 'no-same-line'
+    | 'edge-unresolved'
+    | 'oversized-skip'
+    | 'units-skip'
+    | 'refined'
+    | 'refined-nearby'
+    | 'refined-next-page';
+}
+
+function summarizeSameLineBoxes(
+  boxes: SynctexBox[],
+  sourceFile: string,
+  line: number,
+  pageHeight: number,
+  pageWidth: number,
+): ForwardSameLineBoxDiag[] {
+  const band = Math.max(24, pageHeight * FORWARD_EDGE_BAND_FRAC);
+  return boxes
+    .filter(
+      (b) =>
+        b.linenumber === line && synctexFilenamesMatch(b.filename, sourceFile),
+    )
+    .map((b) => {
+      const cy = boxVerticalCenter(b);
+      return {
+        x: b.x,
+        y: b.y,
+        w: b.w,
+        h: b.h,
+        d: b.d,
+        cy,
+        area: boxArea(b),
+        inEdge: cy < band || cy > pageHeight - band,
+        oversized: isOversizedForwardBox(b, pageHeight, pageWidth),
+      };
+    });
+}
+
 /**
- * When several synctex boxes share the source line, bias away from thin
- * header/footer bands toward the page vertical middle (largest/most central).
+ * When mtx `--find` lands in a thin header/footer band, replace with a
+ * same-line (then nearby-line / same-file) box outside that band closest to
+ * the mtx hit. Never paint an unreplaced edge-band `--find` box.
+ *
+ * Same-line candidates come from parsing the `.synctex` file (not mtx API).
+ * Raw records are often TeX sp; convert to `--find` points before compare.
+ * `--find` and synctex boxes share top-down space after unit scale.
  */
 export function refineForwardHit(
   synctexPath: string,
   sourceFile: string,
   line: number,
   hit: ForwardSyncResult,
-): { result: ForwardSyncResult; note?: string } {
-  const boxes = readSynctexPageBoxes(synctexPath, hit.page);
-  if (boxes.length === 0) {
-    return { result: hit };
+): { result: ForwardSyncResult; note?: string; diag: ForwardRefineDiag } {
+  const boxesRaw = readSynctexPageBoxes(synctexPath, hit.page);
+  const emptyDiag = (
+    action: ForwardRefineDiag['action'],
+    unitScale: number | null = null,
+    skipHighlight = false,
+  ): ForwardRefineDiag => ({
+    raw: hit,
+    chosen: hit,
+    pageHeight: 0,
+    pageWidth: 0,
+    band: 0,
+    hitCy: hitVerticalCenter(hit),
+    hitInEdge: false,
+    sameLineCount: 0,
+    sameLineBoxes: [],
+    unitScale,
+    skipHighlight,
+    action,
+  });
+
+  if (boxesRaw.length === 0) {
+    // No page boxes to validate against — keep raw (viewer still has pageH scale).
+    return { result: hit, diag: emptyDiag('no-boxes') };
   }
-  const preferred = preferCentralForwardBox(boxes, sourceFile, line);
+
+  const unitScale = synctexUnitScaleToPt(boxesRaw, hit);
+  if (unitScale == null) {
+    return {
+      result: hit,
+      note: 'forward edge-band refine skipped (synctex box units unknown)',
+      diag: emptyDiag('units-skip'),
+    };
+  }
+
+  const boxes = boxesRaw.map((b) => scaleSynctexBox(b, unitScale));
+  const pageHeight =
+    boxes.length > 0 ? estimatePageHeightFromBoxes(boxes) : 792;
+  const pageWidth =
+    boxes.length > 0
+      ? Math.max(
+          estimatePageWidthFromBoxes(boxes),
+          hit.urx,
+          hit.llx,
+          612,
+        )
+      : 612;
+  const band = Math.max(24, pageHeight * FORWARD_EDGE_BAND_FRAC);
+  // `--find` and synctex boxes are both top-down after unit scale.
+  const hitCy = hitVerticalCenter(hit);
+  const hitInEdge = hitCy < band || hitCy > pageHeight - band;
+  const sameLineBoxes = summarizeSameLineBoxes(
+    boxes,
+    sourceFile,
+    line,
+    pageHeight,
+    pageWidth,
+  );
+  const baseDiag = {
+    raw: hit,
+    pageHeight,
+    pageWidth,
+    band,
+    hitCy,
+    hitInEdge,
+    sameLineCount: sameLineBoxes.length,
+    sameLineBoxes,
+    unitScale,
+    skipHighlight: false,
+  };
+
+  if (!hitInEdge) {
+    // mtx already landed mid-page; keep its box (avoids expanding to a vbox).
+    return {
+      result: hit,
+      diag: { ...baseDiag, chosen: hit, action: 'keep-raw' },
+    };
+  }
+  const near = {
+    x: (hit.llx + hit.urx) / 2,
+    y: hitCy,
+  };
+  const hitInBottomEdge = hitCy > pageHeight - band;
+  let preferred: SynctexBox | undefined;
+  let viaNearby = false;
+  let viaNextPage = false;
+  let chosenPage = hit.page;
+
+  // Bottom-of-page N often means the line starts on N+1 (top). Prefer a
+  // non-edge box there before same-line/nearby refine that keeps a low box on N
+  // (e.g. lly≈585 still on 72 instead of the top of 73).
+  if (hitInBottomEdge) {
+    const nextRaw = readSynctexPageBoxes(synctexPath, hit.page + 1);
+    if (nextRaw.length > 0) {
+      const nextScale = synctexUnitScaleToPt(nextRaw, hit) ?? unitScale;
+      const nextBoxes = nextRaw.map((b) => scaleSynctexBox(b, nextScale));
+      const nextH = estimatePageHeightFromBoxes(nextBoxes);
+      const nextNear = {
+        x: near.x,
+        // Bias toward the top body band on the following page.
+        y: Math.max(24, nextH * FORWARD_EDGE_BAND_FRAC) * 1.5,
+      };
+      preferred = pickForwardSameLineBox(
+        nextBoxes,
+        sourceFile,
+        line,
+        nextNear,
+        nextH,
+      );
+      if (preferred) {
+        const cy = boxVerticalCenter(preferred);
+        const nextBand = Math.max(24, nextH * FORWARD_EDGE_BAND_FRAC);
+        if (cy < nextBand || cy > nextH - nextBand) {
+          preferred = undefined;
+        }
+      }
+      if (!preferred) {
+        preferred = pickForwardNonEdgeFallbackBox(
+          nextBoxes,
+          sourceFile,
+          line,
+          nextNear,
+          nextH,
+        );
+      }
+      if (preferred) {
+        viaNextPage = true;
+        chosenPage = hit.page + 1;
+      }
+    }
+  }
+
   if (!preferred) {
-    return { result: hit };
+    preferred = pickForwardSameLineBox(
+      boxes,
+      sourceFile,
+      line,
+      near,
+      pageHeight,
+    );
+    // Same-line may still be an edge box (header/footer tagged with the line).
+    if (preferred) {
+      const cy = boxVerticalCenter(preferred);
+      if (cy < band || cy > pageHeight - band) {
+        preferred = undefined;
+      }
+    }
   }
-  const next = boxToForwardResult(preferred, hit.page);
+  if (!preferred) {
+    preferred = pickForwardNonEdgeFallbackBox(
+      boxes,
+      sourceFile,
+      line,
+      near,
+      pageHeight,
+    );
+    viaNearby = !!preferred;
+  }
+  if (!preferred) {
+    // Do not paint the raw edge `--find` box (wrong page-top / header landings).
+    return {
+      result: hit,
+      note: 'forward edge-band hit unresolved (skipping highlight paint)',
+      diag: {
+        ...baseDiag,
+        chosen: hit,
+        skipHighlight: true,
+        action: sameLineBoxes.length === 0 ? 'no-same-line' : 'edge-unresolved',
+      },
+    };
+  }
+  const next = synctexBoxToFindResult(preferred, chosenPage);
+  const maxArea = pageHeight * pageWidth * FORWARD_MAX_BOX_PAGE_FRAC;
+  if (hitArea(next) > maxArea && hitArea(next) > hitArea(hit) * 4) {
+    return {
+      result: hit,
+      note: 'forward edge-band refine oversized (skipping highlight paint)',
+      diag: {
+        ...baseDiag,
+        chosen: hit,
+        skipHighlight: true,
+        action: 'oversized-skip',
+      },
+    };
+  }
   const same =
+    chosenPage === hit.page &&
     Math.abs(next.llx - hit.llx) < 0.5 &&
     Math.abs(next.lly - hit.lly) < 0.5 &&
     Math.abs(next.urx - hit.urx) < 0.5 &&
     Math.abs(next.ury - hit.ury) < 0.5;
   if (same) {
-    return { result: hit };
+    // Refined box equals raw edge — still do not paint the edge hit.
+    return {
+      result: hit,
+      note: 'forward edge-band refine matched raw edge (skipping highlight paint)',
+      diag: {
+        ...baseDiag,
+        chosen: hit,
+        skipHighlight: true,
+        action: 'edge-unresolved',
+      },
+    };
   }
+  const how = viaNextPage
+    ? ' (next page)'
+    : viaNearby
+      ? ' (nearby/same-file)'
+      : '';
   return {
     result: next,
-    note: `forward prefer central box (mtx llx=${hit.llx} lly=${hit.lly} → ${next.llx},${next.lly})`,
+    note: `forward edge-band refine${how} (mtx page=${hit.page} llx=${hit.llx} lly=${hit.lly} → page=${next.page} ${next.llx},${next.lly}; unitScale=${unitScale})`,
+    diag: {
+      ...baseDiag,
+      chosen: next,
+      action: viaNextPage
+        ? 'refined-next-page'
+        : viaNearby
+          ? 'refined-nearby'
+          : 'refined',
+    },
   };
+}
+
+export interface ForwardSyncInvokeResult
+  extends SynctexInvokeResult<ForwardSyncResult> {
+  /** First mtx `--find` box before edge-band refine. */
+  raw: ForwardSyncResult;
+  /** Edge-band refine diagnostics (for ConTeXt debug). */
+  diag: ForwardRefineDiag;
+  /** Extra `page=…` matches in mtx stdout beyond the first (rare). */
+  extraHits: ForwardSyncResult[];
+}
+
+/** Collect every `page=… llx=…` record in mtx `--find` output (first is primary). */
+export function parseAllFindHits(text: string): ForwardSyncResult[] {
+  const re =
+    /page\s*=\s*['"]?([-\d.]+)['"]?\s+llx\s*=\s*['"]?([-\d.]+)['"]?\s+lly\s*=\s*['"]?([-\d.]+)['"]?\s+urx\s*=\s*['"]?([-\d.]+)['"]?\s+ury\s*=\s*['"]?([-\d.]+)['"]?/gi;
+  const hits: ForwardSyncResult[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    hits.push({
+      page: Number(m[1]),
+      llx: Number(m[2]),
+      lly: Number(m[3]),
+      urx: Number(m[4]),
+      ury: Number(m[5]),
+    });
+  }
+  return hits;
 }
 
 /**
  * Forward SyncTeX: source file+line → PDF page and box.
  * Always runs with cwd = job/project directory against the project synctex file.
- * After mtx `--find`, optionally prefer a same-line box nearer the page middle.
+ * After mtx `--find`, edge-band hits may be refined to a nearer same-line box.
  */
 export async function forwardSync(
   toolchain: Toolchain,
@@ -336,11 +678,12 @@ export async function forwardSync(
   sourceFile: string,
   line: number,
   jobDir: string,
-): Promise<SynctexInvokeResult<ForwardSyncResult>> {
+): Promise<ForwardSyncInvokeResult> {
   const spec = buildFindArgs(synctexPath, sourceFile, line, jobDir);
   const { stdout, stderr, exitCode } = await runMtx(toolchain, spec.args, spec.cwd);
   const combined = `${stdout}\n${stderr}`;
-  const parsed = parseFindOutput(combined);
+  const allHits = parseAllFindHits(combined);
+  const parsed = allHits[0] ?? parseFindOutput(combined);
   if (!parsed) {
     throw new SynctexError(
       `Forward SyncTeX produced no match (exit ${exitCode}) cwd=${spec.cwd} argv=${JSON.stringify(spec.args)}: ${combined.trim() || '(empty output)'}`,
@@ -349,6 +692,9 @@ export async function forwardSync(
   const refined = refineForwardHit(synctexPath, sourceFile, line, parsed);
   return {
     result: refined.result,
+    raw: parsed,
+    diag: refined.diag,
+    extraHits: allHits.slice(1),
     argv: spec.args,
     cwd: spec.cwd,
     stdout,

@@ -33,6 +33,11 @@ const pageEls = new Map();
 const renderedPages = new Set();
 /** @type {Set<number>} */
 const renderingPages = new Set();
+/**
+ * Bumped on every layoutPlaceholders() so in-flight page.render() callbacks
+ * from a destroyed DOM generation cannot mark the new placeholders as rendered.
+ */
+let layoutGeneration = 0;
 /** @type {ReturnType<typeof setTimeout>|null} */
 let highlightFadeTimer = null;
 /** @type {ReturnType<typeof setTimeout>|null} */
@@ -192,17 +197,33 @@ function pdfBoxToViewport(pageViewport, llx, lly, urx, ury) {
 }
 
 /**
- * mtx-synctex --find returns y top-down (y=0 at page top). Convert to PDF
- * bottom-up using the page view box, then to CSS via PDF.js.
+ * mtxrun --script synctex --find returns SyncTeX top-down boxes (same space as
+ * `.synctex` h/r after sp→pt). Map into PDF.js bottom-up via page.view using
+ * SyncTeX pt × viewport scale (crop origin only — no pageViewH/synctexPageH
+ * stretch). Reverse SyncTeX still converts clicks with pageHeight - pdfY.
  */
-function mtxBoxToViewport(page, pageViewport, llx, lly, urx, ury) {
-  const view = page.view; // [xMin, yMin, xMax, yMax]
-  const yMax = view[3];
+function mtxFindBoxToViewport(
+  page,
+  pageViewport,
+  llx,
+  lly,
+  urx,
+  ury,
+  _synctexPageH,
+  _synctexPageW,
+) {
+  const view = Array.isArray(page.view)
+    ? page.view
+    : pageViewport.viewBox || [0, 0, 612, 792];
+  const xMin = view[0] ?? 0;
+  const yMax = view[3] ?? 792;
   const topFromTop = Math.min(lly, ury);
   const bottomFromTop = Math.max(lly, ury);
+  const pdfLlx = xMin + Math.min(llx, urx);
+  const pdfUrx = xMin + Math.max(llx, urx);
   const pdfTop = yMax - topFromTop;
   const pdfBottom = yMax - bottomFromTop;
-  return pdfBoxToViewport(pageViewport, llx, pdfBottom, urx, pdfTop);
+  return pdfBoxToViewport(pageViewport, pdfLlx, pdfBottom, pdfUrx, pdfTop);
 }
 
 function normalizeHighlight(msg) {
@@ -210,7 +231,22 @@ function normalizeHighlight(msg) {
   const lly = msg.lly ?? msg.y ?? 0;
   const urx = msg.urx ?? (msg.width != null ? llx + msg.width : llx + 40);
   const ury = msg.ury ?? (msg.height != null ? lly + msg.height : lly + 12);
-  return { page: Number(msg.page) || 1, llx, lly, urx, ury };
+  return {
+    page: Number(msg.page) || 1,
+    llx,
+    lly,
+    urx,
+    ury,
+    synctexPageH:
+      msg.synctexPageH != null && Number(msg.synctexPageH) > 0
+        ? Number(msg.synctexPageH)
+        : undefined,
+    synctexPageW:
+      msg.synctexPageW != null && Number(msg.synctexPageW) > 0
+        ? Number(msg.synctexPageW)
+        : undefined,
+    skipHighlight: msg.skipHighlight === true,
+  };
 }
 
 function clearHighlightDom() {
@@ -400,6 +436,7 @@ async function goToDestination(resolved) {
 }
 
 function layoutPlaceholders() {
+  layoutGeneration += 1;
   viewer.innerHTML = '';
   pageEls.clear();
   renderedPages.clear();
@@ -460,9 +497,14 @@ async function renderPageCanvas(pageNum) {
   if (!pageDiv) {
     return;
   }
+  const gen = layoutGeneration;
   renderingPages.add(pageNum);
   try {
     const page = await pdfDoc.getPage(pageNum);
+    if (gen !== layoutGeneration || pageEls.get(pageNum) !== pageDiv) {
+      // Layout/zoom/reload replaced this page node while we were awaiting.
+      return;
+    }
     const viewport = page.getViewport({ scale: currentScale });
     pageDiv.style.width = `${viewport.width}px`;
     pageDiv.style.height = `${viewport.height}px`;
@@ -473,17 +515,27 @@ async function renderPageCanvas(pageNum) {
     const ctx = canvas.getContext('2d', { alpha: false });
     canvas.width = viewport.width;
     canvas.height = viewport.height;
+    // alpha:false canvases start black; white fill avoids a dark flash if paint
+    // races ahead of pdf.js (black + yellow SyncTeX overlay reads as olive).
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
     pageDiv.appendChild(canvas);
-    // Store viewport + page.view for delegated click conversion (mtx y is top-down).
+    // Store viewport + page.view for delegated click conversion (--report y is top-down).
     pageDiv._viewport = viewport;
     pageDiv._pageView = page.view; // [xMin, yMin, xMax, yMax]
 
     await page.render({ canvasContext: ctx, viewport }).promise;
+    if (gen !== layoutGeneration || pageEls.get(pageNum) !== pageDiv) {
+      return;
+    }
     renderedPages.add(pageNum);
 
     // Link hit targets only (invisible). No PDF.js AnnotationLayer.
     const links = await ensurePageLinks(page, pageNum);
-    if (pageEls.get(pageNum) === pageDiv && renderedPages.has(pageNum)) {
+    if (gen !== layoutGeneration || pageEls.get(pageNum) !== pageDiv) {
+      return;
+    }
+    if (renderedPages.has(pageNum)) {
       mountLinkOverlays(pageDiv, viewport, links);
     }
 
@@ -563,6 +615,32 @@ function scheduleSyncVisible() {
   }, 50);
 }
 
+/**
+ * True when the live page node still has a rendered canvas (not a placeholder).
+ * renderedPages alone is not enough — a stale in-flight render can poison it.
+ */
+function pageHasRenderedCanvas(pageNum) {
+  const el = pageEls.get(pageNum);
+  return !!(
+    el &&
+    renderedPages.has(pageNum) &&
+    !el.classList.contains('placeholder') &&
+    el.querySelector('canvas')
+  );
+}
+
+/** Clamp SyncTeX highlight CSS box to the page viewport (no full-bleed wipe). */
+function clampHighlightBox(box, pageWidth, pageHeight) {
+  const left = Math.min(Math.max(0, box.left), Math.max(0, pageWidth - 1));
+  const top = Math.min(Math.max(0, box.top), Math.max(0, pageHeight - 1));
+  const maxW = Math.max(8, pageWidth - left);
+  const maxH = Math.max(8, pageHeight - top);
+  // Cap runaway coords (wrong units / page-sized vboxes) to a readable band.
+  const width = Math.min(Math.max(box.width, 8), maxW, pageWidth * 0.95);
+  const height = Math.min(Math.max(box.height, 8), maxH, pageHeight * 0.35);
+  return { left, top, width, height };
+}
+
 function paintHighlight(opts) {
   clearHighlightDom();
   const shouldScroll = opts?.scroll === true;
@@ -571,7 +649,11 @@ function paintHighlight(opts) {
     return;
   }
   const pageDiv = pageEls.get(msg.page);
-  if (!pageDiv || !renderedPages.has(msg.page)) {
+  if (!pageDiv || !pageHasRenderedCanvas(msg.page)) {
+    // Stale renderedPages mark: force a real re-render of the live node.
+    if (renderedPages.has(msg.page) && !pageHasRenderedCanvas(msg.page)) {
+      renderedPages.delete(msg.page);
+    }
     pendingHighlight = msg;
     void ensurePageRendered(msg.page, { scroll: shouldScroll }).then(() => {
       if (activeHighlight && activeHighlight.page === msg.page) {
@@ -587,38 +669,117 @@ function paintHighlight(opts) {
       return;
     }
     const still = pageEls.get(msg.page);
-    if (!still || !renderedPages.has(msg.page)) {
+    if (!still || !pageHasRenderedCanvas(msg.page)) {
       pendingHighlight = msg;
+      if (renderedPages.has(msg.page) && !pageHasRenderedCanvas(msg.page)) {
+        renderedPages.delete(msg.page);
+      }
+      void ensurePageRendered(msg.page, { scroll: shouldScroll }).then(() => {
+        if (activeHighlight && activeHighlight.page === msg.page) {
+          paintHighlight({ scroll: shouldScroll });
+        }
+      });
       return;
     }
     const viewport = page.getViewport({ scale: currentScale });
-    const box = mtxBoxToViewport(page, viewport, msg.llx, msg.lly, msg.urx, msg.ury);
+    if (msg.skipHighlight) {
+      // Edge-band `--find` with no safe replacement: scroll page only, no paint.
+      if (shouldScroll) {
+        still.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+      }
+      vscode.postMessage({
+        type: 'highlight',
+        page: msg.page,
+        viewportLeft: 0,
+        top: 0,
+        w: 0,
+        h: 0,
+        scale: currentScale,
+        llx: msg.llx,
+        lly: msg.lly,
+        urx: msg.urx,
+        ury: msg.ury,
+        skipHighlight: true,
+        pageView: Array.isArray(page.view) ? [...page.view] : undefined,
+        viewportHeight: viewport.height,
+        synctexPageH: msg.synctexPageH,
+        synctexPageW: msg.synctexPageW,
+      });
+      return;
+    }
+    const raw = mtxFindBoxToViewport(
+      page,
+      viewport,
+      msg.llx,
+      msg.lly,
+      msg.urx,
+      msg.ury,
+      msg.synctexPageH,
+      msg.synctexPageW,
+    );
+    const box = clampHighlightBox(raw, viewport.width, viewport.height);
+    // Top-down synctex pt → CSS top (viewer scale only; no pageViewH/synctexH stretch).
+    const topFromTop = Math.min(msg.lly, msg.ury);
+    const simpleMtxCssTop = topFromTop * currentScale;
     const hl = document.createElement('div');
     hl.className = 'highlight';
     hl.style.left = `${box.left}px`;
     hl.style.top = `${box.top}px`;
-    hl.style.width = `${Math.max(box.width, 8)}px`;
-    hl.style.height = `${Math.max(box.height, 8)}px`;
+    hl.style.width = `${box.width}px`;
+    hl.style.height = `${box.height}px`;
     still.appendChild(hl);
+
+    const scrollTopBefore = viewer.scrollTop;
+    const pageOffsetTop = still.offsetTop;
+    const pageOffsetHeight = still.offsetHeight;
+    const canvasCenterY = box.top + box.height / 2;
+    const intendedScrollTop = Math.max(
+      0,
+      pageOffsetTop + canvasCenterY - viewer.clientHeight / 2,
+    );
+
     // Only scroll on a fresh forward SyncTeX (`applyHighlight`). Re-paints from
     // virtualized render / zoom / layout must not fight the user's scroll.
     if (shouldScroll) {
       hl.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
     }
 
-    vscode.postMessage({
-      type: 'highlight',
-      page: msg.page,
-      viewportLeft: box.left,
-      top: box.top,
-      w: box.width,
-      h: box.height,
-      scale: currentScale,
-      llx: msg.llx,
-      lly: msg.lly,
-      urx: msg.urx,
-      ury: msg.ury,
-    });
+    const postScroll = () => {
+      vscode.postMessage({
+        type: 'highlight',
+        page: msg.page,
+        viewportLeft: box.left,
+        top: box.top,
+        w: box.width,
+        h: box.height,
+        scale: currentScale,
+        llx: msg.llx,
+        lly: msg.lly,
+        urx: msg.urx,
+        ury: msg.ury,
+        scrollTopBefore,
+        scrollTopAfter: viewer.scrollTop,
+        clientHeight: viewer.clientHeight,
+        scrollHeight: viewer.scrollHeight,
+        pageOffsetTop,
+        pageOffsetHeight,
+        rawCanvasTop: raw.top,
+        clampedCanvasTop: box.top,
+        simpleMtxCssTop,
+        intendedScrollTop,
+        pageView: Array.isArray(page.view) ? [...page.view] : undefined,
+        viewportHeight: viewport.height,
+        synctexPageH: msg.synctexPageH,
+        synctexPageW: msg.synctexPageW,
+      });
+    };
+
+    if (shouldScroll) {
+      // smooth scrollIntoView settles asynchronously; sample after a short delay.
+      setTimeout(postScroll, 180);
+    } else {
+      postScroll();
+    }
 
     highlightFadeTimer = setTimeout(() => {
       hl.style.opacity = '0';
@@ -631,9 +792,32 @@ function applyHighlight(raw) {
   currentPage = activeHighlight.page;
   updateToolbar();
   const el = pageEls.get(activeHighlight.page);
+  const scrollTopBeforePage = viewer.scrollTop;
+  // Bring the page into view without forcing vertical center — highlight scroll
+  // owns centering so page-center and highlight do not fight.
   if (el) {
-    el.scrollIntoView({ behavior: 'instant', block: 'center' });
+    el.scrollIntoView({ behavior: 'instant', block: 'nearest' });
   }
+  // Diagnostic only: intended page-center scroll (not applied).
+  vscode.postMessage({
+    type: 'forwardSyncDiag',
+    phase: 'page-center',
+    page: activeHighlight.page,
+    scale: currentScale,
+    llx: activeHighlight.llx,
+    lly: activeHighlight.lly,
+    urx: activeHighlight.urx,
+    ury: activeHighlight.ury,
+    scrollTopBefore: scrollTopBeforePage,
+    scrollTopAfter: viewer.scrollTop,
+    clientHeight: viewer.clientHeight,
+    scrollHeight: viewer.scrollHeight,
+    pageOffsetTop: el ? el.offsetTop : undefined,
+    pageOffsetHeight: el ? el.offsetHeight : undefined,
+    intendedScrollTop: el
+      ? Math.max(0, el.offsetTop + el.offsetHeight / 2 - viewer.clientHeight / 2)
+      : undefined,
+  });
   paintHighlight({ scroll: true });
 }
 
@@ -647,8 +831,18 @@ async function ensurePageRendered(pageNum, opts) {
     el.scrollIntoView({ behavior: 'instant', block: 'nearest' });
   }
   await syncVisiblePages();
-  if (!renderedPages.has(pageNum)) {
-    await renderPageCanvas(pageNum);
+  if (!pageHasRenderedCanvas(pageNum)) {
+    if (renderedPages.has(pageNum) && !pageHasRenderedCanvas(pageNum)) {
+      renderedPages.delete(pageNum);
+    }
+    // Wait out an in-flight render for this page before starting another.
+    const deadline = Date.now() + 5000;
+    while (renderingPages.has(pageNum) && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    if (!pageHasRenderedCanvas(pageNum)) {
+      await renderPageCanvas(pageNum);
+    }
   }
 }
 

@@ -4,6 +4,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
   parseFindOutput,
+  parseAllFindHits,
   parseReportOutput,
   buildFindArgs,
   buildReportArgs,
@@ -18,11 +19,16 @@ import {
   SynctexError,
   parseSynctexPageBoxes,
   nearestSynctexBox,
-  preferCentralForwardBox,
+  pickForwardSameLineBox,
   synctexFilenamesMatch,
   isSuspiciousFileStartHit,
   distanceToBox,
   FORWARD_EDGE_BAND_FRAC,
+  FORWARD_MAX_BOX_PAGE_FRAC,
+  refineForwardHit,
+  synctexUnitScaleToPt,
+  pickForwardNonEdgeFallbackBox,
+  SYNCTEX_SP_PER_PT,
 } from '../synctex/mtxSynctex';
 
 const fixturesDir = path.join(__dirname, 'fixtures');
@@ -63,6 +69,20 @@ describe('mtxSynctex parseFindOutput', () => {
   it('returns undefined for empty / unrelated output', () => {
     assert.equal(parseFindOutput(''), undefined);
     assert.equal(parseFindOutput('mtx-synctex | nothing found'), undefined);
+  });
+
+  it('parseAllFindHits collects every page= box in stdout', () => {
+    const text =
+      'page=1 llx=10 lly=20 urx=30 ury=40\n' +
+      'noise\n' +
+      "page='2' llx='50' lly='60' urx='70' ury='80'\n";
+    const hits = parseAllFindHits(text);
+    assert.equal(hits.length, 2);
+    assert.equal(hits[0].page, 1);
+    assert.equal(hits[0].llx, 10);
+    assert.equal(hits[1].page, 2);
+    assert.equal(hits[1].urx, 70);
+    assert.deepEqual(parseAllFindHits('nothing'), []);
   });
 });
 
@@ -208,15 +228,39 @@ describe('synctex page boxes (caption / float refine)', () => {
   });
 });
 
-describe('forward SyncTeX central-box preference', () => {
+describe('forward SyncTeX edge-band refine', () => {
   const text = readFixture('page-with-header-footer.synctex.txt');
+  const resolveFixture = (name: string): string => {
+    const candidates = [
+      path.join(fixturesDir, name),
+      path.join(__dirname, '..', '..', 'src', 'test', 'fixtures', name),
+    ];
+    for (const c of candidates) {
+      if (fs.existsSync(c)) {
+        return c;
+      }
+    }
+    throw new Error(`fixture not found: ${name}`);
+  };
+  const fixturePath = resolveFixture('page-with-header-footer.synctex.txt');
+  const spFixturePath = resolveFixture('page-with-header-footer-sp.synctex.txt');
+  const boundaryFixturePath = resolveFixture('page-boundary-forward.synctex.txt');
 
-  it('prefers mid-page same-line box over header/footer band hits', () => {
+  it('picks nearest non-edge same-line box, not page middle', () => {
     const boxes = parseSynctexPageBoxes(text, 10);
-    const hit = preferCentralForwardBox(boxes, 'chapter.tex', 42, 800);
+    // mtx landed in the header band; nearest body box is y=100, not y=400.
+    const hit = pickForwardSameLineBox(
+      boxes,
+      'chapter.tex',
+      42,
+      { x: 100, y: 20 },
+      800,
+    );
     assert.ok(hit);
-    assert.equal(hit!.y, 400);
-    assert.ok(hit!.w >= 300);
+    assert.equal(hit!.y, 100);
+    assert.ok(hit!.w >= 200);
+    // Must not pick the page-sized vbox (solid-fill overlay regression).
+    assert.ok(hit!.h < 100);
   });
 
   it('matches synctex paths by basename / relative suffix', () => {
@@ -227,11 +271,171 @@ describe('forward SyncTeX central-box preference', () => {
 
   it('returns undefined when no box matches the line', () => {
     const boxes = parseSynctexPageBoxes(text, 10);
-    assert.equal(preferCentralForwardBox(boxes, 'chapter.tex', 7, 800), undefined);
+    assert.equal(
+      pickForwardSameLineBox(boxes, 'chapter.tex', 7, { x: 100, y: 20 }, 800),
+      undefined,
+    );
   });
 
   it('exposes a small edge-band fraction for forward picks', () => {
     assert.ok(FORWARD_EDGE_BAND_FRAC > 0 && FORWARD_EDGE_BAND_FRAC < 0.2);
+    assert.ok(FORWARD_MAX_BOX_PAGE_FRAC > 0 && FORWARD_MAX_BOX_PAGE_FRAC < 0.5);
+  });
+
+  it('refineForwardHit keeps synctex boxes in top-down --find space', () => {
+    // Top-of-page --find hit (SyncTeX top-down: small lly).
+    const edgeHit = {
+      page: 10,
+      llx: 72,
+      lly: 15,
+      urx: 192,
+      ury: 30,
+    };
+    const refined = refineForwardHit(fixturePath, 'chapter.tex', 42, edgeHit);
+    // Closest non-edge body box is synctex y≈100 (top-down).
+    assert.equal(refined.diag.action, 'refined');
+    assert.equal(refined.diag.hitInEdge, true);
+    assert.equal(refined.diag.skipHighlight, false);
+    assert.equal(refined.diag.unitScale, 1);
+    assert.ok(refined.diag.sameLineCount >= 2);
+    assert.equal(refined.diag.raw, edgeHit);
+    assert.ok(refined.note);
+    // Output stays top-down near the body box (not PDF-flipped).
+    assert.ok(
+      refined.result.lly > 80 && refined.result.lly < 130,
+      `expected top-down body lly≈100, got ${refined.result.lly}`,
+    );
+    assert.ok(Math.abs(refined.result.ury - refined.result.lly) < 100);
+
+    const midHit = {
+      page: 10,
+      llx: 80,
+      lly: 380,
+      urx: 200,
+      ury: 400,
+    };
+    const kept = refineForwardHit(fixturePath, 'chapter.tex', 42, midHit);
+    assert.equal(kept.result, midHit);
+    assert.equal(kept.note, undefined);
+    assert.equal(kept.diag.action, 'keep-raw');
+    assert.equal(kept.diag.hitInEdge, false);
+    assert.equal(kept.diag.skipHighlight, false);
+    assert.equal(kept.diag.unitScale, 1);
+  });
+
+  it('refineForwardHit scales TeX sp synctex boxes to --find points', () => {
+    // Same geometry as the pt fixture, stored as pt*65536 (real ConTeXt dumps).
+    const edgeHit = {
+      page: 10,
+      llx: 72,
+      lly: 15,
+      urx: 192,
+      ury: 30,
+    };
+    const refined = refineForwardHit(spFixturePath, 'chapter.tex', 42, edgeHit);
+    assert.equal(refined.diag.unitScale, 65536);
+    assert.equal(refined.diag.action, 'refined');
+    assert.ok(
+      refined.diag.pageHeight > 50 && refined.diag.pageHeight < 2000,
+      `pageH should be in pt after scale, got ${refined.diag.pageHeight}`,
+    );
+    assert.ok(
+      refined.result.lly > 80 && refined.result.lly < 200,
+      `refined lly should be top-down pt near body, got ${refined.result.lly}`,
+    );
+    // Must not leak raw sp into the viewer box.
+    assert.ok(refined.result.lly < 100_000);
+    assert.ok(refined.result.llx < 1000);
+  });
+
+  it('refineForwardHit widens to nearby lines and skips unreplaced edge paints', () => {
+    // Line 43 has no same-line boxes; nearby line 42 has body boxes.
+    const edgeHit = {
+      page: 10,
+      llx: 72,
+      lly: 15,
+      urx: 192,
+      ury: 30,
+    };
+    const nearby = refineForwardHit(fixturePath, 'chapter.tex', 43, edgeHit);
+    assert.equal(nearby.diag.action, 'refined-nearby');
+    assert.equal(nearby.diag.hitInEdge, true);
+    assert.equal(nearby.diag.skipHighlight, false);
+    assert.equal(nearby.diag.sameLineCount, 0);
+    assert.ok(
+      nearby.result.lly > 80 && nearby.result.lly < 450,
+      `expected non-edge body box, got lly=${nearby.result.lly}`,
+    );
+
+    // Unknown file: no non-edge same-file boxes → skip highlight (do not paint edge).
+    const unresolved = refineForwardHit(
+      fixturePath,
+      'missing-chapter.tex',
+      42,
+      edgeHit,
+    );
+    assert.equal(unresolved.diag.skipHighlight, true);
+    assert.ok(
+      unresolved.diag.action === 'no-same-line' ||
+        unresolved.diag.action === 'edge-unresolved',
+    );
+  });
+
+  it('refineForwardHit prefers page N+1 for bottom-edge --find hits', () => {
+    // Top-of-source line lands on page 72 bottom (lly≈620). Page 72 also has a
+    // low same-line box at y≈560 that old refine kept; page 73 has the real top.
+    const bottomEdgeHit = {
+      page: 72,
+      llx: 80,
+      lly: 620,
+      urx: 180,
+      ury: 632,
+    };
+    const refined = refineForwardHit(
+      boundaryFixturePath,
+      'chapter.tex',
+      10,
+      bottomEdgeHit,
+    );
+    assert.equal(refined.diag.action, 'refined-next-page');
+    assert.equal(refined.diag.hitInEdge, true);
+    assert.equal(refined.diag.skipHighlight, false);
+    assert.equal(refined.result.page, 73);
+    assert.ok(
+      refined.result.lly < 80,
+      `expected top-of-73 body, got lly=${refined.result.lly}`,
+    );
+    assert.ok(refined.note?.includes('next page'));
+  });
+
+  it('pickForwardNonEdgeFallbackBox finds nearby non-edge same-file boxes', () => {
+    const boxes = parseSynctexPageBoxes(text, 10);
+    const hit = pickForwardNonEdgeFallbackBox(
+      boxes,
+      'chapter.tex',
+      43,
+      { x: 100, y: 20 },
+      800,
+    );
+    assert.ok(hit);
+    assert.equal(hit!.linenumber, 42);
+    assert.ok(hit!.y >= 90 && hit!.y <= 420);
+  });
+
+  it('synctexUnitScaleToPt detects sp vs pt', () => {
+    const ptBoxes = parseSynctexPageBoxes(text, 10);
+    assert.equal(synctexUnitScaleToPt(ptBoxes), 1);
+    const spText = readFixture('page-with-header-footer-sp.synctex.txt');
+    const spBoxes = parseSynctexPageBoxes(spText, 10);
+    assert.equal(
+      synctexUnitScaleToPt(spBoxes, {
+        llx: 74,
+        lly: 318,
+        urx: 274,
+        ury: 333,
+      }),
+      SYNCTEX_SP_PER_PT,
+    );
   });
 });
 
