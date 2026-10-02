@@ -1,10 +1,13 @@
 /**
- * ConTeXt mtx-synctex CLI y-axis helpers.
+ * ConTeXt mtx-synctex coordinate helpers.
  *
- * Empirically (and consistent with Sir's logs), mtxrun --script synctex
- * --report/--find exchange y in a top-down page frame (y=0 at the top,
- * increasing downward). PDF.js convertToPdfPoint is bottom-up. Convert at
- * the boundary; x is the same in both systems.
+ * Conventions (from user traces + reverse SyncTeX path):
+ * - `mtxrun --script synctex --find` returns boxes in PDF user space
+ *   (y bottom-up, y=0 at page bottom). Pass those straight to PDF.js.
+ * - `mtxrun --script synctex --report --y` expects top-down y
+ *   (y=0 at page top). Reverse SyncTeX converts with `pageHeight - pdfY`.
+ * - Raw `.synctex` `h`/`r` records are usually TeX scaled points and top-down;
+ *   see `synctexUnitScaleToPt` in synctexBoxes.ts.
  */
 
 export interface PageBox {
@@ -22,12 +25,12 @@ export function pageHeight(box: PageBox): number {
   return box.yMax - box.yMin;
 }
 
-/** PDF bottom-up y → mtx-synctex top-down y (from page top). */
+/** PDF bottom-up y → mtx-synctex `--report` top-down y (from page top). */
 export function pdfYToMtxY(pdfY: number, box: PageBox): number {
   return box.yMax - pdfY;
 }
 
-/** mtx-synctex top-down y → PDF bottom-up y. */
+/** mtx-synctex `--report` top-down y → PDF bottom-up y. */
 export function mtxYToPdfY(mtxY: number, box: PageBox): number {
   return box.yMax - mtxY;
 }
@@ -40,28 +43,57 @@ export interface MtxBox {
 }
 
 /**
- * Convert an mtx-synctex forward box (top-down y) to PDF user-space corners
- * suitable for PDF.js convertToViewportPoint.
- *
- * mtx: top = min(lly,ury), bottom = max(lly,ury) measured from page top.
+ * Normalize an mtx `--find` box already in PDF user space (bottom-up y).
+ * Ensures lly ≤ ury for PDF.js convertToViewportPoint callers.
  */
-export function mtxBoxToPdfBox(box: MtxBox, page: PageBox): MtxBox {
-  const topFromTop = Math.min(box.lly, box.ury);
-  const bottomFromTop = Math.max(box.lly, box.ury);
+export function findBoxToPdfBox(box: MtxBox): MtxBox {
   return {
-    llx: box.llx,
-    urx: box.urx,
-    // PDF: larger y is higher on the page
-    lly: mtxYToPdfY(bottomFromTop, page),
-    ury: mtxYToPdfY(topFromTop, page),
+    llx: Math.min(box.llx, box.urx),
+    urx: Math.max(box.llx, box.urx),
+    lly: Math.min(box.lly, box.ury),
+    ury: Math.max(box.lly, box.ury),
   };
 }
 
-/** CSS/viewport box from mtx top-down coordinates at a given scale (no viewBox offset). */
+/**
+ * @deprecated Use {@link findBoxToPdfBox}. `--find` boxes are already PDF
+ * bottom-up; this used to wrongly treat them as top-down.
+ */
+export function mtxBoxToPdfBox(box: MtxBox, _page: PageBox): MtxBox {
+  return findBoxToPdfBox(box);
+}
+
+/**
+ * CSS/viewport box from an mtx `--find` PDF bottom-up box at a given scale.
+ * CSS y=0 is the page top: top = (yMax - pdfTop) * scale.
+ */
+export function findBoxToCss(
+  box: MtxBox,
+  page: PageBox,
+  scale: number,
+): { left: number; top: number; width: number; height: number } {
+  const pdf = findBoxToPdfBox(box);
+  return {
+    left: (pdf.llx - page.xMin) * scale,
+    top: (page.yMax - pdf.ury) * scale,
+    width: (pdf.urx - pdf.llx) * scale,
+    height: (pdf.ury - pdf.lly) * scale,
+  };
+}
+
+/**
+ * @deprecated Use {@link findBoxToCss} with a page box. Old helper assumed
+ * top-down `--find` y and ignored the page height flip.
+ */
 export function mtxBoxToCss(
   box: MtxBox,
   scale: number,
+  page?: PageBox,
 ): { left: number; top: number; width: number; height: number } {
+  if (page) {
+    return findBoxToCss(box, page, scale);
+  }
+  // Legacy path without page: treat numbers as already CSS-top-ish (tests only).
   const topFromTop = Math.min(box.lly, box.ury);
   const bottomFromTop = Math.max(box.lly, box.ury);
   return {

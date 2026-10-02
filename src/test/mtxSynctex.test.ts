@@ -26,6 +26,8 @@ import {
   FORWARD_EDGE_BAND_FRAC,
   FORWARD_MAX_BOX_PAGE_FRAC,
   refineForwardHit,
+  synctexUnitScaleToPt,
+  SYNCTEX_SP_PER_PT,
 } from '../synctex/mtxSynctex';
 
 const fixturesDir = path.join(__dirname, 'fixtures');
@@ -247,6 +249,26 @@ describe('forward SyncTeX edge-band refine', () => {
     }
     throw new Error('fixture not found: page-with-header-footer.synctex.txt');
   })();
+  const spFixturePath = (() => {
+    const candidates = [
+      path.join(fixturesDir, 'page-with-header-footer-sp.synctex.txt'),
+      path.join(
+        __dirname,
+        '..',
+        '..',
+        'src',
+        'test',
+        'fixtures',
+        'page-with-header-footer-sp.synctex.txt',
+      ),
+    ];
+    for (const c of candidates) {
+      if (fs.existsSync(c)) {
+        return c;
+      }
+    }
+    throw new Error('fixture not found: page-with-header-footer-sp.synctex.txt');
+  })();
 
   it('picks nearest non-edge same-line box, not page middle', () => {
     const boxes = parseSynctexPageBoxes(text, 10);
@@ -284,37 +306,84 @@ describe('forward SyncTeX edge-band refine', () => {
     assert.ok(FORWARD_MAX_BOX_PAGE_FRAC > 0 && FORWARD_MAX_BOX_PAGE_FRAC < 0.5);
   });
 
-  it('refineForwardHit only replaces edge-band mtx hits, never with a page vbox', () => {
+  it('refineForwardHit converts top-down synctex boxes to PDF bottom-up find space', () => {
+    // Page height from fixture ≈ 788. Top-of-page --find hit (PDF bottom-up).
     const edgeHit = {
       page: 10,
       llx: 72,
-      lly: 10,
+      lly: 760,
       urx: 192,
-      ury: 30,
+      ury: 780,
     };
     const refined = refineForwardHit(fixturePath, 'chapter.tex', 42, edgeHit);
-    // Closest non-edge body box to the header hit is y≈100, not mid-page 400.
-    assert.equal(refined.result.lly, 100);
-    assert.ok(Math.abs(refined.result.ury - refined.result.lly) < 100);
-    assert.ok(refined.note);
+    // Closest non-edge body box is synctex y≈100 → PDF lly ≈ pageH-112.
     assert.equal(refined.diag.action, 'refined');
     assert.equal(refined.diag.hitInEdge, true);
+    assert.equal(refined.diag.unitScale, 1);
     assert.ok(refined.diag.sameLineCount >= 2);
     assert.equal(refined.diag.raw, edgeHit);
-    assert.equal(refined.diag.chosen.lly, 100);
+    assert.ok(refined.note);
+    // Output must be PDF bottom-up near the top (high y), not raw synctex y=100.
+    assert.ok(
+      refined.result.lly > 600,
+      `expected PDF-near-top lly, got ${refined.result.lly}`,
+    );
+    assert.ok(Math.abs(refined.result.ury - refined.result.lly) < 100);
 
     const midHit = {
       page: 10,
       llx: 80,
-      lly: 390,
+      lly: 380,
       urx: 200,
-      ury: 410,
+      ury: 400,
     };
     const kept = refineForwardHit(fixturePath, 'chapter.tex', 42, midHit);
     assert.equal(kept.result, midHit);
     assert.equal(kept.note, undefined);
     assert.equal(kept.diag.action, 'keep-raw');
     assert.equal(kept.diag.hitInEdge, false);
+    assert.equal(kept.diag.unitScale, 1);
+  });
+
+  it('refineForwardHit scales TeX sp synctex boxes to --find points', () => {
+    // Same geometry as the pt fixture, stored as pt*65536 (real ConTeXt dumps).
+    const edgeHit = {
+      page: 10,
+      llx: 72,
+      lly: 760,
+      urx: 192,
+      ury: 780,
+    };
+    const refined = refineForwardHit(spFixturePath, 'chapter.tex', 42, edgeHit);
+    assert.equal(refined.diag.unitScale, 65536);
+    assert.equal(refined.diag.action, 'refined');
+    assert.ok(
+      refined.diag.pageHeight > 50 && refined.diag.pageHeight < 2000,
+      `pageH should be in pt after scale, got ${refined.diag.pageHeight}`,
+    );
+    assert.ok(
+      refined.result.lly > 600 && refined.result.lly < 2000,
+      `refined lly should be PDF pt near top, got ${refined.result.lly}`,
+    );
+    // Must not leak raw sp into the viewer box.
+    assert.ok(refined.result.lly < 100_000);
+    assert.ok(refined.result.llx < 1000);
+  });
+
+  it('synctexUnitScaleToPt detects sp vs pt', () => {
+    const ptBoxes = parseSynctexPageBoxes(text, 10);
+    assert.equal(synctexUnitScaleToPt(ptBoxes), 1);
+    const spText = readFixture('page-with-header-footer-sp.synctex.txt');
+    const spBoxes = parseSynctexPageBoxes(spText, 10);
+    assert.equal(
+      synctexUnitScaleToPt(spBoxes, {
+        llx: 74,
+        lly: 634,
+        urx: 274,
+        ury: 649,
+      }),
+      SYNCTEX_SP_PER_PT,
+    );
   });
 });
 

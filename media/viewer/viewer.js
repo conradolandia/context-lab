@@ -197,17 +197,12 @@ function pdfBoxToViewport(pageViewport, llx, lly, urx, ury) {
 }
 
 /**
- * mtx-synctex --find returns y top-down (y=0 at page top). Convert to PDF
- * bottom-up using the page view box, then to CSS via PDF.js.
+ * mtxrun --script synctex --find returns PDF user-space boxes (y bottom-up,
+ * same as PDF.js). Do not flip — reverse SyncTeX is the path that converts
+ * with pageHeight - y for `--report --y` (top-down).
  */
-function mtxBoxToViewport(page, pageViewport, llx, lly, urx, ury) {
-  const view = page.view; // [xMin, yMin, xMax, yMax]
-  const yMax = view[3];
-  const topFromTop = Math.min(lly, ury);
-  const bottomFromTop = Math.max(lly, ury);
-  const pdfTop = yMax - topFromTop;
-  const pdfBottom = yMax - bottomFromTop;
-  return pdfBoxToViewport(pageViewport, llx, pdfBottom, urx, pdfTop);
+function mtxFindBoxToViewport(pageViewport, llx, lly, urx, ury) {
+  return pdfBoxToViewport(pageViewport, llx, lly, urx, ury);
 }
 
 function normalizeHighlight(msg) {
@@ -489,7 +484,7 @@ async function renderPageCanvas(pageNum) {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     pageDiv.appendChild(canvas);
-    // Store viewport + page.view for delegated click conversion (mtx y is top-down).
+    // Store viewport + page.view for delegated click conversion (--report y is top-down).
     pageDiv._viewport = viewport;
     pageDiv._pageView = page.view; // [xMin, yMin, xMax, yMax]
 
@@ -651,10 +646,13 @@ function paintHighlight(opts) {
       return;
     }
     const viewport = page.getViewport({ scale: currentScale });
-    const raw = mtxBoxToViewport(page, viewport, msg.llx, msg.lly, msg.urx, msg.ury);
+    const raw = mtxFindBoxToViewport(viewport, msg.llx, msg.lly, msg.urx, msg.ury);
     const box = clampHighlightBox(raw, viewport.width, viewport.height);
-    // Simple top-down CSS (no PDF.js convert) — compare with raw.top in debug logs.
-    const simpleMtxCssTop = Math.min(msg.lly, msg.ury) * currentScale;
+    // PDF bottom-up → CSS top (no PDF.js): compare with raw.top in debug logs.
+    const view = Array.isArray(page.view) ? page.view : viewport.viewBox || [0, 0, 612, 792];
+    const pageHpt = (view[3] ?? 792) - (view[1] ?? 0);
+    const pdfTop = Math.max(msg.lly, msg.ury);
+    const simpleMtxCssTop = (pageHpt - pdfTop) * currentScale;
     const hl = document.createElement('div');
     hl.className = 'highlight';
     hl.style.left = `${box.left}px`;
@@ -725,10 +723,12 @@ function applyHighlight(raw) {
   updateToolbar();
   const el = pageEls.get(activeHighlight.page);
   const scrollTopBeforePage = viewer.scrollTop;
+  // Bring the page into view without forcing vertical center — highlight scroll
+  // owns centering so page-center and highlight do not fight.
   if (el) {
-    el.scrollIntoView({ behavior: 'instant', block: 'center' });
+    el.scrollIntoView({ behavior: 'instant', block: 'nearest' });
   }
-  // Page-centering pass (before highlight scroll). Helps diagnose identical landings.
+  // Diagnostic only: intended page-center scroll (not applied).
   vscode.postMessage({
     type: 'forwardSyncDiag',
     phase: 'page-center',

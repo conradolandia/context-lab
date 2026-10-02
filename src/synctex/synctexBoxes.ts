@@ -1,8 +1,10 @@
 import * as fs from 'node:fs';
 
 /**
- * One ConTeXt SyncTeX content box (`h` / `r` records from mtx-synctex).
- * Coordinates match mtx-synctex (y top-down on the page).
+ * One ConTeXt SyncTeX content box (`h` / `r` records from the `.synctex` file).
+ * Raw file values are usually TeX scaled points (see {@link SYNCTEX_SP_PER_PT});
+ * y increases downward from the page top (SyncTeX / mtx `--report` convention).
+ * These are not mtx `--find` boxes (`--find` returns PDF bottom-up points).
  */
 export interface SynctexBox {
   fileId: string;
@@ -14,6 +16,19 @@ export interface SynctexBox {
   h: number;
   d: number;
 }
+
+/**
+ * TeX scaled points per PostScript point. Classic SyncTeX with
+ * Magnification:1000 and Unit:1 stores dimensions as `pt * 65536`.
+ */
+export const SYNCTEX_SP_PER_PT = 65536;
+
+/** Upper bound for a page height already expressed in points (fixtures / rare tools). */
+const PAGE_HEIGHT_PT_MAX = 20_000;
+
+/** Plausible page height in points after dividing raw synctex coords by 65536. */
+const PAGE_HEIGHT_PT_MIN_AFTER_SP = 50;
+const PAGE_HEIGHT_PT_MAX_AFTER_SP = 5000;
 
 const INPUT_RE = /^Input:(.+?):(.+)$/;
 const PAGE_START_RE = /^\{(\d+)/;
@@ -102,6 +117,63 @@ export function readSynctexPageBoxes(
     return [];
   }
   return parseSynctexPageBoxes(text, page);
+}
+
+/**
+ * Scale factor that converts raw `.synctex` box coords → PDF / mtx `--find` points.
+ * Returns `1` when boxes already look pt-sized, `65536` when they look like sp,
+ * or `null` when conversion is ambiguous (caller should skip refine).
+ */
+export function synctexUnitScaleToPt(
+  boxes: SynctexBox[],
+  hit?: { llx: number; lly: number; urx: number; ury: number },
+): number | null {
+  if (boxes.length === 0) {
+    return null;
+  }
+  const pageH = estimatePageHeightFromBoxes(boxes, 0);
+  if (!(pageH > 0)) {
+    return null;
+  }
+  // Test fixtures and some dumps already store pt-sized numbers.
+  if (pageH <= PAGE_HEIGHT_PT_MAX) {
+    return 1;
+  }
+  const pageHpt = pageH / SYNCTEX_SP_PER_PT;
+  if (
+    pageHpt < PAGE_HEIGHT_PT_MIN_AFTER_SP ||
+    pageHpt > PAGE_HEIGHT_PT_MAX_AFTER_SP
+  ) {
+    return null;
+  }
+  if (hit) {
+    const hitMax = Math.max(
+      Math.abs(hit.llx),
+      Math.abs(hit.lly),
+      Math.abs(hit.urx),
+      Math.abs(hit.ury),
+    );
+    // `--find` is in pt; if the hit dwarfs the converted page, units are unknown.
+    if (hitMax > pageHpt * 5) {
+      return null;
+    }
+  }
+  return SYNCTEX_SP_PER_PT;
+}
+
+/** Divide raw synctex box dimensions by `unitScale` (1 or {@link SYNCTEX_SP_PER_PT}). */
+export function scaleSynctexBox(box: SynctexBox, unitScale: number): SynctexBox {
+  if (unitScale === 1) {
+    return box;
+  }
+  return {
+    ...box,
+    x: box.x / unitScale,
+    y: box.y / unitScale,
+    w: box.w / unitScale,
+    h: box.h / unitScale,
+    d: box.d / unitScale,
+  };
 }
 
 function boxContains(box: SynctexBox, x: number, y: number): boolean {
@@ -196,7 +268,7 @@ export function boxArea(box: SynctexBox): number {
   return Math.max(box.w, 0) * Math.max(box.h + box.d, 0);
 }
 
-/** Rough page height from boxes on the page (mtx y top-down). */
+/** Rough page height from boxes on the page (synctex y top-down, file units). */
 export function estimatePageHeightFromBoxes(
   boxes: SynctexBox[],
   fallback = 792,

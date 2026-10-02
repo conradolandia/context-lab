@@ -36,7 +36,7 @@ import { maybeWarnLatexWorkshopConflict } from './compat/latexWorkshopConflict';
 import { initOutputLog, logDebug, logUser } from './outputLog';
 
 /** Bump when shipping a SyncTeX/viewer/LSP/diagnostics/project-view behavior change Sir must verify in Output. */
-export const BUILD_ID = 'synctex-forward-debug-v1';
+export const BUILD_ID = 'synctex-forward-y-fix-v1';
 
 let output: vscode.OutputChannel;
 let digestifOutput: vscode.OutputChannel;
@@ -294,7 +294,7 @@ async function doForwardSync(opts?: {
     logDebug(
       `[synctex find] raw mtx page=${raw.page} llx=${raw.llx} lly=${raw.lly} urx=${raw.urx} ury=${raw.ury}` +
         ` w=${(raw.urx - raw.llx).toFixed(2)} h=${Math.abs(raw.ury - raw.lly).toFixed(2)}` +
-        ` cy=${diag.hitCy.toFixed(2)} (mtx y is top-down)`,
+        ` cyPdf=${((raw.lly + raw.ury) / 2).toFixed(2)} (mtx --find y is PDF bottom-up)`,
     );
     if (extraHits.length > 0) {
       logDebug(
@@ -309,8 +309,10 @@ async function doForwardSync(opts?: {
     }
     logDebug(
       `[synctex find] refine action=${diag.action} hitInEdge=${diag.hitInEdge}` +
+        ` unitScale=${diag.unitScale ?? 'null'}` +
         ` pageH=${diag.pageHeight.toFixed(1)} pageW=${diag.pageWidth.toFixed(1)}` +
-        ` band=${diag.band.toFixed(1)} sameLine=${diag.sameLineCount}`,
+        ` band=${diag.band.toFixed(1)} sameLine=${diag.sameLineCount}` +
+        ` hitCyTopDown=${diag.hitCy.toFixed(2)}`,
     );
     if (diag.sameLineBoxes.length > 0) {
       const maxDump = 12;
