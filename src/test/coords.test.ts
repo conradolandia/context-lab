@@ -41,15 +41,19 @@ describe('mtx-synctex y-axis', () => {
     assert.deepEqual(mtxBoxToPdfBox(topHit, page680), pdf);
   });
 
-  it('scales synctex pageH into PDF.js pageViewH', () => {
-    // Trace: synctex pageH≈651.4 vs pageView H≈680.3
+  it('maps synctex pt to CSS without pageViewH/synctexPageH stretch', () => {
+    // Retest v3: stretch pushed middle/bottom slightly too low; use synctex pt × scale.
     const synctex = { width: 595, height: 651.4 };
     const mid = { llx: 74, lly: 318, urx: 274, ury: 333 };
     const css = findBoxToCss(mid, page680, 1, synctex);
-    const expectedTop = 318 * (680 / 651.4);
     assert.ok(
-      Math.abs(css.top - expectedTop) < 0.5,
-      `expected css.top≈${expectedTop}, got ${css.top}`,
+      Math.abs(css.top - 318) < 0.5,
+      `expected css.top≈318 (no stretch), got ${css.top}`,
+    );
+    const pdf = findBoxToPdfBox(mid, page680, synctex);
+    assert.ok(
+      Math.abs(pdf.ury - (680 - 318)) < 0.5,
+      `expected PDF ury≈${680 - 318}, got ${pdf.ury}`,
     );
   });
 

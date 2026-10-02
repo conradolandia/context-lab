@@ -198,9 +198,9 @@ function pdfBoxToViewport(pageViewport, llx, lly, urx, ury) {
 
 /**
  * mtxrun --script synctex --find returns SyncTeX top-down boxes (same space as
- * `.synctex` h/r after sp→pt). Map into PDF.js bottom-up via page.view, scaling
- * when synctex page size differs from the PDF media box.
- * Reverse SyncTeX still converts clicks with pageHeight - pdfY for `--report --y`.
+ * `.synctex` h/r after sp→pt). Map into PDF.js bottom-up via page.view using
+ * SyncTeX pt × viewport scale (crop origin only — no pageViewH/synctexPageH
+ * stretch). Reverse SyncTeX still converts clicks with pageHeight - pdfY.
  */
 function mtxFindBoxToViewport(
   page,
@@ -209,26 +209,18 @@ function mtxFindBoxToViewport(
   lly,
   urx,
   ury,
-  synctexPageH,
-  synctexPageW,
+  _synctexPageH,
+  _synctexPageW,
 ) {
   const view = Array.isArray(page.view)
     ? page.view
     : pageViewport.viewBox || [0, 0, 612, 792];
   const xMin = view[0] ?? 0;
-  const yMin = view[1] ?? 0;
-  const xMax = view[2] ?? 612;
   const yMax = view[3] ?? 792;
-  const pageViewW = xMax - xMin;
-  const pageViewH = yMax - yMin;
-  const sx =
-    synctexPageW != null && synctexPageW > 0 ? pageViewW / synctexPageW : 1;
-  const sy =
-    synctexPageH != null && synctexPageH > 0 ? pageViewH / synctexPageH : 1;
-  const topFromTop = Math.min(lly, ury) * sy;
-  const bottomFromTop = Math.max(lly, ury) * sy;
-  const pdfLlx = xMin + Math.min(llx, urx) * sx;
-  const pdfUrx = xMin + Math.max(llx, urx) * sx;
+  const topFromTop = Math.min(lly, ury);
+  const bottomFromTop = Math.max(lly, ury);
+  const pdfLlx = xMin + Math.min(llx, urx);
+  const pdfUrx = xMin + Math.max(llx, urx);
   const pdfTop = yMax - topFromTop;
   const pdfBottom = yMax - bottomFromTop;
   return pdfBoxToViewport(pageViewport, pdfLlx, pdfBottom, pdfUrx, pdfTop);
@@ -726,15 +718,9 @@ function paintHighlight(opts) {
       msg.synctexPageW,
     );
     const box = clampHighlightBox(raw, viewport.width, viewport.height);
-    // Top-down synctex → CSS top (scale pageView vs synctex page size).
-    const view = Array.isArray(page.view) ? page.view : viewport.viewBox || [0, 0, 612, 792];
-    const pageViewH = (view[3] ?? 792) - (view[1] ?? 0);
-    const synH =
-      msg.synctexPageH != null && msg.synctexPageH > 0
-        ? msg.synctexPageH
-        : pageViewH;
+    // Top-down synctex pt → CSS top (viewer scale only; no pageViewH/synctexH stretch).
     const topFromTop = Math.min(msg.lly, msg.ury);
-    const simpleMtxCssTop = topFromTop * (pageViewH / synH) * currentScale;
+    const simpleMtxCssTop = topFromTop * currentScale;
     const hl = document.createElement('div');
     hl.className = 'highlight';
     hl.style.left = `${box.left}px`;

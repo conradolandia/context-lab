@@ -1,7 +1,7 @@
 /**
  * ConTeXt mtx-synctex coordinate helpers.
  *
- * Conventions (from user retests after synctex-forward-y-fix-v1):
+ * Conventions (from user retests after synctex-forward-y-fix-v2):
  * - `mtxrun --script synctex --find` returns boxes in SyncTeX top-down space
  *   (same as `.synctex` `h`/`r` after sp→pt). y increases downward from the
  *   page top. Do not treat these as PDF bottom-up.
@@ -9,8 +9,8 @@
  *   SyncTeX converts PDF.js bottom-up with `pageHeight - pdfY`.
  * - Raw `.synctex` `h`/`r` records are usually TeX scaled points and top-down;
  *   see `synctexUnitScaleToPt` in synctexBoxes.ts.
- * - Synctex page size (from boxes) can differ from PDF.js `page.view`
- *   (e.g. ~651 vs ~680). Scale when mapping to the canvas.
+ * - Map SyncTeX pt × viewer scale (plus real crop origin). Do not stretch Y by
+ *   `pageViewH / synctexPageH` — that pushed middle/bottom slightly too low.
  */
 
 export interface PageBox {
@@ -63,29 +63,22 @@ export function findBoxNormalize(box: MtxBox): MtxBox {
 }
 
 /**
- * Map a SyncTeX top-down `--find` box into PDF user-space (bottom-up),
- * scaling from synctex page size to the PDF.js page view box.
+ * Map a SyncTeX top-down `--find` box into PDF user-space (bottom-up).
+ * Uses SyncTeX pt as-is (plus crop origin). Optional `synctexPage` is ignored
+ * for stretch — kept for call-site compatibility / debug.
  */
 export function findBoxToPdfBox(
   box: MtxBox,
   pdfPage: PageBox,
-  synctexPage?: { width: number; height: number },
+  _synctexPage?: { width: number; height: number },
 ): MtxBox {
   const src = findBoxNormalize(box);
-  const pdfW = pageWidth(pdfPage);
-  const pdfH = pageHeight(pdfPage);
-  const sx =
-    synctexPage && synctexPage.width > 0 ? pdfW / synctexPage.width : 1;
-  const sy =
-    synctexPage && synctexPage.height > 0 ? pdfH / synctexPage.height : 1;
-  const topFromTop = src.lly * sy;
-  const bottomFromTop = src.ury * sy;
   return {
-    llx: pdfPage.xMin + src.llx * sx,
-    urx: pdfPage.xMin + src.urx * sx,
+    llx: pdfPage.xMin + src.llx,
+    urx: pdfPage.xMin + src.urx,
     // PDF: larger y is higher on the page
-    lly: pdfPage.yMax - bottomFromTop,
-    ury: pdfPage.yMax - topFromTop,
+    lly: pdfPage.yMax - src.ury,
+    ury: pdfPage.yMax - src.lly,
   };
 }
 
@@ -98,28 +91,23 @@ export function mtxBoxToPdfBox(box: MtxBox, page: PageBox): MtxBox {
 }
 
 /**
- * CSS/viewport box from an mtx `--find` top-down box at a given scale,
- * mapping synctex page size → PDF page view size.
- * CSS y=0 is the page top: top = synctexY * (pdfH/synctexH) * scale.
+ * CSS/viewport box from an mtx `--find` top-down box at a given scale.
+ * CSS y=0 is the page top: top = synctexY * scale (no pageViewH/synctexH stretch).
+ * `pdfPage` / `_synctexPage` are kept for call-site compatibility; crop is applied
+ * when mapping through PDF.js (`findBoxToPdfBox` / viewer `mtxFindBoxToViewport`).
  */
 export function findBoxToCss(
   box: MtxBox,
-  pdfPage: PageBox,
+  _pdfPage: PageBox,
   scale: number,
-  synctexPage?: { width: number; height: number },
+  _synctexPage?: { width: number; height: number },
 ): { left: number; top: number; width: number; height: number } {
   const src = findBoxNormalize(box);
-  const pdfW = pageWidth(pdfPage);
-  const pdfH = pageHeight(pdfPage);
-  const sx =
-    synctexPage && synctexPage.width > 0 ? pdfW / synctexPage.width : 1;
-  const sy =
-    synctexPage && synctexPage.height > 0 ? pdfH / synctexPage.height : 1;
   return {
-    left: src.llx * sx * scale,
-    top: src.lly * sy * scale,
-    width: (src.urx - src.llx) * sx * scale,
-    height: (src.ury - src.lly) * sy * scale,
+    left: src.llx * scale,
+    top: src.lly * scale,
+    width: (src.urx - src.llx) * scale,
+    height: (src.ury - src.lly) * scale,
   };
 }
 

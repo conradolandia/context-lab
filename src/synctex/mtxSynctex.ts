@@ -368,7 +368,8 @@ export interface ForwardRefineDiag {
     | 'oversized-skip'
     | 'units-skip'
     | 'refined'
-    | 'refined-nearby';
+    | 'refined-nearby'
+    | 'refined-next-page';
 }
 
 function summarizeSameLineBoxes(
@@ -496,19 +497,70 @@ export function refineForwardHit(
     x: (hit.llx + hit.urx) / 2,
     y: hitCy,
   };
-  let preferred = pickForwardSameLineBox(
-    boxes,
-    sourceFile,
-    line,
-    near,
-    pageHeight,
-  );
+  const hitInBottomEdge = hitCy > pageHeight - band;
+  let preferred: SynctexBox | undefined;
   let viaNearby = false;
-  // Same-line may still be an edge box (header/footer tagged with the line).
-  if (preferred) {
-    const cy = boxVerticalCenter(preferred);
-    if (cy < band || cy > pageHeight - band) {
-      preferred = undefined;
+  let viaNextPage = false;
+  let chosenPage = hit.page;
+
+  // Bottom-of-page N often means the line starts on N+1 (top). Prefer a
+  // non-edge box there before same-line/nearby refine that keeps a low box on N
+  // (e.g. lly≈585 still on 72 instead of the top of 73).
+  if (hitInBottomEdge) {
+    const nextRaw = readSynctexPageBoxes(synctexPath, hit.page + 1);
+    if (nextRaw.length > 0) {
+      const nextScale = synctexUnitScaleToPt(nextRaw, hit) ?? unitScale;
+      const nextBoxes = nextRaw.map((b) => scaleSynctexBox(b, nextScale));
+      const nextH = estimatePageHeightFromBoxes(nextBoxes);
+      const nextNear = {
+        x: near.x,
+        // Bias toward the top body band on the following page.
+        y: Math.max(24, nextH * FORWARD_EDGE_BAND_FRAC) * 1.5,
+      };
+      preferred = pickForwardSameLineBox(
+        nextBoxes,
+        sourceFile,
+        line,
+        nextNear,
+        nextH,
+      );
+      if (preferred) {
+        const cy = boxVerticalCenter(preferred);
+        const nextBand = Math.max(24, nextH * FORWARD_EDGE_BAND_FRAC);
+        if (cy < nextBand || cy > nextH - nextBand) {
+          preferred = undefined;
+        }
+      }
+      if (!preferred) {
+        preferred = pickForwardNonEdgeFallbackBox(
+          nextBoxes,
+          sourceFile,
+          line,
+          nextNear,
+          nextH,
+        );
+      }
+      if (preferred) {
+        viaNextPage = true;
+        chosenPage = hit.page + 1;
+      }
+    }
+  }
+
+  if (!preferred) {
+    preferred = pickForwardSameLineBox(
+      boxes,
+      sourceFile,
+      line,
+      near,
+      pageHeight,
+    );
+    // Same-line may still be an edge box (header/footer tagged with the line).
+    if (preferred) {
+      const cy = boxVerticalCenter(preferred);
+      if (cy < band || cy > pageHeight - band) {
+        preferred = undefined;
+      }
     }
   }
   if (!preferred) {
@@ -534,7 +586,7 @@ export function refineForwardHit(
       },
     };
   }
-  const next = synctexBoxToFindResult(preferred, hit.page);
+  const next = synctexBoxToFindResult(preferred, chosenPage);
   const maxArea = pageHeight * pageWidth * FORWARD_MAX_BOX_PAGE_FRAC;
   if (hitArea(next) > maxArea && hitArea(next) > hitArea(hit) * 4) {
     return {
@@ -549,6 +601,7 @@ export function refineForwardHit(
     };
   }
   const same =
+    chosenPage === hit.page &&
     Math.abs(next.llx - hit.llx) < 0.5 &&
     Math.abs(next.lly - hit.lly) < 0.5 &&
     Math.abs(next.urx - hit.urx) < 0.5 &&
@@ -566,13 +619,22 @@ export function refineForwardHit(
       },
     };
   }
+  const how = viaNextPage
+    ? ' (next page)'
+    : viaNearby
+      ? ' (nearby/same-file)'
+      : '';
   return {
     result: next,
-    note: `forward edge-band refine${viaNearby ? ' (nearby/same-file)' : ''} (mtx llx=${hit.llx} lly=${hit.lly} → ${next.llx},${next.lly}; unitScale=${unitScale})`,
+    note: `forward edge-band refine${how} (mtx page=${hit.page} llx=${hit.llx} lly=${hit.lly} → page=${next.page} ${next.llx},${next.lly}; unitScale=${unitScale})`,
     diag: {
       ...baseDiag,
       chosen: next,
-      action: viaNearby ? 'refined-nearby' : 'refined',
+      action: viaNextPage
+        ? 'refined-next-page'
+        : viaNearby
+          ? 'refined-nearby'
+          : 'refined',
     },
   };
 }

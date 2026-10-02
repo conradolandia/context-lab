@@ -230,46 +230,21 @@ describe('synctex page boxes (caption / float refine)', () => {
 
 describe('forward SyncTeX edge-band refine', () => {
   const text = readFixture('page-with-header-footer.synctex.txt');
-  const fixturePath = (() => {
+  const resolveFixture = (name: string): string => {
     const candidates = [
-      path.join(fixturesDir, 'page-with-header-footer.synctex.txt'),
-      path.join(
-        __dirname,
-        '..',
-        '..',
-        'src',
-        'test',
-        'fixtures',
-        'page-with-header-footer.synctex.txt',
-      ),
+      path.join(fixturesDir, name),
+      path.join(__dirname, '..', '..', 'src', 'test', 'fixtures', name),
     ];
     for (const c of candidates) {
       if (fs.existsSync(c)) {
         return c;
       }
     }
-    throw new Error('fixture not found: page-with-header-footer.synctex.txt');
-  })();
-  const spFixturePath = (() => {
-    const candidates = [
-      path.join(fixturesDir, 'page-with-header-footer-sp.synctex.txt'),
-      path.join(
-        __dirname,
-        '..',
-        '..',
-        'src',
-        'test',
-        'fixtures',
-        'page-with-header-footer-sp.synctex.txt',
-      ),
-    ];
-    for (const c of candidates) {
-      if (fs.existsSync(c)) {
-        return c;
-      }
-    }
-    throw new Error('fixture not found: page-with-header-footer-sp.synctex.txt');
-  })();
+    throw new Error(`fixture not found: ${name}`);
+  };
+  const fixturePath = resolveFixture('page-with-header-footer.synctex.txt');
+  const spFixturePath = resolveFixture('page-with-header-footer-sp.synctex.txt');
+  const boundaryFixturePath = resolveFixture('page-boundary-forward.synctex.txt');
 
   it('picks nearest non-edge same-line box, not page middle', () => {
     const boxes = parseSynctexPageBoxes(text, 10);
@@ -404,6 +379,33 @@ describe('forward SyncTeX edge-band refine', () => {
       unresolved.diag.action === 'no-same-line' ||
         unresolved.diag.action === 'edge-unresolved',
     );
+  });
+
+  it('refineForwardHit prefers page N+1 for bottom-edge --find hits', () => {
+    // Top-of-source line lands on page 72 bottom (lly≈620). Page 72 also has a
+    // low same-line box at y≈560 that old refine kept; page 73 has the real top.
+    const bottomEdgeHit = {
+      page: 72,
+      llx: 80,
+      lly: 620,
+      urx: 180,
+      ury: 632,
+    };
+    const refined = refineForwardHit(
+      boundaryFixturePath,
+      'chapter.tex',
+      10,
+      bottomEdgeHit,
+    );
+    assert.equal(refined.diag.action, 'refined-next-page');
+    assert.equal(refined.diag.hitInEdge, true);
+    assert.equal(refined.diag.skipHighlight, false);
+    assert.equal(refined.result.page, 73);
+    assert.ok(
+      refined.result.lly < 80,
+      `expected top-of-73 body, got lly=${refined.result.lly}`,
+    );
+    assert.ok(refined.note?.includes('next page'));
   });
 
   it('pickForwardNonEdgeFallbackBox finds nearby non-edge same-file boxes', () => {

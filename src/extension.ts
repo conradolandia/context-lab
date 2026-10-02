@@ -36,7 +36,7 @@ import { maybeWarnLatexWorkshopConflict } from './compat/latexWorkshopConflict';
 import { initOutputLog, logDebug, logUser } from './outputLog';
 
 /** Bump when shipping a SyncTeX/viewer/LSP/diagnostics/project-view behavior change Sir must verify in Output. */
-export const BUILD_ID = 'synctex-forward-y-fix-v2';
+export const BUILD_ID = 'synctex-forward-y-fix-v3';
 
 let output: vscode.OutputChannel;
 let digestifOutput: vscode.OutputChannel;
