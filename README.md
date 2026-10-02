@@ -1,6 +1,6 @@
 # ConTeXt Tools
 
-VS Code / Cursor extension for ConTeXt (LMTX): SyncTeX PDF preview, DigestiF language server, Project view, document-structure scaffolding, TextMate grammar, and snippets for the `context` language.
+VS Code / Cursor extension for ConTeXt (LMTX): SyncTeX PDF preview, DigestiF language server, Project view, project-structure scaffolding, TextMate grammar, and snippets for the `context` language.
 
 **License:** GNU GPL version 2 only (`GPL-2.0-only`). See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE). Keyword lists are derived from ConTeXt SciTE data (same GPL-2 regime).
 
@@ -117,11 +117,11 @@ Activity bar **ConTeXt** → **Project**. Scans English structure commands (`\pr
 | environment | no |
 | project | refused (offers first listed product if any) |
 
-Click a node to open. Actions: Build, Forward SyncTeX, Set as Main (Root) File. Title bar: **New Document Structure…**, **Reveal Active**, **Refresh**. Focusing a `.tex` file does not switch to this view; use **Reveal Active** when you want that.
+Click a node to open. Actions: Build, Forward SyncTeX, Set as Main (Root) File. Title bar: **New Project Structure…**, **Reveal Active**, **Refresh**. Focusing a `.tex` file does not switch to this view; use **Reveal Active** when you want that.
 
-## Document structure wizard
+## Project structure wizard
 
-**ConTeXt: New Document Structure…** scaffolds the simplest structure that matches the job (wiki *Project and file management* §1): single document; document + environment; product + components; or project tier (several products — compile each product, not the `\startproject` file).
+**ConTeXt: New Project Structure…** scaffolds the simplest structure that matches the job (wiki *Project and file management* §1): single document; document + environment; product + components; or project tier (several products — compile each product, not the `\startproject` file).
 
 After create: writes `.context/structure.json` (tier, optional `layout`, optional `documentStub` / `documentMetadata`, compile root), opens the compile root, sets `context.rootFile` when enabled, refreshes the Project view, and may offer `files.associations["*.tex"] = "context"`. Scaffolds use `.tex` only and do not insert `% !TEX root`.
 
@@ -129,7 +129,7 @@ On the names step (tiers other than single), **Directory layout** is **Flat** (d
 
 For **product** and **project** tiers, an optional checkbox includes a `\startdocument` metadata stub in each product file (components stay between `\startdocument` / `\stopdocument`). Metadata is entered as `key=value` lines. Off by default; hidden for `single` / `env-doc` (those already use `\startdocument`).
 
-**ConTeXt: Upgrade Document Structure…** moves a scaffold one rung up when `.context/structure.json` is present.
+**ConTeXt: Upgrade Project Structure…** moves a scaffold one rung up when `.context/structure.json` is present.
 
 ## Snippets
 

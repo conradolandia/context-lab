@@ -630,7 +630,7 @@ export function buildProjectModel(opts: ProjectModelOptions): ProjectModelResult
       fileCount: 1,
       timingsMs: { total: Date.now() - started },
       emptyMessage:
-        'No ConTeXt product or project found. Open a .tex / .mkiv file with \\startproduct / \\startproject, set context.rootFile, or run ConTeXt: New Document Structure…',
+        'No ConTeXt product or project found. Open a .tex / .mkiv file with \\startproduct / \\startproject, set context.rootFile, or run ConTeXt: New Project Structure…',
     };
   }
 

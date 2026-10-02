@@ -1,5 +1,5 @@
 /**
- * Webview wizard for ConTeXt: New Document Structure…
+ * Webview wizard for ConTeXt: New Project Structure…
  * Steps: Need → Recommend → Names → Preview → Create
  */
 
@@ -158,7 +158,7 @@ export class ProjectManagerPanel {
     if (!vscode.workspace.workspaceFolders?.length) {
       void vscode.window
         .showInformationMessage(
-          'Open a folder to create a ConTeXt document structure.',
+          'Open a folder to create a ConTeXt project structure.',
           'Open Folder…',
         )
         .then((choice) => {
@@ -176,7 +176,7 @@ export class ProjectManagerPanel {
 
     const panel = vscode.window.createWebviewPanel(
       ProjectManagerPanel.viewType,
-      'New ConTeXt Document Structure',
+      'New ConTeXt Project Structure',
       vscode.ViewColumn.Active,
       {
         enableScripts: true,
@@ -340,7 +340,7 @@ export class ProjectManagerPanel {
 <meta charset="UTF-8" />
 <meta http-equiv="Content-Security-Policy" content="${csp}" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>New ConTeXt Document Structure</title>
+<title>New ConTeXt Project Structure</title>
 <style>
   :root {
     color-scheme: light dark;
@@ -442,7 +442,7 @@ export class ProjectManagerPanel {
 </style>
 </head>
 <body>
-  <h1>New ConTeXt document structure</h1>
+  <h1>New ConTeXt project structure</h1>
   <p>Wizard based on the <a href="https://wiki.contextgarden.net/Input_and_compilation/Project_and_file_management">ConTeXt Project and file management</a> article.</p>
   <blockquote class="principle">
     Do not introduce a project-tier coordination file merely because a document contains several files.

@@ -2,7 +2,7 @@
   "name": "context-tools",
   "displayName": "ConTeXt Tools",
   "description": "ConTeXt SyncTeX PDF preview, DigestiF language server, TextMate grammar, and snippets",
-  "version": "0.1.41",
+  "version": "0.1.42",
   "publisher": "context-lab",
   "license": "GPL-2.0-only",
   "repository": {
@@ -138,12 +138,12 @@
       },
       {
         "command": "context.projectManager.create",
-        "title": "ConTeXt: New Document Structure…",
+        "title": "ConTeXt: New Project Structure…",
         "icon": "$(new-file)"
       },
       {
         "command": "context.projectManager.upgrade",
-        "title": "ConTeXt: Upgrade Document Structure…"
+        "title": "ConTeXt: Upgrade Project Structure…"
       }
     ],
     "menus": {
