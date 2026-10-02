@@ -71,7 +71,7 @@ export async function applyStructurePlan(
       ok: false,
       reason: 'no-workspace',
       message:
-        'Open a folder before creating or upgrading a ConTeXt document structure.',
+        'Open a folder before creating or upgrading a ConTeXt project structure.',
     };
   }
 

@@ -462,7 +462,7 @@ export function buildUpgradePlan(input: UpgradePlanInput): StructurePlan {
 export function upgradeRefusalMessage(): string {
   return (
     'This folder has no ConTeXt structure spec (`.context/structure.json`). ' +
-    'Upgrade only works on scaffolds created by ConTeXt: New Document Structure…. ' +
+    'Upgrade only works on scaffolds created by ConTeXt: New Project Structure…. ' +
     'Create a structure first, or add a valid spec manually.'
   );
 }

@@ -12,7 +12,7 @@ src/viewer/                   PDF webview panel, range server, PDF.js worker
 src/synctex/                  mtxrun synctex CLI, box parse, coordinate mapping
 src/lsp/                      DigestiF launch, client, env (DIGESTIF_TEXMF)
 src/project/                  Root file, structure scan, path resolve, Project TreeView
-src/projectManager/           New Document Structure wizard
+src/projectManager/           New Project Structure wizard
 src/links/                    Document links + figure hover
 src/folding/                  \start…/\stop… folding + mismatch diagnostics
 src/syntax/                   Refresh keywords command

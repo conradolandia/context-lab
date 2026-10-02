@@ -1,5 +1,5 @@
 /**
- * Command: ConTeXt: Upgrade Document Structure…
+ * Command: ConTeXt: Upgrade Project Structure…
  * Spec-gated; refuses without `.context/structure.json`.
  */
 
@@ -62,14 +62,14 @@ export async function runStructureUpgrade(
 ): Promise<void> {
   if (!vscode.workspace.workspaceFolders?.length) {
     void vscode.window.showErrorMessage(
-      'Open a folder before upgrading a ConTeXt document structure.',
+      'Open a folder before upgrading a ConTeXt project structure.',
     );
     return;
   }
 
   const located = locateSpec();
   if (!located) {
-    const open = 'New Document Structure…';
+    const open = 'New Project Structure…';
     const choice = await vscode.window.showErrorMessage(
       upgradeRefusalMessage(),
       open,
@@ -101,7 +101,7 @@ export async function runStructureUpgrade(
       },
     ],
     {
-      title: `Upgrade document structure (${currentLabel})`,
+      title: `Upgrade project structure (${currentLabel})`,
       placeHolder: `Current tier: ${currentLabel}. Compile root stays a product or document.`,
     },
   );
