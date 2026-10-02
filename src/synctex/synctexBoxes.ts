@@ -249,15 +249,16 @@ function isOversizedForwardBox(
 }
 
 /**
- * Among boxes for the same source file+line, prefer hits outside a thin
- * top/bottom band and closest to the vertical page middle. On remaining ties,
- * prefer smaller area (line box over a page-sized vbox that would solid-fill
- * the viewer highlight overlay).
+ * Among boxes for the same source file+line: skip page-sized boxes when a
+ * compact candidate exists; prefer hits outside a thin top/bottom band; among
+ * remaining candidates pick closest to `near` (mtx `--find` point), then
+ * smaller area. Does not bias toward the page vertical middle.
  */
-export function preferCentralForwardBox(
+export function pickForwardSameLineBox(
   boxes: SynctexBox[],
   sourceFile: string,
   line: number,
+  near?: { x: number; y: number },
   pageHeight?: number,
 ): SynctexBox | undefined {
   const matching = boxes.filter(
@@ -269,31 +270,32 @@ export function preferCentralForwardBox(
   const h = pageHeight ?? estimatePageHeightFromBoxes(boxes);
   const w = estimatePageWidthFromBoxes(boxes);
   const band = Math.max(24, h * FORWARD_EDGE_BAND_FRAC);
-  const mid = h / 2;
+  const refX = near?.x ?? w / 2;
+  const refY = near?.y ?? h / 2;
 
   const compact = matching.filter((b) => !isOversizedForwardBox(b, h, w));
   const pool = compact.length > 0 ? compact : matching;
 
   let best: SynctexBox | undefined;
   let bestInEdge = true;
-  let bestMidDist = Infinity;
+  let bestDist = Infinity;
   let bestArea = Infinity;
 
   for (const box of pool) {
     const cy = boxVerticalCenter(box);
     const inEdge = cy < band || cy > h - band;
-    const midDist = Math.abs(cy - mid);
+    const dist = distanceToBox(box, refX, refY);
     const area = boxArea(box);
     const better =
       !best ||
       (bestInEdge && !inEdge) ||
       (inEdge === bestInEdge &&
-        (midDist < bestMidDist - 1e-9 ||
-          (Math.abs(midDist - bestMidDist) <= 1e-9 && area < bestArea)));
+        (dist < bestDist - 1e-9 ||
+          (Math.abs(dist - bestDist) <= 1e-9 && area < bestArea)));
     if (better) {
       best = box;
       bestInEdge = inEdge;
-      bestMidDist = midDist;
+      bestDist = dist;
       bestArea = area;
     }
   }

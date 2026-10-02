@@ -8,7 +8,7 @@ import {
   FORWARD_MAX_BOX_PAGE_FRAC,
   isSuspiciousFileStartHit,
   nearestSynctexBox,
-  preferCentralForwardBox,
+  pickForwardSameLineBox,
   readSynctexPageBoxes,
   type SynctexBox,
 } from './synctexBoxes';
@@ -22,7 +22,7 @@ export {
   isSuspiciousFileStartHit,
   nearestSynctexBox,
   parseSynctexPageBoxes,
-  preferCentralForwardBox,
+  pickForwardSameLineBox,
   readSynctexPageBoxes,
   synctexFilenamesMatch,
   SUSPICIOUS_TOP_LINE_MAX,
@@ -305,9 +305,9 @@ function hitArea(hit: ForwardSyncResult): number {
 }
 
 /**
- * When mtx `--find` lands in a thin header/footer band, prefer a same-line
- * box nearer the page vertical middle. Never replace with a near-full-page
- * box (that paints as a solid SyncTeX overlay in the viewer).
+ * When mtx `--find` lands in a thin header/footer band, replace with a
+ * same-line box outside that band closest to the mtx hit (not page middle).
+ * Never replace with a near-full-page box (solid SyncTeX overlay in the viewer).
  */
 export function refineForwardHit(
   synctexPath: string,
@@ -327,7 +327,17 @@ export function refineForwardHit(
     // mtx already landed mid-page; keep its box (avoids expanding to a vbox).
     return { result: hit };
   }
-  const preferred = preferCentralForwardBox(boxes, sourceFile, line, pageHeight);
+  const near = {
+    x: (hit.llx + hit.urx) / 2,
+    y: cy,
+  };
+  const preferred = pickForwardSameLineBox(
+    boxes,
+    sourceFile,
+    line,
+    near,
+    pageHeight,
+  );
   if (!preferred) {
     return { result: hit };
   }
@@ -352,14 +362,14 @@ export function refineForwardHit(
   }
   return {
     result: next,
-    note: `forward prefer central box (mtx llx=${hit.llx} lly=${hit.lly} → ${next.llx},${next.lly})`,
+    note: `forward edge-band refine (mtx llx=${hit.llx} lly=${hit.lly} → ${next.llx},${next.lly})`,
   };
 }
 
 /**
  * Forward SyncTeX: source file+line → PDF page and box.
  * Always runs with cwd = job/project directory against the project synctex file.
- * After mtx `--find`, optionally prefer a same-line box nearer the page middle.
+ * After mtx `--find`, edge-band hits may be refined to a nearer same-line box.
  */
 export async function forwardSync(
   toolchain: Toolchain,

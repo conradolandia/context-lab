@@ -89,7 +89,7 @@ Status bar shows `ConTeXt: <rootname>` (click to set or clear). Build / Show PDF
 
 Build uses `context --synctex=repeat` plus `context.build.args`. The viewer keeps the last good PDF while a build runs, then reloads after a stability gate and preserves the current scroll position and zoom (it does not replay the last Forward SyncTeX jump).
 
-SyncTeX marks text, not pure image areas; clicks on figures with no text usually show a short toast. Caption clicks may resolve coarsely. When Forward SyncTeX lands in a thin header/footer band, it prefers a same-line mid-page box (not a page-sized vbox) so the viewer highlight stays a small overlay.
+SyncTeX marks text, not pure image areas; clicks on figures with no text usually show a short toast. Caption clicks may resolve coarsely. When Forward SyncTeX lands in a thin header/footer band, it picks a same-line box outside that band closest to the mtx hit (not a page-sized vbox) so the viewer highlight stays a small overlay near the source line.
 
 ## DigestiF
 

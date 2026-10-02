@@ -18,7 +18,7 @@ import {
   SynctexError,
   parseSynctexPageBoxes,
   nearestSynctexBox,
-  preferCentralForwardBox,
+  pickForwardSameLineBox,
   synctexFilenamesMatch,
   isSuspiciousFileStartHit,
   distanceToBox,
@@ -210,7 +210,7 @@ describe('synctex page boxes (caption / float refine)', () => {
   });
 });
 
-describe('forward SyncTeX central-box preference', () => {
+describe('forward SyncTeX edge-band refine', () => {
   const text = readFixture('page-with-header-footer.synctex.txt');
   const fixturePath = (() => {
     const candidates = [
@@ -233,12 +233,19 @@ describe('forward SyncTeX central-box preference', () => {
     throw new Error('fixture not found: page-with-header-footer.synctex.txt');
   })();
 
-  it('prefers mid-page same-line box over header/footer band hits', () => {
+  it('picks nearest non-edge same-line box, not page middle', () => {
     const boxes = parseSynctexPageBoxes(text, 10);
-    const hit = preferCentralForwardBox(boxes, 'chapter.tex', 42, 800);
+    // mtx landed in the header band; nearest body box is y=100, not y=400.
+    const hit = pickForwardSameLineBox(
+      boxes,
+      'chapter.tex',
+      42,
+      { x: 100, y: 20 },
+      800,
+    );
     assert.ok(hit);
-    assert.equal(hit!.y, 400);
-    assert.ok(hit!.w >= 300);
+    assert.equal(hit!.y, 100);
+    assert.ok(hit!.w >= 200);
     // Must not pick the page-sized vbox (solid-fill overlay regression).
     assert.ok(hit!.h < 100);
   });
@@ -251,7 +258,10 @@ describe('forward SyncTeX central-box preference', () => {
 
   it('returns undefined when no box matches the line', () => {
     const boxes = parseSynctexPageBoxes(text, 10);
-    assert.equal(preferCentralForwardBox(boxes, 'chapter.tex', 7, 800), undefined);
+    assert.equal(
+      pickForwardSameLineBox(boxes, 'chapter.tex', 7, { x: 100, y: 20 }, 800),
+      undefined,
+    );
   });
 
   it('exposes a small edge-band fraction for forward picks', () => {
@@ -268,8 +278,10 @@ describe('forward SyncTeX central-box preference', () => {
       ury: 30,
     };
     const refined = refineForwardHit(fixturePath, 'chapter.tex', 42, edgeHit);
-    assert.equal(refined.result.lly, 400);
+    // Closest non-edge body box to the header hit is y≈100, not mid-page 400.
+    assert.equal(refined.result.lly, 100);
     assert.ok(Math.abs(refined.result.ury - refined.result.lly) < 100);
+    assert.ok(refined.note);
 
     const midHit = {
       page: 10,
