@@ -36,7 +36,7 @@ import { maybeWarnLatexWorkshopConflict } from './compat/latexWorkshopConflict';
 import { initOutputLog, logDebug, logUser } from './outputLog';
 
 /** Bump when shipping a SyncTeX/viewer/LSP/diagnostics/project-view behavior change Sir must verify in Output. */
-export const BUILD_ID = 'synctex-edge-n-minus-1';
+export const BUILD_ID = 'cancel-build';
 
 let output: vscode.OutputChannel;
 let digestifOutput: vscode.OutputChannel;
@@ -602,6 +602,9 @@ export function activate(context: vscode.ExtensionContext): void {
     { dispose: () => buildController?.dispose() },
     vscode.commands.registerCommand('context.buildAndPreview', () => {
       buildController?.requestCommandBuild();
+    }),
+    vscode.commands.registerCommand('context.cancelBuild', () => {
+      buildController?.cancelBuild();
     }),
     vscode.commands.registerCommand('context.forwardSyncTeX', () => {
       void doForwardSync();

@@ -2,7 +2,7 @@
   "name": "context-tools",
   "displayName": "ConTeXt Tools",
   "description": "ConTeXt SyncTeX PDF preview, DigestiF language server, TextMate grammar, and snippets",
-  "version": "0.1.40",
+  "version": "0.1.41",
   "publisher": "context-lab",
   "license": "GPL-2.0-only",
   "repository": {
@@ -90,6 +90,11 @@
       {
         "command": "context.buildAndPreview",
         "title": "ConTeXt: Build and Preview"
+      },
+      {
+        "command": "context.cancelBuild",
+        "title": "ConTeXt: Cancel Build",
+        "enablement": "context.buildRunning"
       },
       {
         "command": "context.forwardSyncTeX",

@@ -26,7 +26,7 @@ Build path: `buildController` → `spawnContextBuild` → artifact gate → view
 
 ## Invariants
 
-1. **stdin ignore on `context` spawn.** Always `stdio: ['ignore', 'pipe', 'pipe']` (`src/build/spawnContext.ts`). An open stdin pipe can hang LuaMetaTeX.
+1. **stdin ignore on `context` spawn.** Always `stdio: ['ignore', 'pipe', 'pipe']` (`src/build/spawnContext.ts`). An open stdin pipe can hang LuaMetaTeX. POSIX builds also use `detached: true` so cancel can signal the process group (`context` + `luametatex`).
 2. **DigestiF must not block build.** Launch is async; failures log to the DigestiF channel. Build / preview / SyncTeX proceed regardless.
 3. **Language id `context` for DigestiF ConTeXt mode.** DigestiF maps `tex`/`latex` → LaTeX tags.
 4. **Do not claim `*.tex` globally** in `contributes.languages`. Offer workspace `files.associations` via the existing prompt only.
@@ -46,7 +46,7 @@ Relevant unit areas: `buildDigestifIsolation`, `latexWorkshopConflict`, `digesti
 
 | Area | Caution |
 | --- | --- |
-| `src/build/spawnContext.ts` stdio | Keep stdin `'ignore'` |
+| `src/build/spawnContext.ts` stdio | Keep stdin `'ignore'`; POSIX `detached` for cancel group kill |
 | DigestiF vs build queue | No await of DigestiF from build/preview/SyncTeX |
 | `package.json` languages / grammars | Language id `context`; no global `*.tex` |
 | `src/compat/latexWorkshopConflict*` | Soft-warn policy only |

@@ -1,7 +1,12 @@
+import type { ChildProcess } from 'node:child_process';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { Toolchain } from '../toolchain/discover';
-import { spawnContextBuild, type ContextBuildResult } from './spawnContext';
+import {
+  spawnContextBuild,
+  type ContextBuildResult,
+  type SpawnContextBuildHandle,
+} from './spawnContext';
 
 export type { ContextBuildResult as BuildResult } from './spawnContext';
 export { spawnContextBuild } from './spawnContext';
@@ -13,15 +18,21 @@ export interface BuildOptions {
   env?: NodeJS.ProcessEnv;
 }
 
+export interface RunContextBuildHandle {
+  child: ChildProcess;
+  promise: Promise<ContextBuildResult>;
+}
+
 /**
  * Run `context --synctex=repeat` (+ extra args) on the given source file.
  * Does not touch DigestiF or the viewer; caller runs the artifact gate on success.
+ * Returns the live ChildProcess so the caller can cancel via killProcessTree.
  */
 export function runContextBuild(
   toolchain: Toolchain,
   sourcePath: string,
   options: BuildOptions = {},
-): Promise<ContextBuildResult> {
+): RunContextBuildHandle {
   const cwd = options.cwd ?? path.dirname(sourcePath);
   const cfg = vscode.workspace.getConfiguration('context');
   const settingArgs = cfg.get<string[]>('build.args', []) ?? [];
@@ -33,7 +44,7 @@ export function runContextBuild(
   output?.appendLine(`$ ${toolchain.contextPath} ${args.join(' ')}`);
   output?.appendLine(`cwd: ${cwd}`);
 
-  const { promise } = spawnContextBuild({
+  const handle: SpawnContextBuildHandle = spawnContextBuild({
     contextPath: toolchain.contextPath,
     sourcePath,
     cwd,
@@ -43,8 +54,11 @@ export function runContextBuild(
     onStderr: (text) => output?.append(text),
   });
 
-  return promise.then((result) => {
-    output?.appendLine(`\n[exit ${result.exitCode}]`);
-    return result;
-  });
+  return {
+    child: handle.child,
+    promise: handle.promise.then((result) => {
+      output?.appendLine(`\n[exit ${result.exitCode}]`);
+      return result;
+    }),
+  };
 }

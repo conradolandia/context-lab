@@ -80,6 +80,7 @@ Status bar shows `ConTeXt: <rootname>` (click to set or clear). Build / Show PDF
 | Action | Command / binding |
 | --- | --- |
 | Build then open/refresh viewer | **ConTeXt: Build and Preview** |
+| Cancel a running build | **ConTeXt: Cancel Build** (also: click the build status bar while running) |
 | Show last gated PDF | **ConTeXt: Show PDF** |
 | Forward SyncTeX (source → PDF) | **ConTeXt: Forward SyncTeX** — `Ctrl+Alt+J` (macOS: `Cmd+Alt+J`) |
 | Backward SyncTeX (PDF → source) | **Ctrl+click** (macOS: **Cmd+click**) in the PDF webview |
