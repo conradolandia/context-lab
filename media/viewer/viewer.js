@@ -23,6 +23,14 @@ let currentScale = 1.25;
 let currentPage = 1;
 /** Avoid stacking setScale from rapid Shift+wheel */
 let scaleInFlight = false;
+/**
+ * True for the whole setScale critical section (layout → syncVisiblePages →
+ * scroll restore). Scroll handlers must not update currentPage; highlight /
+ * ensurePageRendered must not scrollIntoView.
+ */
+let isZooming = false;
+/** Debounce persist of zoom/scroll for webview getState restore */
+let persistStateTimer = null;
 /** @type {number[]} base (scale=1) page heights */
 let pageHeights = [];
 /** @type {number[]} base (scale=1) page widths */
@@ -71,6 +79,60 @@ const pageLinkCache = new Map();
 function setStatus(text, building = false) {
   statusText.textContent = text;
   document.body.classList.toggle('building', building);
+}
+
+/**
+ * Persist scale + scroll for webview hide/restore (survives HTML refresh /
+ * serializer). Keyed by cacheKey so a different PDF does not reuse offsets.
+ */
+function persistViewerState() {
+  if (!loadedCacheKey || !pdfDoc) {
+    return;
+  }
+  vscode.setState({
+    cacheKey: loadedCacheKey,
+    scale: currentScale,
+    scrollTop: viewer.scrollTop,
+    scrollLeft: viewer.scrollLeft,
+    page: currentPage,
+  });
+}
+
+function schedulePersistViewerState() {
+  if (persistStateTimer) {
+    clearTimeout(persistStateTimer);
+  }
+  persistStateTimer = setTimeout(() => {
+    persistStateTimer = null;
+    persistViewerState();
+  }, 150);
+}
+
+/**
+ * @param {string|null|undefined} cacheKey
+ * @returns {{scale:number, scrollTop:number, scrollLeft:number, page:number}|null}
+ */
+function readPersistedViewerState(cacheKey) {
+  if (!cacheKey) {
+    return null;
+  }
+  const st = vscode.getState();
+  if (!st || typeof st !== 'object' || st.cacheKey !== cacheKey) {
+    return null;
+  }
+  const scale = Number(st.scale);
+  const scrollTop = Number(st.scrollTop);
+  const scrollLeft = Number(st.scrollLeft);
+  const page = Number(st.page);
+  if (!(scale > 0) || !Number.isFinite(scrollTop) || !Number.isFinite(scrollLeft)) {
+    return null;
+  }
+  return {
+    scale: Math.min(SCALE_MAX, Math.max(SCALE_MIN, scale)),
+    scrollTop: Math.max(0, scrollTop),
+    scrollLeft: Math.max(0, scrollLeft),
+    page: Number.isFinite(page) && page >= 1 ? Math.round(page) : 1,
+  };
 }
 
 function updateToolbar() {
@@ -599,14 +661,21 @@ async function syncVisiblePages() {
 }
 
 function scheduleSyncVisible() {
+  // setScale owns sync + scroll restore while zooming; ignore scroll noise.
+  if (isZooming) {
+    return;
+  }
   if (scrollRaf) {
     return;
   }
   scrollRaf = setTimeout(() => {
     scrollRaf = null;
+    if (isZooming) {
+      return;
+    }
     void syncVisiblePages();
     // Update current page from scroll position
-    if (!pdfDoc) {
+    if (!pdfDoc || isZooming) {
       return;
     }
     const mid = viewer.scrollTop + viewer.clientHeight / 3;
@@ -620,6 +689,7 @@ function scheduleSyncVisible() {
     if (best !== currentPage) {
       currentPage = best;
       updateToolbar();
+      schedulePersistViewerState();
     }
   }, 50);
 }
@@ -657,7 +727,10 @@ function paintHighlight(opts) {
   // forward-sync paints cannot scroll after a scale change.
   const scrollGen = highlightScrollGen;
   const canScroll = () =>
-    wantScroll && scrollGen > 0 && scrollGen === highlightScrollGen;
+    wantScroll &&
+    !isZooming &&
+    scrollGen > 0 &&
+    scrollGen === highlightScrollGen;
   const msg = activeHighlight;
   if (!msg || !pdfDoc) {
     return;
@@ -827,6 +900,12 @@ function applyHighlight(raw) {
   currentPage = activeHighlight.page;
   updateToolbar();
   // Authorize one scroll-to-highlight for this forward SyncTeX only.
+  // Zoom owns the viewport; do not authorize or apply forward-scroll mid-zoom.
+  if (isZooming) {
+    highlightScrollGen = 0;
+    paintHighlight({ scroll: false });
+    return;
+  }
   highlightScrollGen += 1;
   const el = pageEls.get(activeHighlight.page);
   const scrollTopBeforePage = viewer.scrollTop;
@@ -864,7 +943,8 @@ async function ensurePageRendered(pageNum, opts) {
   }
   const el = pageEls.get(pageNum);
   // Default: nudge into view only when intentionally seeking a page.
-  if (el && opts?.scroll !== false) {
+  // Never while zooming — restoreZoomScroll owns the viewport.
+  if (el && opts?.scroll !== false && !isZooming) {
     el.scrollIntoView({ behavior: 'instant', block: 'nearest' });
   }
   await syncVisiblePages();
@@ -945,6 +1025,8 @@ async function openDocument(source, cacheKey, useRange) {
   const savedScrollTop = viewer.scrollTop;
   const savedScrollLeft = viewer.scrollLeft;
   const savedPage = currentPage;
+  // Webview hide/restore (or HTML refresh): same cacheKey → restore zoom/scroll.
+  const persisted = preserveViewport ? null : readPersistedViewerState(cacheKey);
   activeHighlight = null;
   pendingHighlight = null;
   clearHighlightDom();
@@ -1004,6 +1086,12 @@ async function openDocument(source, cacheKey, useRange) {
         Math.max(1, savedPage),
         pdfDoc.numPages || savedPage,
       );
+    } else if (persisted) {
+      currentScale = persisted.scale;
+      currentPage = Math.min(
+        Math.max(1, persisted.page),
+        pdfDoc.numPages || persisted.page,
+      );
     } else {
       currentPage = 1;
     }
@@ -1014,14 +1102,30 @@ async function openDocument(source, cacheKey, useRange) {
     if (preserveViewport) {
       viewer.scrollTop = savedScrollTop;
       viewer.scrollLeft = savedScrollLeft;
+    } else if (persisted) {
+      const maxLeft = Math.max(0, viewer.scrollWidth - viewer.clientWidth);
+      const maxTop = Math.max(0, viewer.scrollHeight - viewer.clientHeight);
+      viewer.scrollLeft = Math.min(maxLeft, persisted.scrollLeft);
+      viewer.scrollTop = Math.min(maxTop, persisted.scrollTop);
     }
     const t0 = performance.now();
     await syncVisiblePages();
+    // Re-clamp after canvases replace placeholders (heights can nudge layout).
+    if (preserveViewport) {
+      viewer.scrollTop = savedScrollTop;
+      viewer.scrollLeft = savedScrollLeft;
+    } else if (persisted) {
+      const maxLeft = Math.max(0, viewer.scrollWidth - viewer.clientWidth);
+      const maxTop = Math.max(0, viewer.scrollHeight - viewer.clientHeight);
+      viewer.scrollLeft = Math.min(maxLeft, persisted.scrollLeft);
+      viewer.scrollTop = Math.min(maxTop, persisted.scrollTop);
+    }
     const firstPageMs = Math.round(performance.now() - t0);
     const renderMs = Math.round(performance.now() - tMeasure);
 
     setStatus('Ready');
     updateToolbar();
+    persistViewerState();
     vscode.postMessage({
       type: 'loaded',
       pages: pdfDoc.numPages,
@@ -1033,6 +1137,7 @@ async function openDocument(source, cacheKey, useRange) {
       virtual: true,
       useRange: !!useRange,
       preservedViewport: preserveViewport,
+      restoredWebviewState: !!persisted,
     });
   } catch (err) {
     loadedCacheKey = null;
@@ -1078,7 +1183,7 @@ async function setScale(nextScale, anchor) {
   }
   const prevScale = currentScale;
   // Capture anchor before relayout. Default: viewport center so toolbar +/- /
-  // Fit stay put (never scrollIntoView block:start — that jumps the page list).
+  // Fit stay put (never scrollIntoView / page-start snap — that jumps the list).
   let zoomAnchor = anchor;
   if (!zoomAnchor && prevScale > 0) {
     const viewX = viewer.clientWidth / 2;
@@ -1094,18 +1199,30 @@ async function setScale(nextScale, anchor) {
   updateToolbar();
   setStatus('Zooming…');
   const t0 = performance.now();
+  // Guard the whole layout + sync + restore window against scroll side effects.
+  isZooming = true;
+  // Drop any pending scroll-driven sync that would race restoreZoomScroll.
+  if (scrollRaf) {
+    clearTimeout(scrollRaf);
+    scrollRaf = null;
+  }
   // Drop forward-sync scroll authorization before layout (also cleared inside
   // layoutPlaceholders). Zoom keeps restoreZoomScroll only — never highlight scroll.
   highlightScrollGen = 0;
-  layoutPlaceholders();
-  // Same turn as layout: apply scroll before paint so the list does not flash
-  // at scrollTop 0 after innerHTML clear.
-  restoreZoomScroll(zoomAnchor, prevScale);
-  await syncVisiblePages();
-  // Re-clamp after canvases replace placeholders (heights can nudge layout).
-  restoreZoomScroll(zoomAnchor, prevScale);
+  try {
+    layoutPlaceholders();
+    // Same turn as layout: apply scroll before paint so the list does not flash
+    // at scrollTop 0 after innerHTML clear. Anchor = viewport center or pointer.
+    restoreZoomScroll(zoomAnchor, prevScale);
+    await syncVisiblePages();
+    // Re-clamp after canvases replace placeholders (heights can nudge layout).
+    restoreZoomScroll(zoomAnchor, prevScale);
+  } finally {
+    isZooming = false;
+  }
   const renderMs = Math.round(performance.now() - t0);
   setStatus('Ready');
+  persistViewerState();
   // Zoom must NOT re-getDocument; log render only.
   vscode.postMessage({
     type: 'loaded',
@@ -1290,6 +1407,9 @@ window.addEventListener('wheel', onViewerWheel, { passive: false, capture: true 
 
 viewer.addEventListener('scroll', () => {
   scheduleSyncVisible();
+  if (!isZooming) {
+    schedulePersistViewerState();
+  }
 });
 
 window.addEventListener('message', (event) => {

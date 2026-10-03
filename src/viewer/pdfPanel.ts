@@ -18,6 +18,9 @@ export type ViewerMessage =
       useRange?: boolean;
       reused?: boolean;
       virtual?: boolean;
+      preservedViewport?: boolean;
+      /** Webview getState restored scale/scroll for this cacheKey. */
+      restoredWebviewState?: boolean;
     }
   | { type: 'loadError'; message: string }
   | { type: 'click'; page: number; x: number; y: number; pdfY?: number; pageHeight?: number }
@@ -711,7 +714,9 @@ export class PdfPanel {
                 ` rangeBytes=${rangeStats.bytesServed}`
               : '') +
             (msg.reused ? ' reused=1' : '') +
-            (msg.virtual ? ' virtual=1' : ''),
+            (msg.virtual ? ' virtual=1' : '') +
+            (msg.preservedViewport ? ' preservedViewport=1' : '') +
+            (msg.restoredWebviewState ? ' restoredWebviewState=1' : ''),
         );
         break;
       }
