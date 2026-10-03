@@ -127,9 +127,19 @@ export class PdfPanel {
   private loadedCacheKey: string | undefined;
   /** cacheKey of an in-flight loadPdf — blocks duplicates */
   private loadInFlightKey: string | undefined;
+  /**
+   * Webview script posted `ready`. Until then, loadPdf messages are lost
+   * (serializer/adopt often races ahead of the fresh document).
+   */
+  private webviewReady = false;
+  /** Queued while waiting for {@link webviewReady}. */
+  private pendingLoad: { pdfPath: string; cacheKey: string } | undefined;
+  private loadWatchdog: ReturnType<typeof setTimeout> | undefined;
   private readonly rangeServer = new PdfRangeServer();
   private messageSub: vscode.Disposable | undefined;
   private disposeSub: vscode.Disposable | undefined;
+
+  private static readonly LOAD_TIMEOUT_MS = 20_000;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -153,11 +163,36 @@ export class PdfPanel {
   }
 
   public dispose(): void {
+    this.clearLoadWatchdog();
     this.messageSub?.dispose();
     this.disposeSub?.dispose();
     this.panel?.dispose();
     this.panel = undefined;
+    this.webviewReady = false;
+    this.pendingLoad = undefined;
     this.rangeServer.dispose();
+  }
+
+  private clearLoadWatchdog(): void {
+    if (this.loadWatchdog != null) {
+      clearTimeout(this.loadWatchdog);
+      this.loadWatchdog = undefined;
+    }
+  }
+
+  /** Surface a stuck load (progress forever, no `loaded` / `loadError`). */
+  private armLoadWatchdog(cacheKey: string): void {
+    this.clearLoadWatchdog();
+    this.loadWatchdog = setTimeout(() => {
+      this.loadWatchdog = undefined;
+      if (this.loadInFlightKey !== cacheKey || this.loadedCacheKey === cacheKey) {
+        return;
+      }
+      this.onLog?.(`[viewer] load timed out cacheKey=${cacheKey}`);
+      void this.recoverFromLoadError(
+        'PDF load timed out (webview did not report loaded)',
+      );
+    }, PdfPanel.LOAD_TIMEOUT_MS);
   }
 
   public hasPanel(): boolean {
@@ -168,15 +203,20 @@ export class PdfPanel {
    * Adopt a restored or pre-existing webview panel (serializer / reuse).
    * If this controller already owns a different panel, the other is disposed
    * so only one `context.pdfPreview` tab remains.
+   *
+   * Always refreshes HTML and waits for a new `ready` before loadPdf: after
+   * window reload the prior loopback range server is dead, and posting
+   * loadPdf before the webview listens leaves the progress bar stuck.
    */
   public adoptPanel(panel: vscode.WebviewPanel): void {
     if (PdfPanel.pendingRestored === panel) {
       PdfPanel.pendingRestored = undefined;
     }
-    if (this.panel === panel) {
-      this.wirePanel(panel, false);
-      return;
-    }
+    this.webviewReady = false;
+    this.loadedCacheKey = undefined;
+    this.loadInFlightKey = undefined;
+    this.pendingLoad = undefined;
+    this.clearLoadWatchdog();
     if (this.panel && this.panel !== panel) {
       const old = this.panel;
       this.panel = undefined;
@@ -184,7 +224,8 @@ export class PdfPanel {
       this.disposeSub?.dispose();
       old.dispose();
     }
-    this.wirePanel(panel, false);
+    // Force HTML so the script rebinds and posts `ready` (then we reload PDF).
+    this.wirePanel(panel, true);
   }
 
   public setJobDir(jobDir: string): void {
@@ -217,6 +258,8 @@ export class PdfPanel {
       localResourceRoots: this.resourceRoots(),
     };
     if (resetHtml || !this.panel.webview.html) {
+      // New document → must wait for `ready` again before loadPdf.
+      this.webviewReady = false;
       this.panel.webview.html = this.getHtml(this.panel.webview);
     }
     this.messageSub?.dispose();
@@ -227,8 +270,11 @@ export class PdfPanel {
     this.disposeSub = this.panel.onDidDispose(() => {
       if (this.panel === panel) {
         this.panel = undefined;
+        this.webviewReady = false;
+        this.pendingLoad = undefined;
         this.loadedCacheKey = undefined;
         this.loadInFlightKey = undefined;
+        this.clearLoadWatchdog();
       }
     });
     this.applyPanelTitle();
@@ -387,11 +433,23 @@ export class PdfPanel {
   }
 
   private async loadPdf(pdfPath: string, cacheKey: string): Promise<void> {
+    if (!this.panel) {
+      return;
+    }
+    // After adopt/restore the webview document is new; posts before `ready`
+    // never reach the script and leave the progress UI stuck.
+    if (!this.webviewReady) {
+      this.pendingLoad = { pdfPath, cacheKey };
+      this.onLog?.(`[viewer] loadPdf deferred (waiting for webview ready) ${cacheKey}`);
+      return;
+    }
     if (this.loadInFlightKey === cacheKey) {
       return;
     }
+    this.pendingLoad = undefined;
     this.loadInFlightKey = cacheKey;
     this.loadStartedAt = Date.now();
+    this.armLoadWatchdog(cacheKey);
 
     try {
       if (this.preferBytesFallback) {
@@ -400,10 +458,11 @@ export class PdfPanel {
       }
 
       if (!this.preferWebviewUri) {
+        // Ensure a live loopback server for this session (prior session is dead).
         const rangeUrl = await this.rangeServer.serve(pdfPath);
         if (rangeUrl) {
           this.onLog?.(`[viewer] loadPdf rangeServer=${rangeUrl}`);
-          await this.panel!.webview.postMessage({
+          await this.panel.webview.postMessage({
             type: 'loadPdf',
             url: rangeUrl,
             cacheKey,
@@ -415,15 +474,16 @@ export class PdfPanel {
         this.preferWebviewUri = true;
       }
 
-      const uri = this.panel!.webview.asWebviewUri(vscode.Uri.file(pdfPath));
+      const uri = this.panel.webview.asWebviewUri(vscode.Uri.file(pdfPath));
       this.onLog?.(`[viewer] loadPdf url=${uri.toString()}`);
-      await this.panel!.webview.postMessage({
+      await this.panel.webview.postMessage({
         type: 'loadPdf',
         url: uri.toString(),
         cacheKey,
         useRange: false,
       });
     } catch (err) {
+      this.clearLoadWatchdog();
       this.loadInFlightKey = undefined;
       const message = err instanceof Error ? err.message : String(err);
       void this.panel?.webview.postMessage({
@@ -447,6 +507,7 @@ export class PdfPanel {
         cacheKey,
       });
     } catch (err) {
+      this.clearLoadWatchdog();
       this.loadInFlightKey = undefined;
       const message = err instanceof Error ? err.message : String(err);
       void this.panel?.webview.postMessage({
@@ -457,28 +518,38 @@ export class PdfPanel {
   }
 
   private async recoverFromLoadError(message: string): Promise<void> {
+    this.clearLoadWatchdog();
     this.loadInFlightKey = undefined;
     const is401 = /401|Unexpected server response/i.test(message);
     const isFetch =
       /Failed to fetch|NetworkError|ERR_|Load failed/i.test(message);
+    const isTimeout = /timed out/i.test(message);
 
     if (
       !this.preferWebviewUri &&
       !this.preferBytesFallback &&
       this.currentPdfPath &&
-      (is401 || isFetch)
+      (is401 || isFetch || isTimeout)
     ) {
       this.preferWebviewUri = true;
-      this.onLog?.(`[viewer] range URL failed (${message}); trying asWebviewUri`);
+      this.onLog?.(
+        `[viewer] range URL failed (${message}); trying asWebviewUri`,
+      );
       const key = `${this.currentPdfPath}:${this.currentMtimeMs ?? 0}`;
       await this.loadPdf(this.currentPdfPath, key);
       return;
     }
 
-    if (is401 && !this.preferBytesFallback && this.currentPdfPath) {
+    if (
+      (is401 || isTimeout) &&
+      !this.preferBytesFallback &&
+      this.currentPdfPath
+    ) {
       this.preferBytesFallback = true;
       void vscode.window.showWarningMessage(
-        'PDF URI load failed (401). Falling back to in-memory bytes for this session.',
+        isTimeout
+          ? 'PDF load timed out. Falling back to in-memory bytes for this session.'
+          : 'PDF URI load failed (401). Falling back to in-memory bytes for this session.',
       );
       const key = `${this.currentPdfPath}:${this.currentMtimeMs ?? 0}`;
       await this.postPdfBytes(this.currentPdfPath, key);
@@ -594,22 +665,30 @@ export class PdfPanel {
   private handleMessage(msg: ViewerMessage): void {
     switch (msg.type) {
       case 'ready': {
-        // Only (re)load if the webview has no document for the current key.
-        if (!this.currentPdfPath || this.currentMtimeMs == null) {
-          break;
+        // Fresh webview document: any prior loadPdf post was lost.
+        this.webviewReady = true;
+        this.loadInFlightKey = undefined;
+        this.loadedCacheKey = undefined;
+        this.clearLoadWatchdog();
+        const pending = this.pendingLoad;
+        this.pendingLoad = undefined;
+        if (pending) {
+          this.onLog?.(`[viewer] ready → flush deferred load ${pending.cacheKey}`);
+          void this.loadPdf(pending.pdfPath, pending.cacheKey);
+        } else if (this.currentPdfPath && this.currentMtimeMs != null) {
+          const key = `${this.currentPdfPath}:${this.currentMtimeMs}`;
+          this.onLog?.(`[viewer] ready → reload ${key}`);
+          void this.loadPdf(this.currentPdfPath, key);
+        } else {
+          this.onLog?.('[viewer] ready (no PDF path yet)');
         }
-        const key = `${this.currentPdfPath}:${this.currentMtimeMs}`;
-        if (this.loadedCacheKey === key || this.loadInFlightKey === key) {
-          this.onLog?.(`[viewer] ready ignored (already loaded/in-flight)`);
-          break;
-        }
-        void this.loadPdf(this.currentPdfPath, key);
         if (this.building) {
           this.setBuilding(true);
         }
         break;
       }
       case 'loaded': {
+        this.clearLoadWatchdog();
         this.loadInFlightKey = undefined;
         if (this.currentPdfPath && this.currentMtimeMs != null) {
           this.loadedCacheKey = `${this.currentPdfPath}:${this.currentMtimeMs}`;
