@@ -76,6 +76,38 @@ export type ViewerMessage =
       top?: number;
       w?: number;
       h?: number;
+    }
+  | {
+      type: 'zoomDebug';
+      phase: string;
+      trigger?: string;
+      scaleBefore?: number;
+      scaleAfter?: number;
+      scrollTop?: number;
+      scrollLeft?: number;
+      scrollHeight?: number;
+      clientHeight?: number;
+      currentPage?: number;
+      pageBefore?: number;
+      pageOffsetTop?: number;
+      intendedRestoreTop?: number;
+      actualRestoreTop?: number;
+      legacyIntendedTop?: number;
+      legacyDelta?: number;
+      blockedScrollPageUpdate?: boolean;
+      blockedHighlightScroll?: boolean;
+      blockedEnsureScroll?: boolean;
+      renderMs?: number;
+      contentX?: number;
+      contentY?: number;
+      viewX?: number;
+      viewY?: number;
+      pageAnchor?: {
+        page: number;
+        xInPage: number;
+        yInPage: number;
+        pageOffsetTop: number;
+      } | null;
     };
 
 export interface ForwardSyncPayload {
@@ -736,6 +768,56 @@ export class PdfPanel {
       case 'forwardSyncDiag':
         this.logForwardScrollDiag(msg.phase, msg);
         break;
+      case 'zoomDebug': {
+        const n = (v: number | undefined, digits = 1): string =>
+          v != null && Number.isFinite(v) ? v.toFixed(digits) : '?';
+        const b = (v: boolean | undefined): string => (v ? '1' : '0');
+        const anchor = msg.pageAnchor;
+        this.onLog?.(
+          `[viewer] zoom-debug ${msg.phase}` +
+            (msg.trigger != null ? ` trigger=${msg.trigger}` : '') +
+            (msg.scaleBefore != null || msg.scaleAfter != null
+              ? ` scale=${n(msg.scaleBefore, 3)}→${n(msg.scaleAfter, 3)}`
+              : '') +
+            (msg.scrollTop != null
+              ? ` scrollTop=${n(msg.scrollTop)}` +
+                ` scrollLeft=${n(msg.scrollLeft)}` +
+                ` scrollH=${n(msg.scrollHeight)}` +
+                ` clientH=${n(msg.clientHeight)}`
+              : '') +
+            (msg.currentPage != null ? ` page=${msg.currentPage}` : '') +
+            (msg.pageBefore != null ? ` pageBefore=${msg.pageBefore}` : '') +
+            (msg.pageOffsetTop != null
+              ? ` pageOffsetTop=${n(msg.pageOffsetTop)}`
+              : '') +
+            (msg.intendedRestoreTop != null
+              ? ` intendedTop=${n(msg.intendedRestoreTop)}`
+              : '') +
+            (msg.actualRestoreTop != null
+              ? ` actualTop=${n(msg.actualRestoreTop)}`
+              : '') +
+            (msg.legacyIntendedTop != null
+              ? ` legacyTop=${n(msg.legacyIntendedTop)}`
+              : '') +
+            (msg.legacyDelta != null ? ` legacyDelta=${n(msg.legacyDelta)}` : '') +
+            (msg.blockedScrollPageUpdate != null
+              ? ` blockedScrollPage=${b(msg.blockedScrollPageUpdate)}`
+              : '') +
+            (msg.blockedHighlightScroll != null
+              ? ` blockedHlScroll=${b(msg.blockedHighlightScroll)}`
+              : '') +
+            (msg.blockedEnsureScroll != null
+              ? ` blockedEnsureScroll=${b(msg.blockedEnsureScroll)}`
+              : '') +
+            (anchor
+              ? ` anchorPage=${anchor.page}` +
+                ` yInPage=${n(anchor.yInPage)}` +
+                ` anchorOffsetTop=${n(anchor.pageOffsetTop)}`
+              : '') +
+            (msg.renderMs != null ? ` renderMs=${msg.renderMs}` : ''),
+        );
+        break;
+      }
       case 'loadError':
         void this.recoverFromLoadError(msg.message);
         break;
