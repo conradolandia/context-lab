@@ -47,6 +47,12 @@ let scrollRaf = null;
  */
 let activeHighlight = null;
 let pendingHighlight = null;
+/**
+ * Only {@link applyHighlight} bumps this. Zoom/layout clears it so a stale
+ * async paintHighlight({scroll:true}) from an earlier forward SyncTeX cannot
+ * call scrollIntoView after the user zooms.
+ */
+let highlightScrollGen = 0;
 let pdfjsPromise = null;
 /** @type {Worker|null} dedicated PDF.js worker (blob URL; same-origin) */
 let pdfWorker = null;
@@ -438,6 +444,8 @@ async function goToDestination(resolved) {
 
 function layoutPlaceholders() {
   layoutGeneration += 1;
+  // Invalidate any in-flight "scroll to highlight" from a prior forward sync.
+  highlightScrollGen = 0;
   viewer.innerHTML = '';
   pageEls.clear();
   renderedPages.clear();
@@ -644,7 +652,12 @@ function clampHighlightBox(box, pageWidth, pageHeight) {
 
 function paintHighlight(opts) {
   clearHighlightDom();
-  const shouldScroll = opts?.scroll === true;
+  const wantScroll = opts?.scroll === true;
+  // Capture gen at call time; zoom/layout zeros highlightScrollGen so stale
+  // forward-sync paints cannot scroll after a scale change.
+  const scrollGen = highlightScrollGen;
+  const canScroll = () =>
+    wantScroll && scrollGen > 0 && scrollGen === highlightScrollGen;
   const msg = activeHighlight;
   if (!msg || !pdfDoc) {
     return;
@@ -656,9 +669,11 @@ function paintHighlight(opts) {
       renderedPages.delete(msg.page);
     }
     pendingHighlight = msg;
-    void ensurePageRendered(msg.page, { scroll: shouldScroll }).then(() => {
+    // Never scroll while ensuring the page for a repaint; only the final
+    // authorized paintHighlight may move the viewport.
+    void ensurePageRendered(msg.page, { scroll: canScroll() }).then(() => {
       if (activeHighlight && activeHighlight.page === msg.page) {
-        paintHighlight({ scroll: shouldScroll });
+        paintHighlight({ scroll: wantScroll });
       }
     });
     return;
@@ -675,20 +690,26 @@ function paintHighlight(opts) {
       if (renderedPages.has(msg.page) && !pageHasRenderedCanvas(msg.page)) {
         renderedPages.delete(msg.page);
       }
-      void ensurePageRendered(msg.page, { scroll: shouldScroll }).then(() => {
+      void ensurePageRendered(msg.page, { scroll: canScroll() }).then(() => {
         if (activeHighlight && activeHighlight.page === msg.page) {
-          paintHighlight({ scroll: shouldScroll });
+          paintHighlight({ scroll: wantScroll });
         }
       });
       return;
     }
     const viewport = page.getViewport({ scale: currentScale });
+    // Re-check after await: zoom may have invalidated scroll authorization.
+    const doScroll = canScroll();
+    if (doScroll) {
+      // One scroll per forward SyncTeX; repaints must not scroll again.
+      highlightScrollGen = 0;
+    }
     if (msg.skipHighlight) {
       // Edge-band `--find` with no safe replacement: scroll page only, no paint.
-      if (shouldScroll) {
+      if (doScroll) {
         still.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
       }
-      vscode.postMessage({
+      const skipPayload = {
         type: 'highlight',
         page: msg.page,
         viewportLeft: 0,
@@ -705,7 +726,17 @@ function paintHighlight(opts) {
         viewportHeight: viewport.height,
         synctexPageH: msg.synctexPageH,
         synctexPageW: msg.synctexPageW,
-      });
+      };
+      // Omit scroll diagnostics on repaint so host does not log forward-scroll.
+      if (doScroll) {
+        skipPayload.scrollTopBefore = viewer.scrollTop;
+        skipPayload.scrollTopAfter = viewer.scrollTop;
+        skipPayload.clientHeight = viewer.clientHeight;
+        skipPayload.scrollHeight = viewer.scrollHeight;
+        skipPayload.pageOffsetTop = still.offsetTop;
+        skipPayload.pageOffsetHeight = still.offsetHeight;
+      }
+      vscode.postMessage(skipPayload);
       return;
     }
     const raw = mtxFindBoxToViewport(
@@ -739,14 +770,14 @@ function paintHighlight(opts) {
       pageOffsetTop + canvasCenterY - viewer.clientHeight / 2,
     );
 
-    // Only scroll on a fresh forward SyncTeX (`applyHighlight`). Re-paints from
-    // virtualized render / zoom / layout must not fight the user's scroll.
-    if (shouldScroll) {
+    // Only a fresh forward SyncTeX (`applyHighlight`) may scroll. Re-paints
+    // from virtualized render / zoom / layout must not move the viewport.
+    if (doScroll) {
       hl.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
     }
 
-    const postScroll = () => {
-      vscode.postMessage({
+    const postHighlight = () => {
+      const payload = {
         type: 'highlight',
         page: msg.page,
         viewportLeft: box.left,
@@ -758,28 +789,31 @@ function paintHighlight(opts) {
         lly: msg.lly,
         urx: msg.urx,
         ury: msg.ury,
-        scrollTopBefore,
-        scrollTopAfter: viewer.scrollTop,
-        clientHeight: viewer.clientHeight,
-        scrollHeight: viewer.scrollHeight,
-        pageOffsetTop,
-        pageOffsetHeight,
-        rawCanvasTop: raw.top,
-        clampedCanvasTop: box.top,
-        simpleMtxCssTop,
-        intendedScrollTop,
         pageView: Array.isArray(page.view) ? [...page.view] : undefined,
         viewportHeight: viewport.height,
         synctexPageH: msg.synctexPageH,
         synctexPageW: msg.synctexPageW,
-      });
+      };
+      if (doScroll) {
+        payload.scrollTopBefore = scrollTopBefore;
+        payload.scrollTopAfter = viewer.scrollTop;
+        payload.clientHeight = viewer.clientHeight;
+        payload.scrollHeight = viewer.scrollHeight;
+        payload.pageOffsetTop = pageOffsetTop;
+        payload.pageOffsetHeight = pageOffsetHeight;
+        payload.rawCanvasTop = raw.top;
+        payload.clampedCanvasTop = box.top;
+        payload.simpleMtxCssTop = simpleMtxCssTop;
+        payload.intendedScrollTop = intendedScrollTop;
+      }
+      vscode.postMessage(payload);
     };
 
-    if (shouldScroll) {
+    if (doScroll) {
       // smooth scrollIntoView settles asynchronously; sample after a short delay.
-      setTimeout(postScroll, 180);
+      setTimeout(postHighlight, 180);
     } else {
-      postScroll();
+      postHighlight();
     }
 
     highlightFadeTimer = setTimeout(() => {
@@ -792,6 +826,8 @@ function applyHighlight(raw) {
   activeHighlight = normalizeHighlight(raw);
   currentPage = activeHighlight.page;
   updateToolbar();
+  // Authorize one scroll-to-highlight for this forward SyncTeX only.
+  highlightScrollGen += 1;
   const el = pageEls.get(activeHighlight.page);
   const scrollTopBeforePage = viewer.scrollTop;
   // Bring the page into view without forcing vertical center — highlight scroll
@@ -1058,6 +1094,9 @@ async function setScale(nextScale, anchor) {
   updateToolbar();
   setStatus('Zooming…');
   const t0 = performance.now();
+  // Drop forward-sync scroll authorization before layout (also cleared inside
+  // layoutPlaceholders). Zoom keeps restoreZoomScroll only — never highlight scroll.
+  highlightScrollGen = 0;
   layoutPlaceholders();
   // Same turn as layout: apply scroll before paint so the list does not flash
   // at scrollTop 0 after innerHTML clear.
@@ -1076,6 +1115,7 @@ async function setScale(nextScale, anchor) {
     reused: true,
   });
   if (activeHighlight) {
+    // Repaint only — must not scroll (highlightScrollGen already 0).
     paintHighlight({ scroll: false });
   }
 }
