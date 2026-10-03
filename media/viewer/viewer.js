@@ -1008,6 +1008,29 @@ async function openDocument(source, cacheKey, useRange) {
   }
 }
 
+/**
+ * Restore scroll so `zoomAnchor` content point stays under the same view offset.
+ * Clamps to scroll bounds. Never uses scrollIntoView (that jumps the page list).
+ * @param {{contentX:number, contentY:number, viewX:number, viewY:number}|null|undefined} zoomAnchor
+ * @param {number} prevScale
+ */
+function restoreZoomScroll(zoomAnchor, prevScale) {
+  if (!zoomAnchor || !(prevScale > 0)) {
+    return;
+  }
+  const ratio = currentScale / prevScale;
+  const maxLeft = Math.max(0, viewer.scrollWidth - viewer.clientWidth);
+  const maxTop = Math.max(0, viewer.scrollHeight - viewer.clientHeight);
+  viewer.scrollLeft = Math.min(
+    maxLeft,
+    Math.max(0, zoomAnchor.contentX * ratio - zoomAnchor.viewX),
+  );
+  viewer.scrollTop = Math.min(
+    maxTop,
+    Math.max(0, zoomAnchor.contentY * ratio - zoomAnchor.viewY),
+  );
+}
+
 async function setScale(nextScale, anchor) {
   if (!pdfDoc) {
     return;
@@ -1036,12 +1059,12 @@ async function setScale(nextScale, anchor) {
   setStatus('Zooming…');
   const t0 = performance.now();
   layoutPlaceholders();
-  if (zoomAnchor && prevScale > 0) {
-    const ratio = currentScale / prevScale;
-    viewer.scrollLeft = Math.max(0, zoomAnchor.contentX * ratio - zoomAnchor.viewX);
-    viewer.scrollTop = Math.max(0, zoomAnchor.contentY * ratio - zoomAnchor.viewY);
-  }
+  // Same turn as layout: apply scroll before paint so the list does not flash
+  // at scrollTop 0 after innerHTML clear.
+  restoreZoomScroll(zoomAnchor, prevScale);
   await syncVisiblePages();
+  // Re-clamp after canvases replace placeholders (heights can nudge layout).
+  restoreZoomScroll(zoomAnchor, prevScale);
   const renderMs = Math.round(performance.now() - t0);
   setStatus('Ready');
   // Zoom must NOT re-getDocument; log render only.
@@ -1171,51 +1194,66 @@ zoomInput.addEventListener('blur', () => {
   }
 });
 
-// Ctrl/Cmd+wheel zooms only (no page-list scroll). Alt+wheel = discrete page.
-// Plain wheel keeps smooth vertical scroll. No Shift+Ctrl binding.
-viewer.addEventListener(
-  'wheel',
-  (ev) => {
-    if (ev.ctrlKey || ev.metaKey) {
-      ev.preventDefault();
-      ev.stopPropagation();
-      if (!pdfDoc || scaleInFlight) {
-        return;
-      }
-      const direction = ev.deltaY < 0 ? 1 : ev.deltaY > 0 ? -1 : 0;
-      if (direction === 0) {
-        return;
-      }
-      const rect = viewer.getBoundingClientRect();
-      const viewX = ev.clientX - rect.left;
-      const viewY = ev.clientY - rect.top;
-      const anchor = {
-        contentX: viewer.scrollLeft + viewX,
-        contentY: viewer.scrollTop + viewY,
-        viewX,
-        viewY,
-      };
-      scaleInFlight = true;
-      void setScale(currentScale + direction * SCALE_STEP, anchor).finally(() => {
-        scaleInFlight = false;
-      });
+/**
+ * Ctrl/Cmd+wheel must use a non-passive capture listener: Chromium ignores
+ * preventDefault() on passive wheel handlers, so the page list keeps scrolling
+ * while zoom runs. Capture runs before scroll; window covers the webview root.
+ * Alt+wheel = discrete page. Plain wheel keeps smooth vertical scroll.
+ * No Shift+Ctrl binding.
+ * @param {WheelEvent} ev
+ */
+function onViewerWheel(ev) {
+  const pathTarget = /** @type {EventTarget|null} */ (ev.target);
+  const overViewer =
+    pathTarget instanceof Node &&
+    (pathTarget === viewer || viewer.contains(pathTarget));
+  if (!overViewer) {
+    return;
+  }
+
+  if (ev.ctrlKey || ev.metaKey) {
+    // Block native scroll (and ctrl-wheel browser zoom) before #viewer scrolls.
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (!pdfDoc || scaleInFlight) {
       return;
     }
-    if (ev.altKey) {
-      ev.preventDefault();
-      ev.stopPropagation();
-      if (!pdfDoc) {
-        return;
-      }
-      const direction = ev.deltaY < 0 ? -1 : ev.deltaY > 0 ? 1 : 0;
-      if (direction === 0) {
-        return;
-      }
-      void goToPage(currentPage + direction);
+    const direction = ev.deltaY < 0 ? 1 : ev.deltaY > 0 ? -1 : 0;
+    if (direction === 0) {
+      return;
     }
-  },
-  { passive: false },
-);
+    const rect = viewer.getBoundingClientRect();
+    const viewX = ev.clientX - rect.left;
+    const viewY = ev.clientY - rect.top;
+    const anchor = {
+      contentX: viewer.scrollLeft + viewX,
+      contentY: viewer.scrollTop + viewY,
+      viewX,
+      viewY,
+    };
+    scaleInFlight = true;
+    void setScale(currentScale + direction * SCALE_STEP, anchor).finally(() => {
+      scaleInFlight = false;
+    });
+    return;
+  }
+
+  if (ev.altKey) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (!pdfDoc) {
+      return;
+    }
+    const direction = ev.deltaY < 0 ? -1 : ev.deltaY > 0 ? 1 : 0;
+    if (direction === 0) {
+      return;
+    }
+    void goToPage(currentPage + direction);
+  }
+}
+
+// passive:false is required for preventDefault; capture:true beats scroll.
+window.addEventListener('wheel', onViewerWheel, { passive: false, capture: true });
 
 viewer.addEventListener('scroll', () => {
   scheduleSyncVisible();

@@ -96,6 +96,8 @@ body {
   overflow: auto;
   padding: 12px;
   outline: none;
+  /* Keep wheel gestures inside the page list (no scroll chaining). */
+  overscroll-behavior: contain;
 }
 
 .page {
