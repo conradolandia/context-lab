@@ -113,6 +113,30 @@ export function findSynctexSibling(pdfPath: string): string | undefined {
 }
 
 /**
+ * Whether a PDF should open in the ConTeXt viewer (explorer / show-PDF paths).
+ * True when a same-stem SyncTeX sibling exists, or the path matches a related
+ * job PDF (gated snapshot and/or resolved root output).
+ */
+export function isConTeXtPreviewPdf(
+  pdfPath: string,
+  relatedPdfPaths: Array<string | undefined> = [],
+): boolean {
+  const abs = path.resolve(pdfPath);
+  if (!/\.pdf$/i.test(abs)) {
+    return false;
+  }
+  if (findSynctexSibling(abs)) {
+    return true;
+  }
+  for (const related of relatedPdfPaths) {
+    if (related && path.resolve(related) === abs) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Gated job artifacts. Happy path uses the real project PDF + synctex
  * (no globalStorage copy). Viewer refreshes only after the gate passes.
  */

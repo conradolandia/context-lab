@@ -52,6 +52,7 @@ Resolution: absolute `context.contextPath` / `context.mtxrunPath` overrides, the
 | `context.build.args` | `[]` | Extra args after `--synctex=repeat` |
 | `context.build.onSave` | `false` | Save starts a build; rapid saves coalesce |
 | `context.synctex.enabled` | `true` | Toggle SyncTeX |
+| `context.viewer.openExistingOnActivate` | `false` | Open existing root PDF+SyncTeX on activate (no rebuild). Default off; use **Show PDF** or Explorer menu |
 | `context.debugOutput` | `false` | Verbose traces on **ConTeXt debug** (viewer, gate, SyncTeX dumps) |
 | `context.digestif.enabled` | `true` | Start DigestiF LSP |
 | `context.digestifPath` | `""` | Absolute DigestiF binary; empty = PATH / luarocks |
@@ -81,7 +82,7 @@ Status bar shows `ConTeXt: <rootname>` (click to set or clear). Build / Show PDF
 | --- | --- |
 | Build then open/refresh viewer | **ConTeXt: Build and Preview** |
 | Cancel a running build | **ConTeXt: Cancel Build** (also: click the build status bar while running) |
-| Show last gated PDF | **ConTeXt: Show PDF** |
+| Show last gated PDF (no rebuild) | **ConTeXt: Show PDF** (also editor context on ConTeXt/TeX); Explorer → **Open in ConTeXt PDF Viewer** on a job `.pdf` (sibling `.synctex` or active root output) |
 | Forward SyncTeX (source → PDF) | **ConTeXt: Forward SyncTeX** — `Ctrl+Alt+J` (macOS: `Cmd+Alt+J`) |
 | Backward SyncTeX (PDF → source) | **Ctrl+click** (macOS: **Cmd+click**) in the PDF webview |
 | Follow PDF links | Plain click on a link in the PDF webview (internal dest or external URL). Ctrl/Cmd+click stays SyncTeX |

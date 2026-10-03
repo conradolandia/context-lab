@@ -8,6 +8,8 @@ import {
   hasPdfHeader,
   waitForStablePdf,
   gateJobArtifacts,
+  findSynctexSibling,
+  isConTeXtPreviewPdf,
   ArtifactGateError,
 } from '../build/artifactGate';
 
@@ -75,5 +77,21 @@ describe('artifactGate', () => {
       () => waitForStablePdf('/tmp/does-not-exist-context-gate.pdf', { settleMs: 10 }),
       ArtifactGateError,
     );
+  });
+
+  it('isConTeXtPreviewPdf requires synctex sibling or related job path', async () => {
+    const dir = await makeTempDir();
+    const jobPdf = path.join(dir, 'job.pdf');
+    const otherPdf = path.join(dir, 'other.pdf');
+    const jobSyn = path.join(dir, 'job.synctex');
+    await fsp.writeFile(jobPdf, '%PDF-1.4\n%%EOF\n');
+    await fsp.writeFile(otherPdf, '%PDF-1.4\n%%EOF\n');
+    await fsp.writeFile(jobSyn, 'SyncTeX Version 1\n');
+
+    assert.equal(findSynctexSibling(jobPdf), jobSyn);
+    assert.equal(isConTeXtPreviewPdf(jobPdf), true);
+    assert.equal(isConTeXtPreviewPdf(otherPdf), false);
+    assert.equal(isConTeXtPreviewPdf(otherPdf, [otherPdf]), true);
+    assert.equal(isConTeXtPreviewPdf(otherPdf, [jobPdf]), false);
   });
 });
