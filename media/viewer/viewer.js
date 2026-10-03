@@ -70,8 +70,9 @@ function setStatus(text, building = false) {
 function updateToolbar() {
   const pages = pdfDoc?.numPages ?? 0;
   pageTotal.textContent = `/ ${pages}`;
-  pageInput.max = String(Math.max(pages, 1));
-  pageInput.value = String(currentPage);
+  if (document.activeElement !== pageInput) {
+    pageInput.value = String(currentPage);
+  }
   pageInput.disabled = pages === 0;
   btnPrev.disabled = pages === 0 || currentPage <= 1;
   btnNext.disabled = pages === 0 || currentPage >= pages;

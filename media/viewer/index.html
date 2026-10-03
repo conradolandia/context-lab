@@ -10,7 +10,15 @@
   <header id="toolbar">
     <div class="toolbar-group" id="navGroup">
       <button type="button" id="btnPrev" title="Previous page" aria-label="Previous page">Prev</button>
-      <input type="number" id="pageInput" min="1" value="1" title="Page" aria-label="Page number" />
+      <input
+        type="text"
+        id="pageInput"
+        value="1"
+        inputmode="numeric"
+        autocomplete="off"
+        title="Page (Enter to jump)"
+        aria-label="Page number"
+      />
       <span id="pageTotal">/ 0</span>
       <button type="button" id="btnNext" title="Next page" aria-label="Next page">Next</button>
     </div>
