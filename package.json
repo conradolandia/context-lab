@@ -2,7 +2,7 @@
   "name": "context-tools",
   "displayName": "ConTeXt Tools",
   "description": "ConTeXt SyncTeX PDF preview, DigestiF language server, TextMate grammar, and snippets",
-  "version": "0.1.43",
+  "version": "0.1.44",
   "publisher": "context-lab",
   "license": "GPL-2.0-only",
   "repository": {

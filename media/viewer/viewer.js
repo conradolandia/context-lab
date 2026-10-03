@@ -1018,22 +1018,28 @@ async function setScale(nextScale, anchor) {
     return;
   }
   const prevScale = currentScale;
+  // Capture anchor before relayout. Default: viewport center so toolbar +/- /
+  // Fit stay put (never scrollIntoView block:start — that jumps the page list).
+  let zoomAnchor = anchor;
+  if (!zoomAnchor && prevScale > 0) {
+    const viewX = viewer.clientWidth / 2;
+    const viewY = viewer.clientHeight / 2;
+    zoomAnchor = {
+      contentX: viewer.scrollLeft + viewX,
+      contentY: viewer.scrollTop + viewY,
+      viewX,
+      viewY,
+    };
+  }
   currentScale = clamped;
   updateToolbar();
   setStatus('Zooming…');
   const t0 = performance.now();
-  const keepPage = currentPage;
   layoutPlaceholders();
-  if (anchor && prevScale > 0) {
+  if (zoomAnchor && prevScale > 0) {
     const ratio = currentScale / prevScale;
-    viewer.scrollLeft = Math.max(0, anchor.contentX * ratio - anchor.viewX);
-    viewer.scrollTop = Math.max(0, anchor.contentY * ratio - anchor.viewY);
-  } else {
-    // Keep scroll position roughly by page, not pixel.
-    const el = pageEls.get(keepPage);
-    if (el) {
-      el.scrollIntoView({ behavior: 'instant', block: 'start' });
-    }
+    viewer.scrollLeft = Math.max(0, zoomAnchor.contentX * ratio - zoomAnchor.viewX);
+    viewer.scrollTop = Math.max(0, zoomAnchor.contentY * ratio - zoomAnchor.viewY);
   }
   await syncVisiblePages();
   const renderMs = Math.round(performance.now() - t0);
@@ -1165,34 +1171,48 @@ zoomInput.addEventListener('blur', () => {
   }
 });
 
-// Ctrl/Cmd+wheel zooms; plain wheel keeps vertical scroll.
+// Ctrl/Cmd+wheel zooms only (no page-list scroll). Alt+wheel = discrete page.
+// Plain wheel keeps smooth vertical scroll. No Shift+Ctrl binding.
 viewer.addEventListener(
   'wheel',
   (ev) => {
-    if (!ev.ctrlKey && !ev.metaKey) {
+    if (ev.ctrlKey || ev.metaKey) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (!pdfDoc || scaleInFlight) {
+        return;
+      }
+      const direction = ev.deltaY < 0 ? 1 : ev.deltaY > 0 ? -1 : 0;
+      if (direction === 0) {
+        return;
+      }
+      const rect = viewer.getBoundingClientRect();
+      const viewX = ev.clientX - rect.left;
+      const viewY = ev.clientY - rect.top;
+      const anchor = {
+        contentX: viewer.scrollLeft + viewX,
+        contentY: viewer.scrollTop + viewY,
+        viewX,
+        viewY,
+      };
+      scaleInFlight = true;
+      void setScale(currentScale + direction * SCALE_STEP, anchor).finally(() => {
+        scaleInFlight = false;
+      });
       return;
     }
-    ev.preventDefault();
-    if (!pdfDoc || scaleInFlight) {
-      return;
+    if (ev.altKey) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (!pdfDoc) {
+        return;
+      }
+      const direction = ev.deltaY < 0 ? -1 : ev.deltaY > 0 ? 1 : 0;
+      if (direction === 0) {
+        return;
+      }
+      void goToPage(currentPage + direction);
     }
-    const direction = ev.deltaY < 0 ? 1 : ev.deltaY > 0 ? -1 : 0;
-    if (direction === 0) {
-      return;
-    }
-    const rect = viewer.getBoundingClientRect();
-    const viewX = ev.clientX - rect.left;
-    const viewY = ev.clientY - rect.top;
-    const anchor = {
-      contentX: viewer.scrollLeft + viewX,
-      contentY: viewer.scrollTop + viewY,
-      viewX,
-      viewY,
-    };
-    scaleInFlight = true;
-    void setScale(currentScale + direction * SCALE_STEP, anchor).finally(() => {
-      scaleInFlight = false;
-    });
   },
   { passive: false },
 );
