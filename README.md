@@ -86,7 +86,7 @@ Status bar shows `ConTeXt: <rootname>` (click to set or clear). Build / Show PDF
 | Forward SyncTeX (source → PDF) | **ConTeXt: Forward SyncTeX** — `Ctrl+Alt+J` (macOS: `Cmd+Alt+J`) |
 | Backward SyncTeX (PDF → source) | **Ctrl+click** (macOS: **Cmd+click**) in the PDF webview |
 | Follow PDF links | Plain click on a link in the PDF webview (internal dest or external URL). Ctrl/Cmd+click stays SyncTeX |
-| Zoom PDF | Toolbar **+/-** / **Fit**, editable `%`, **Ctrl+wheel** (macOS: **Cmd+wheel**); **Alt+wheel** steps page |
+| Zoom PDF | Toolbar **+/-** / **Fit**, editable `%`, **Shift+wheel** (pointer-anchored). Ctrl/Cmd+wheel is left to the viewer/browser |
 | Refresh TextMate keywords from LMTX | **ConTeXt: Refresh command keywords** (then reload the window) |
 
 Build uses `context --synctex=repeat` plus `context.build.args`. The viewer keeps the last good PDF while a build runs, then reloads after a stability gate and preserves the current scroll position and zoom (it does not replay the last Forward SyncTeX jump).

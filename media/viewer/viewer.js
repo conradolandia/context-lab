@@ -21,7 +21,7 @@ const BUFFER = 1; // render visible ±1
 let pdfDoc = null;
 let currentScale = 1.25;
 let currentPage = 1;
-/** Avoid stacking setScale from rapid Ctrl/Cmd+wheel */
+/** Avoid stacking setScale from rapid Shift+wheel */
 let scaleInFlight = false;
 /** @type {number[]} base (scale=1) page heights */
 let pageHeights = [];
@@ -1235,11 +1235,11 @@ zoomInput.addEventListener('blur', () => {
 });
 
 /**
- * Ctrl/Cmd+wheel must use a non-passive capture listener: Chromium ignores
- * preventDefault() on passive wheel handlers, so the page list keeps scrolling
- * while zoom runs. Capture runs before scroll; window covers the webview root.
- * Alt+wheel = discrete page. Plain wheel keeps smooth vertical scroll.
- * No Shift+Ctrl binding.
+ * Shift+wheel zooms with a non-passive capture listener: Chromium ignores
+ * preventDefault() on passive wheel handlers, so the page list would scroll
+ * under the zoom gesture. Capture runs before scroll; window covers the
+ * webview root. Ctrl/Cmd+wheel is not intercepted (native scroll / platform
+ * zoom). Alt+wheel is not bound. Plain wheel keeps smooth vertical scroll.
  * @param {WheelEvent} ev
  */
 function onViewerWheel(ev) {
@@ -1251,48 +1251,41 @@ function onViewerWheel(ev) {
     return;
   }
 
+  // Leave Ctrl/Cmd+wheel to the viewer/browser (do not capture or preventDefault).
   if (ev.ctrlKey || ev.metaKey) {
-    // Block native scroll (and ctrl-wheel browser zoom) before #viewer scrolls.
-    ev.preventDefault();
-    ev.stopPropagation();
-    if (!pdfDoc || scaleInFlight) {
-      return;
-    }
-    const direction = ev.deltaY < 0 ? 1 : ev.deltaY > 0 ? -1 : 0;
-    if (direction === 0) {
-      return;
-    }
-    const rect = viewer.getBoundingClientRect();
-    const viewX = ev.clientX - rect.left;
-    const viewY = ev.clientY - rect.top;
-    const anchor = {
-      contentX: viewer.scrollLeft + viewX,
-      contentY: viewer.scrollTop + viewY,
-      viewX,
-      viewY,
-    };
-    scaleInFlight = true;
-    void setScale(currentScale + direction * SCALE_STEP, anchor).finally(() => {
-      scaleInFlight = false;
-    });
     return;
   }
 
-  if (ev.altKey) {
-    ev.preventDefault();
-    ev.stopPropagation();
-    if (!pdfDoc) {
-      return;
-    }
-    const direction = ev.deltaY < 0 ? -1 : ev.deltaY > 0 ? 1 : 0;
-    if (direction === 0) {
-      return;
-    }
-    void goToPage(currentPage + direction);
+  if (!ev.shiftKey) {
+    return;
   }
+
+  // Block native scroll before #viewer scrolls under the zoom gesture.
+  ev.preventDefault();
+  ev.stopPropagation();
+  if (!pdfDoc || scaleInFlight) {
+    return;
+  }
+  const direction = ev.deltaY < 0 ? 1 : ev.deltaY > 0 ? -1 : 0;
+  if (direction === 0) {
+    return;
+  }
+  const rect = viewer.getBoundingClientRect();
+  const viewX = ev.clientX - rect.left;
+  const viewY = ev.clientY - rect.top;
+  const anchor = {
+    contentX: viewer.scrollLeft + viewX,
+    contentY: viewer.scrollTop + viewY,
+    viewX,
+    viewY,
+  };
+  scaleInFlight = true;
+  void setScale(currentScale + direction * SCALE_STEP, anchor).finally(() => {
+    scaleInFlight = false;
+  });
 }
 
-// passive:false is required for preventDefault; capture:true beats scroll.
+// passive:false is required for preventDefault on Shift+wheel; capture:true beats scroll.
 window.addEventListener('wheel', onViewerWheel, { passive: false, capture: true });
 
 viewer.addEventListener('scroll', () => {
