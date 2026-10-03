@@ -7,6 +7,8 @@
   --btn: #333;
   --btn-hover: #3c3c3c;
   --highlight: rgba(255, 200, 0, 0.35);
+  --viewer-pad: 12px;
+  --page-gap: 16px;
 }
 
 * {
@@ -24,11 +26,17 @@ body {
   overflow: hidden;
 }
 
+body {
+  display: flex;
+  flex-direction: column;
+}
+
 #toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 10px 16px;
+  flex: 0 0 auto;
   min-height: 32px;
   padding: 4px 10px;
   background: var(--bar);
@@ -91,10 +99,16 @@ body {
   white-space: nowrap;
 }
 
+/*
+ * Flex child fills remaining viewport (no calc(100% - toolbar) that desyncs
+ * when the toolbar wraps). Pages get explicit px sizes from JS — never %.
+ */
 #viewer {
-  height: calc(100% - 40px);
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
   overflow: auto;
-  padding: 12px;
+  padding: var(--viewer-pad);
   outline: none;
   /* Keep wheel gestures inside the page list (no scroll chaining). */
   overscroll-behavior: contain;
@@ -102,10 +116,17 @@ body {
 
 .page {
   position: relative;
-  margin: 0 auto 16px;
+  display: block;
+  /* Fixed gap — avoid percentage margins that collapse with empty flex/grid. */
+  margin-top: 0;
+  margin-right: auto;
+  margin-bottom: var(--page-gap);
+  margin-left: auto;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
   background: #fff;
-  width: fit-content;
+  /* Width/height set in px by viewer.js; do not use % / fit-content collapse. */
+  flex-shrink: 0;
+  overflow: hidden;
 }
 
 .page.placeholder {
