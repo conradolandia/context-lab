@@ -45,6 +45,7 @@ import {
   forwardSyncFromProjectNode,
   handlePdfClick,
 } from './extension/synctexCommands';
+import { registerBuildModesUi } from './extension/buildModesCommands';
 
 /** Bump when shipping a SyncTeX/viewer/LSP/diagnostics/project-view behavior change users must verify in Output. */
 export const BUILD_ID = 'pdf-open-singleton';
@@ -60,6 +61,8 @@ export function activate(context: vscode.ExtensionContext): void {
 
   runtime.buildStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 99);
   runtime.buildStatus.show();
+
+  registerBuildModesUi(context.subscriptions);
 
   runtime.buildDiagnostics = vscode.languages.createDiagnosticCollection('context.build');
   runtime.foldDiagnostics = vscode.languages.createDiagnosticCollection('context.folding');

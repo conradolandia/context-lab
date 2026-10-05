@@ -97,6 +97,10 @@
         "enablement": "context.buildRunning"
       },
       {
+        "command": "context.selectBuildModes",
+        "title": "ConTeXt: Select Build Modes"
+      },
+      {
         "command": "context.forwardSyncTeX",
         "title": "ConTeXt: Forward SyncTeX"
       },
@@ -285,7 +289,23 @@
             "type": "string"
           },
           "default": [],
-          "description": "Extra arguments appended after --synctex=repeat when building."
+          "description": "Extra arguments appended after --synctex=repeat when building. Prefer context.build.activeModes for --mode; if both set a --mode, activeModes wins and the build path warns."
+        },
+        "context.build.modes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Catalog of ConTeXt mode names shown in ConTeXt: Select Build Modes. Persisted as a workspace setting when edited via the picker."
+        },
+        "context.build.activeModes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Currently enabled ConTeXt modes. When non-empty, the build injects --mode=a,b (overriding any --mode in context.build.args). Persisted as a workspace setting via ConTeXt: Select Build Modes."
         },
         "context.build.onSave": {
           "type": "boolean",

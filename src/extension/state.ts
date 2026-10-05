@@ -17,6 +17,7 @@ export const runtime = {
   pdfPanel: undefined! as PdfPanel,
   rootStatus: undefined! as vscode.StatusBarItem,
   buildStatus: undefined! as vscode.StatusBarItem,
+  modesStatus: undefined! as vscode.StatusBarItem,
   buildDiagnostics: undefined! as vscode.DiagnosticCollection,
   foldDiagnostics: undefined! as vscode.DiagnosticCollection,
   snapshot: undefined as JobSnapshot | undefined,
