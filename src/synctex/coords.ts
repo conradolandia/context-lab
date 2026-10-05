@@ -11,6 +11,11 @@
  *   see `synctexUnitScaleToPt` in synctexBoxes.ts.
  * - Map SyncTeX pt × viewer scale (plus real crop origin). Do not stretch Y by
  *   `pageViewH / synctexPageH` — that pushed middle/bottom slightly too low.
+ *
+ * Runtime remap: `media/viewer/viewer.js` `mtxFindBoxToViewport` (PDF-space
+ * step must stay equivalent to {@link findBoxToPdfBox}). Shared contract
+ * vectors: `./coordsVectors.ts` — covered by `coords.test.ts` and
+ * `viewerFindBoxMirror.test.ts`.
  */
 
 export interface PageBox {
