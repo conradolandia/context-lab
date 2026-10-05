@@ -4,11 +4,10 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as fsp from 'node:fs/promises';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawnContextBuild } from '../build/spawnContext';
 import { killProcessTree } from '../build/killProcessTree';
+import { makeTempDir } from './helpers/tmpDir';
 
 async function writeScript(dir: string, name: string, body: string): Promise<string> {
   const script = path.join(dir, name);
@@ -18,7 +17,7 @@ async function writeScript(dir: string, name: string, body: string): Promise<str
 
 describe('killProcessTree', () => {
   it('terminates a long-running spawnContextBuild child', async () => {
-    const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'kill-tree-'));
+    const tmp = await makeTempDir('kill-tree-');
     const source = path.join(tmp, 'job.tex');
     fs.writeFileSync(source, '\\starttext hi\\stoptext\n');
     const hangJs = await writeScript(
@@ -44,7 +43,7 @@ describe('killProcessTree', () => {
     if (process.platform === 'win32') {
       return;
     }
-    const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'kill-group-'));
+    const tmp = await makeTempDir('kill-group-');
     const source = path.join(tmp, 'job.tex');
     fs.writeFileSync(source, '\\starttext hi\\stoptext\n');
     const marker = path.join(tmp, 'child-alive');

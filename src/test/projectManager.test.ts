@@ -1,8 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as fsp from 'node:fs/promises';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   recommendTier,
@@ -24,10 +22,7 @@ import {
 import { scanStructure } from '../project/structureScan';
 import { buildProjectModel } from '../project/projectModel';
 import { resolveIncludePath } from '../project/pathResolve';
-
-async function tempDir(): Promise<string> {
-  return fsp.mkdtemp(path.join(os.tmpdir(), 'context-pm-'));
-}
+import { makeTempDir } from './helpers/tmpDir';
 
 describe('recommendTier', () => {
   it('maps needs to the lowest matching §1 tier', () => {
@@ -83,7 +78,7 @@ describe('recommendTier', () => {
 
 describe('buildStructurePlan', () => {
   it('builds wiki §4 flat book tree for product tier', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-pm-');
     const plan = buildStructurePlan({
       tier: 'product',
       baseDir: dir,
@@ -124,7 +119,7 @@ describe('buildStructurePlan', () => {
   });
 
   it('builds by-role product tree with product at scaffold root and usepath', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-pm-');
     const plan = buildStructurePlan({
       tier: 'product',
       baseDir: dir,
@@ -180,7 +175,7 @@ describe('buildStructurePlan', () => {
   });
 
   it('builds by-role project tree with product folders at series root', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-pm-');
     const plan = buildStructurePlan({
       tier: 'project',
       baseDir: dir,
@@ -227,7 +222,7 @@ describe('buildStructurePlan', () => {
   });
 
   it('hides by-role for single tier (always flat)', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-pm-');
     const plan = buildStructurePlan({
       tier: 'single',
       baseDir: dir,
@@ -241,7 +236,7 @@ describe('buildStructurePlan', () => {
   });
 
   it('env-doc by-role puts environments under environments/', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-pm-');
     const plan = buildStructurePlan({
       tier: 'env-doc',
       baseDir: dir,
@@ -255,7 +250,7 @@ describe('buildStructurePlan', () => {
   });
 
   it('builds wiki §5 series tree for project tier', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-pm-');
     const plan = buildStructurePlan({
       tier: 'project',
       baseDir: dir,
@@ -281,7 +276,7 @@ describe('buildStructurePlan', () => {
   });
 
   it('uses \\startdocument for single and env-doc only', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-pm-');
     const single = buildStructurePlan({ tier: 'single', baseDir: dir, name: 'note' });
     assert.match(single.files[0].contents, /\\startdocument/);
     assert.match(single.files[0].contents, /\\stopdocument/);
@@ -293,7 +288,7 @@ describe('buildStructurePlan', () => {
   });
 
   it('omits product \\startdocument stub when documentStub is off', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-pm-');
     const plan = buildStructurePlan({
       tier: 'product',
       baseDir: dir,
@@ -310,7 +305,7 @@ describe('buildStructurePlan', () => {
   });
 
   it('wraps product components in empty \\startdocument when stub on and metadata empty', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-pm-');
     const plan = buildStructurePlan({
       tier: 'product',
       baseDir: dir,
@@ -330,7 +325,7 @@ describe('buildStructurePlan', () => {
   });
 
   it('emits \\startdocument metadata from key=value lines in product and project tiers', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-pm-');
     const meta = 'title=My Book\nauthor={Jane Doe}\nlogo=\\externalfigure[cover]\n\nskipped\nbadline\n';
     const productPlan = buildStructurePlan({
       tier: 'product',
@@ -377,7 +372,7 @@ describe('buildStructurePlan', () => {
   });
 
   it('ignores documentStub for single and env-doc tiers', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-pm-');
     const single = buildStructurePlan({
       tier: 'single',
       baseDir: dir,
@@ -404,7 +399,7 @@ describe('buildStructurePlan', () => {
   });
 
   it('preserves layered environment order in all loaders', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-pm-');
     const plan = buildStructurePlan({
       tier: 'product',
       baseDir: dir,
@@ -421,7 +416,7 @@ describe('buildStructurePlan', () => {
   });
 
   it('detects conflicts and never plans % !TEX root', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-pm-');
     const existing = path.join(dir, 'book', 'book.tex');
     fs.mkdirSync(path.dirname(existing), { recursive: true });
     fs.writeFileSync(existing, 'old\n');
@@ -440,7 +435,7 @@ describe('buildStructurePlan', () => {
   });
 
   it('scanStructure accepts generated forms including multiple envs', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-pm-');
     const plan = buildStructurePlan({
       tier: 'product',
       baseDir: dir,
@@ -468,7 +463,7 @@ describe('buildStructurePlan', () => {
   });
 
   it('project scaffold resolves via §5 subdirectory product layout', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-pm-');
     const plan = buildStructurePlan({
       tier: 'project',
       baseDir: dir,
@@ -540,7 +535,7 @@ describe('structure spec + upgrade', () => {
   });
 
   it('upgrades single → env-doc preserving body', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-pm-');
     const created = buildStructurePlan({
       tier: 'single',
       baseDir: dir,
@@ -575,7 +570,7 @@ describe('structure spec + upgrade', () => {
   });
 
   it('upgrades env-doc → product (replaces document path with product)', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-pm-');
     const created = buildStructurePlan({
       tier: 'env-doc',
       baseDir: dir,
@@ -607,7 +602,7 @@ describe('structure spec + upgrade', () => {
   });
 
   it('upgrades product → project tier with an extra product; root stays a product', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-pm-');
     const created = buildStructurePlan({
       tier: 'product',
       baseDir: dir,
@@ -642,7 +637,7 @@ describe('structure spec + upgrade', () => {
   });
 
   it('upgrade preserves by-role layout from spec', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-pm-');
     const created = buildStructurePlan({
       tier: 'env-doc',
       baseDir: dir,

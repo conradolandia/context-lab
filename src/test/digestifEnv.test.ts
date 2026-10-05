@@ -1,7 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as fsp from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
@@ -18,6 +17,7 @@ import {
   resolveInstallRoot,
   walkToInstallRoot,
 } from '../toolchain/paths';
+import { makeTempDir } from './helpers/tmpDir';
 
 /**
  * Sir's ConTeXt Standalone layout:
@@ -35,7 +35,7 @@ async function makeSirLmtxLayout(opts?: {
   binDir: string;
   digestifFake: string;
 }> {
-  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'lmtx-sir-'));
+  const root = await makeTempDir('lmtx-sir-');
   const withXml = opts?.withXml !== false;
 
   const binDir = path.join(root, 'tex', 'texmf-linux-64', 'bin');
@@ -157,7 +157,7 @@ describe('Sir LMTX layout: Digestif XML + DIGESTIF_TEXMF', () => {
   });
 
   it('prefers luarocks over PATH digestif', async () => {
-    const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'luarocks-pref-'));
+    const tmp = await makeTempDir('luarocks-pref-');
     const rocks = path.join(tmp, '.luarocks', 'bin', 'digestif');
     fs.mkdirSync(path.dirname(rocks), { recursive: true });
     fs.writeFileSync(rocks, '#!/bin/sh\n');
@@ -196,7 +196,7 @@ describe('resolveDigestifExecutable', () => {
   });
 
   it('finds luarocks digestif when PATH empty', async () => {
-    const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'luarocks-d-'));
+    const tmp = await makeTempDir('luarocks-d-');
     const bin = path.join(tmp, '.luarocks', 'bin', 'digestif');
     fs.mkdirSync(path.dirname(bin), { recursive: true });
     fs.writeFileSync(bin, '#!/bin/sh\n');
@@ -213,7 +213,7 @@ describe('resolveDigestifExecutable', () => {
 describe('buildDigestifEnv errors', () => {
   it('fails clearly when Digestif is missing', async () => {
     const { root } = await makeSirLmtxLayout();
-    const emptyHome = await fsp.mkdtemp(path.join(os.tmpdir(), 'no-digestif-'));
+    const emptyHome = await makeTempDir('no-digestif-');
     const result = buildDigestifEnv({
       root,
       whichDigestif: () => undefined,

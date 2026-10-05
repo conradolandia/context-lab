@@ -9,13 +9,12 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
-import * as fsp from 'node:fs/promises';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawnContextBuild } from '../build/spawnContext';
 import { preferDigestifError } from '../lsp/digestifProcess';
 import { createDigestifSpawnEnv } from '../lsp/digestifEnv';
 import { BUILD_WAITS_ON_DIGESTIF } from '../lsp/digestifLifecycle';
+import { makeTempDir } from './helpers/tmpDir';
 
 async function writeMockContext(dir: string, body: string): Promise<string> {
   const script = path.join(dir, 'mock-context.js');
@@ -57,7 +56,7 @@ describe('build isolation from DigestiF', () => {
   });
 
   it('streams stdout and completes (DigestiF disabled / absent)', async () => {
-    const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'build-stream-'));
+    const tmp = await makeTempDir('build-stream-');
     const source = path.join(tmp, 'job.tex');
     fs.writeFileSync(source, '\\starttext hi\\stoptext\n');
     const chunks: string[] = [];
@@ -87,7 +86,7 @@ describe('build isolation from DigestiF', () => {
   });
 
   it('completes and can be re-run when DigestiF-like process exits 1', async () => {
-    const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'build-crash-'));
+    const tmp = await makeTempDir('build-crash-');
     const source = path.join(tmp, 'job.tex');
     fs.writeFileSync(source, '\\starttext hi\\stoptext\n');
     const contextJs = await writeMockContext(
@@ -125,7 +124,7 @@ describe('build isolation from DigestiF', () => {
   });
 
   it('completes and can be re-run when DigestiF-like process hangs', async () => {
-    const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'build-hang-'));
+    const tmp = await makeTempDir('build-hang-');
     const source = path.join(tmp, 'job.tex');
     fs.writeFileSync(source, '\\starttext hi\\stoptext\n');
     const contextJs = await writeMockContext(
@@ -159,7 +158,7 @@ describe('build isolation from DigestiF', () => {
   });
 
   it('does not hang forever when a child would otherwise wait on stdin', async () => {
-    const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'build-stdin-'));
+    const tmp = await makeTempDir('build-stdin-');
     const source = path.join(tmp, 'job.tex');
     fs.writeFileSync(source, 'x\n');
     // Child that exits only after stdin EOF — with stdin 'ignore', EOF is immediate.
