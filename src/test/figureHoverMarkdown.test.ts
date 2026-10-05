@@ -1,8 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as fsp from 'node:fs/promises';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import * as zlib from 'node:zlib';
 import {
@@ -12,6 +10,7 @@ import {
   figureHoverImgHtml,
 } from '../links/figureHoverMarkdown';
 import { parseImageSize, readImageSize } from '../links/imageSize';
+import { makeTempDir } from './helpers/tmpDir';
 
 /** Minimal valid 1x1 PNG, then claim large IHDR for size-parse tests via custom builder. */
 function crc32(buf: Buffer): number {
@@ -101,7 +100,7 @@ describe('figureHoverImgHtml', () => {
 
 describe('parseImageSize / readImageSize', () => {
   it('reads IHDR from a large synthetic PNG', async () => {
-    const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'context-png-'));
+    const dir = await makeTempDir('context-png-');
     const file = path.join(dir, 'huge.png');
     const png = buildPng(2400, 1800);
     fs.writeFileSync(file, png);

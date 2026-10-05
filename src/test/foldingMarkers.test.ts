@@ -1,11 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { loadLanguageConfiguration } from './helpers/languageConfig';
 
-const config = JSON.parse(
-  fs.readFileSync(path.join(__dirname, '..', '..', 'language-configuration.json'), 'utf8'),
-);
+const config = loadLanguageConfiguration();
 const start = new RegExp(config.folding.markers.start);
 const end = new RegExp(config.folding.markers.end);
 

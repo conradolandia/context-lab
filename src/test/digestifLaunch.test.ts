@@ -1,15 +1,14 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as fsp from 'node:fs/promises';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { findLuarocksDigestif, resolveDigestifLaunch } from '../lsp/digestifLaunch';
 import { preferDigestifError } from '../lsp/digestifProcess';
+import { makeTempDir } from './helpers/tmpDir';
 
 describe('digestifLaunch helpers', () => {
   it('always launches direct for override / luarocks / path', async () => {
-    const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'digestif-direct-'));
+    const tmp = await makeTempDir('digestif-direct-');
     const main = path.join(tmp, 'digestif');
     fs.writeFileSync(main, '#!/usr/bin/env lua\n');
     fs.chmodSync(main, 0o755);
@@ -24,7 +23,7 @@ describe('digestifLaunch helpers', () => {
   });
 
   it('findLuarocksDigestif locates ~/.luarocks/bin/digestif', async () => {
-    const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'luarocks-home-'));
+    const tmp = await makeTempDir('luarocks-home-');
     const bin = path.join(tmp, '.luarocks', 'bin', 'digestif');
     fs.mkdirSync(path.dirname(bin), { recursive: true });
     fs.writeFileSync(bin, '#!/bin/sh\n');

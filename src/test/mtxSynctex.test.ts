@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { readFixture, resolveFixturePath } from './helpers/fixtures';
 import {
   parseFindOutput,
   parseAllFindHits,
@@ -30,21 +30,6 @@ import {
   pickForwardNonEdgeFallbackBox,
   SYNCTEX_SP_PER_PT,
 } from '../synctex/mtxSynctex';
-
-const fixturesDir = path.join(__dirname, 'fixtures');
-
-function readFixture(name: string): string {
-  const candidates = [
-    path.join(fixturesDir, name),
-    path.join(__dirname, '..', '..', 'src', 'test', 'fixtures', name),
-  ];
-  for (const c of candidates) {
-    if (fs.existsSync(c)) {
-      return fs.readFileSync(c, 'utf8');
-    }
-  }
-  throw new Error(`fixture not found: ${name}`);
-}
 
 describe('mtxSynctex parseFindOutput', () => {
   it('parses --direct find output', () => {
@@ -230,21 +215,9 @@ describe('synctex page boxes (caption / float refine)', () => {
 
 describe('forward SyncTeX edge-band refine', () => {
   const text = readFixture('page-with-header-footer.synctex.txt');
-  const resolveFixture = (name: string): string => {
-    const candidates = [
-      path.join(fixturesDir, name),
-      path.join(__dirname, '..', '..', 'src', 'test', 'fixtures', name),
-    ];
-    for (const c of candidates) {
-      if (fs.existsSync(c)) {
-        return c;
-      }
-    }
-    throw new Error(`fixture not found: ${name}`);
-  };
-  const fixturePath = resolveFixture('page-with-header-footer.synctex.txt');
-  const spFixturePath = resolveFixture('page-with-header-footer-sp.synctex.txt');
-  const boundaryFixturePath = resolveFixture('page-boundary-forward.synctex.txt');
+  const fixturePath = resolveFixturePath('page-with-header-footer.synctex.txt');
+  const spFixturePath = resolveFixturePath('page-with-header-footer-sp.synctex.txt');
+  const boundaryFixturePath = resolveFixturePath('page-boundary-forward.synctex.txt');
 
   it('picks nearest non-edge same-line box, not page middle', () => {
     const boxes = parseSynctexPageBoxes(text, 10);
