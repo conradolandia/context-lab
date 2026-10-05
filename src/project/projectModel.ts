@@ -1,5 +1,5 @@
-import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { existsRegularFile, readUtf8File } from './fsHelpers';
 import { PROJECT_NO_STRUCTURE_MESSAGE } from './messages';
 import { parentSearchDirs, resolveIncludePath } from './pathResolve';
 import {
@@ -72,22 +72,6 @@ const STRUCTURE_LOAD_KINDS = new Set<IncludeKind>([
   'environment',
   'input',
 ]);
-
-function defaultReadFile(p: string): string | undefined {
-  try {
-    return fs.readFileSync(p, 'utf8');
-  } catch {
-    return undefined;
-  }
-}
-
-function defaultExistsFile(p: string): boolean {
-  try {
-    return fs.existsSync(p) && fs.statSync(p).isFile();
-  } catch {
-    return false;
-  }
-}
 
 function basenameLabel(fsPath: string, fallback: string): string {
   return path.basename(fsPath) || fallback;
@@ -484,8 +468,8 @@ function findProjectInclude(scan: StructureScanResult): IncludeRef | undefined {
 export function buildProjectModel(opts: ProjectModelOptions): ProjectModelResult {
   const started = Date.now();
   const entryFile = path.resolve(opts.entryFile);
-  const readFile = opts.readFile ?? defaultReadFile;
-  const existsFile = opts.existsFile ?? defaultExistsFile;
+  const readFile = opts.readFile ?? readUtf8File;
+  const existsFile = opts.existsFile ?? existsRegularFile;
   const maxFiles = opts.maxFiles ?? 500;
   const includeInputs = opts.includeInputs ?? false;
   const workspaceFolders = opts.workspaceFolders ?? [];

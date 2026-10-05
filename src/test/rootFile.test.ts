@@ -9,6 +9,7 @@ import {
   resolveComponentProduct,
   resolveRootFile,
   resolveRootFileSetting,
+  toWorkspaceRelativeRootFile,
 } from '../project/rootFile';
 
 async function makeTempDir(): Promise<string> {
@@ -129,5 +130,30 @@ describe('resolveRootFile order', () => {
     });
     assert.equal(viaActive.rule, 'fallback:active');
     assert.equal(viaActive.rootFile, active);
+  });
+});
+
+describe('toWorkspaceRelativeRootFile', () => {
+  it('returns path relative to the first workspace folder when under it', () => {
+    const folders = ['/ws/book', '/ws/other'];
+    assert.equal(
+      toWorkspaceRelativeRootFile('/ws/book/products/main.tex', folders),
+      path.join('products', 'main.tex'),
+    );
+  });
+
+  it('keeps absolute path when outside the first folder', () => {
+    const folders = ['/ws/book'];
+    assert.equal(
+      toWorkspaceRelativeRootFile('/elsewhere/main.tex', folders),
+      '/elsewhere/main.tex',
+    );
+  });
+
+  it('keeps absolute path when no workspace folders', () => {
+    assert.equal(
+      toWorkspaceRelativeRootFile('/ws/book/main.tex', []),
+      '/ws/book/main.tex',
+    );
   });
 });

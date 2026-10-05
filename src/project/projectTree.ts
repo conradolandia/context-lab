@@ -11,10 +11,11 @@ import {
   resolveProjectAnchor,
 } from './projectAnchor';
 import { PROJECT_NO_STRUCTURE_MESSAGE } from './messages';
+import { readUtf8File } from './fsHelpers';
+import { openTextFromDocuments, readTexSource } from './readSource';
 import { treeId } from './projectTreeIds';
 import { scanStructure } from './structureScan';
 import { logDebug } from '../outputLog';
-import * as fs from 'node:fs';
 
 export { collectTreeIds, localTreeId, treeId } from './projectTreeIds';
 
@@ -54,6 +55,22 @@ export class ProjectTreeItem extends vscode.TreeItem {
       };
     }
   }
+}
+
+/** Message row for empty / disabled Project view states. */
+function messageTreeItem(label: string, detail?: string): ProjectTreeItem {
+  return new ProjectTreeItem(
+    {
+      kind: 'message',
+      label,
+      missing: false,
+      mentionCount: 1,
+      children: [],
+      preferExpand: false,
+      ...(detail !== undefined ? { detail } : {}),
+    },
+    vscode.TreeItemCollapsibleState.None,
+  );
 }
 
 /** Parent lookup: child occurrence id → parent node + id arg for ProjectTreeItem. */
@@ -231,12 +248,9 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<ProjectTreeI
 
     let activeText = '';
     if (active) {
-      try {
-        const open = vscode.workspace.textDocuments.find((d) => d.uri.fsPath === active);
-        activeText = open ? open.getText() : fs.readFileSync(active, 'utf8');
-      } catch {
-        activeText = '';
-      }
+      activeText = readTexSource(active, {
+        getOpenText: openTextFromDocuments(vscode.workspace.textDocuments),
+      });
     }
 
     const anchor = resolveProjectAnchor({
@@ -286,19 +300,7 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<ProjectTreeI
 
   getChildren(element?: ProjectTreeItem): ProjectTreeItem[] {
     if (!this.isEnabled()) {
-      return [
-        new ProjectTreeItem(
-          {
-            kind: 'message',
-            label: 'Project view disabled (context.projectView.enabled)',
-            missing: false,
-            mentionCount: 1,
-            children: [],
-            preferExpand: false,
-          },
-          vscode.TreeItemCollapsibleState.None,
-        ),
-      ];
+      return [messageTreeItem('Project view disabled (context.projectView.enabled)')];
     }
 
     if (!element) {
@@ -306,46 +308,17 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<ProjectTreeI
       if (result.emptyMessage && result.roots.every((r) => r.kind === 'document' || r.kind === 'message')) {
         if (result.roots.length === 1 && result.roots[0].kind === 'document') {
           return [
-            new ProjectTreeItem(
-              {
-                kind: 'message',
-                label: result.emptyMessage,
-                missing: false,
-                mentionCount: 1,
-                children: [],
-                preferExpand: false,
-                detail: result.roots[0].fsPath,
-              },
-              vscode.TreeItemCollapsibleState.None,
-            ),
+            messageTreeItem(result.emptyMessage, result.roots[0].fsPath),
             new ProjectTreeItem(result.roots[0], collapsibleState(result.roots[0])),
           ];
         }
       }
       if (result.emptyMessage && result.roots.length === 0) {
-        return [
-          new ProjectTreeItem(
-            {
-              kind: 'message',
-              label: result.emptyMessage,
-              missing: false,
-              mentionCount: 1,
-              children: [],
-              preferExpand: false,
-            },
-            vscode.TreeItemCollapsibleState.None,
-          ),
-        ];
+        return [messageTreeItem(result.emptyMessage)];
       }
       if (result.roots.length === 1 && result.roots[0].kind === 'message') {
         return [
-          new ProjectTreeItem(
-            {
-              ...result.roots[0],
-              label: result.emptyMessage ?? result.roots[0].label,
-            },
-            vscode.TreeItemCollapsibleState.None,
-          ),
+          messageTreeItem(result.emptyMessage ?? result.roots[0].label, result.roots[0].detail),
         ];
       }
       return result.roots.map((n) => new ProjectTreeItem(n, collapsibleState(n)));
@@ -411,12 +384,9 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<ProjectTreeI
 
     let activeText = '';
     if (active) {
-      try {
-        const open = vscode.workspace.textDocuments.find((d) => d.uri.fsPath === active);
-        activeText = open ? open.getText() : fs.readFileSync(active, 'utf8');
-      } catch {
-        activeText = '';
-      }
+      activeText = readTexSource(active, {
+        getOpenText: openTextFromDocuments(vscode.workspace.textDocuments),
+      });
     }
 
     const graph = this.lastGoodModel
@@ -488,11 +458,7 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<ProjectTreeI
 }
 
 function readQuiet(p: string): string {
-  try {
-    return fs.readFileSync(p, 'utf8');
-  } catch {
-    return '';
-  }
+  return readUtf8File(p) ?? '';
 }
 
 function findNodeOccurrence(
