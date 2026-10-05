@@ -48,7 +48,9 @@ Resolution: absolute `context.contextPath` / `context.mtxrunPath` overrides, the
 | `context.projectView.includeInputs` | `false` | Show `\input` children under products |
 | `context.projectView.maxFiles` | `500` | Cap on files visited while expanding the graph |
 | `context.projectView.refreshDebounceMs` | `300` | Debounce before rescan after edits/saves |
-| `context.build.args` | `[]` | Extra args after `--synctex=repeat` |
+| `context.build.args` | `[]` | Extra args after `--synctex=repeat` (not the primary `--mode` switch) |
+| `context.build.modes` | `[]` | Catalog of mode names for **Select Build Modes** (workspace) |
+| `context.build.activeModes` | `[]` | Enabled modes → inject `--mode=a,b` (workspace; overrides `--mode` in `build.args` with a warning) |
 | `context.build.onSave` | `false` | Save starts a build; rapid saves coalesce |
 | `context.synctex.enabled` | `true` | Toggle SyncTeX |
 | `context.viewer.openExistingOnActivate` | `false` | Open existing root PDF+SyncTeX on activate (no rebuild). Default off; use **Show PDF** or Explorer menu |
@@ -81,6 +83,7 @@ Status bar shows `ConTeXt: <rootname>` (click to set or clear). Build / Show PDF
 | --- | --- |
 | Build then open/refresh viewer | **ConTeXt: Build and Preview** |
 | Cancel a running build | **ConTeXt: Cancel Build** (also: click the build status bar while running) |
+| Select ConTeXt `--mode` flags | **ConTeXt: Select Build Modes** (`context.selectBuildModes`; also: click the Modes status bar) |
 | Show last gated PDF (no rebuild) | **ConTeXt: Show PDF** (also editor context on ConTeXt/TeX); Explorer → **Open in ConTeXt PDF Viewer** on a job `.pdf` (sibling `.synctex` or active root output) |
 | Forward SyncTeX (source → PDF) | **ConTeXt: Forward SyncTeX** — `Ctrl+Alt+J` (macOS: `Cmd+Alt+J`) |
 | Backward SyncTeX (PDF → source) | **Ctrl+click** (macOS: **Cmd+click**) in the PDF webview |
@@ -88,7 +91,7 @@ Status bar shows `ConTeXt: <rootname>` (click to set or clear). Build / Show PDF
 | Zoom PDF | Toolbar **+/-** / **Fit**, editable `%`, **Ctrl/Cmd+wheel** (pointer-anchored) |
 | Refresh TextMate keywords from LMTX | **ConTeXt: Refresh command keywords** (then reload the window) |
 
-Build uses `context --synctex=repeat` plus `context.build.args`. The viewer keeps the last good PDF while a build runs, then reloads after a stability gate and preserves the current scroll position and zoom (it does not replay the last Forward SyncTeX jump).
+Build uses `context --synctex=repeat`, then `context.build.args`, then `--mode=a,b` when `context.build.activeModes` is non-empty. Prefer **Select Build Modes** (or the Modes status bar) over putting `--mode` in `build.args`; if both are set, active modes win and the build logs a warning. Clearing the multi-select removes the `--mode` flag. The viewer keeps the last good PDF while a build runs, then reloads after a stability gate and preserves the current scroll position and zoom (it does not replay the last Forward SyncTeX jump).
 
 SyncTeX marks text, not pure image areas; clicks on figures with no text usually show a short toast. Caption clicks may resolve coarsely. When Forward SyncTeX lands in a thin header/footer band, it prefers a same-line (then nearby-line) box outside that band closest to the mtx hit; it does not paint an unreplaced edge-band box or a page-sized vbox.
 

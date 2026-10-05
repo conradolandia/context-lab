@@ -2,6 +2,7 @@ import type { ChildProcess } from 'node:child_process';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { Toolchain } from '../toolchain/discover';
+import { assembleExtraArgs } from './buildModes';
 import {
   spawnContextBuild,
   type ContextBuildResult,
@@ -12,6 +13,7 @@ export type { ContextBuildResult as BuildResult } from './spawnContext';
 export { spawnContextBuild } from './spawnContext';
 
 export interface BuildOptions {
+  /** When set, used as-is (caller is responsible for mode merging). */
   extraArgs?: string[];
   cwd?: string;
   output?: vscode.OutputChannel;
@@ -21,6 +23,18 @@ export interface BuildOptions {
 export interface RunContextBuildHandle {
   child: ChildProcess;
   promise: Promise<ContextBuildResult>;
+}
+
+/**
+ * Resolve extra CLI args from settings: `build.args` merged with
+ * `build.activeModes` (active modes override any `--mode` in args).
+ */
+export function resolveBuildExtraArgs(
+  cfg: vscode.WorkspaceConfiguration = vscode.workspace.getConfiguration('context'),
+): { args: string[]; warning?: string } {
+  const settingArgs = cfg.get<string[]>('build.args', []) ?? [];
+  const activeModes = cfg.get<string[]>('build.activeModes', []) ?? [];
+  return assembleExtraArgs(settingArgs, activeModes);
 }
 
 /**
@@ -35,11 +49,16 @@ export function runContextBuild(
 ): RunContextBuildHandle {
   const cwd = options.cwd ?? path.dirname(sourcePath);
   const cfg = vscode.workspace.getConfiguration('context');
-  const settingArgs = cfg.get<string[]>('build.args', []) ?? [];
-  const extraArgs = options.extraArgs ?? settingArgs;
+  const assembled = resolveBuildExtraArgs(cfg);
+  const extraArgs = options.extraArgs ?? assembled.args;
+  const output = options.output;
+
+  if (options.extraArgs === undefined && assembled.warning) {
+    output?.appendLine(`[modes] ${assembled.warning}`);
+    void vscode.window.showWarningMessage(assembled.warning);
+  }
 
   const args = ['--synctex=repeat', ...extraArgs, sourcePath];
-  const output = options.output;
 
   output?.appendLine(`$ ${toolchain.contextPath} ${args.join(' ')}`);
   output?.appendLine(`cwd: ${cwd}`);
