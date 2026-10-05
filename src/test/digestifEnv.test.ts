@@ -12,12 +12,12 @@ import {
   texmfRootFromInterfaceXml,
 } from '../lsp/digestifEnv';
 import {
-import { makeTempDir } from './helpers/tmpDir';
   inferRootFromBinary,
   isInstallRoot,
   resolveInstallRoot,
   walkToInstallRoot,
 } from '../toolchain/paths';
+import { makeTempDir } from './helpers/tmpDir';
 
 /**
  * Sir's ConTeXt Standalone layout:
