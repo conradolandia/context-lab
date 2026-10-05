@@ -22,7 +22,8 @@ import {
   COARSE_FLOAT_LINE_USER_MESSAGE,
 } from './synctex/mtxSynctex';
 import { PdfPanel, type PdfPanelState } from './viewer/pdfPanel';
-import { resolveRootFile, type RootResolution } from './project/rootFile';
+import { resolveRootFile, toWorkspaceRelativeRootFile, type RootResolution } from './project/rootFile';
+import { openTextFromDocuments, readTexSource } from './project/readSource';
 import { createDigestifClient, type DigestifClientHandle } from './lsp/digestifClient';
 import { maybeOfferTexContextAssociation } from './project/texAssociation';
 import {
@@ -81,13 +82,9 @@ function resolveCurrentRoot(activePath?: string): RootResolution | undefined {
   if (!active) {
     return undefined;
   }
-  let text = '';
-  try {
-    const open = vscode.workspace.textDocuments.find((d) => d.uri.fsPath === active);
-    text = open ? open.getText() : fs.readFileSync(active, 'utf8');
-  } catch {
-    text = '';
-  }
+  const text = readTexSource(active, {
+    getOpenText: openTextFromDocuments(vscode.workspace.textDocuments),
+  });
   const cfg = vscode.workspace.getConfiguration('context');
   const setting = cfg.get<string>('rootFile', '') ?? '';
   const resolved = resolveRootFile({
@@ -158,10 +155,7 @@ async function pickRootFile(): Promise<void> {
       return;
     }
     const folders = workspaceFolderPaths();
-    let rel = uris[0].fsPath;
-    if (folders[0] && rel.startsWith(folders[0] + path.sep)) {
-      rel = path.relative(folders[0], rel);
-    }
+    const rel = toWorkspaceRelativeRootFile(uris[0].fsPath, folders);
     await cfg.update('rootFile', rel, vscode.ConfigurationTarget.Workspace);
     logUser(`[root] set context.rootFile=${rel}`);
   }
@@ -506,13 +500,9 @@ function buildFromProjectNode(node: ProjectNode): void {
   }
 
   // Component (and input): compile via resolveRootFile (product preferred).
-  let text = '';
-  try {
-    const open = vscode.workspace.textDocuments.find((d) => d.uri.fsPath === node.fsPath);
-    text = open ? open.getText() : fs.readFileSync(node.fsPath, 'utf8');
-  } catch {
-    text = '';
-  }
+  const text = readTexSource(node.fsPath, {
+    getOpenText: openTextFromDocuments(vscode.workspace.textDocuments),
+  });
   const cfg = vscode.workspace.getConfiguration('context');
   const resolved = resolveRootFile({
     activeFile: node.fsPath,
@@ -541,10 +531,7 @@ async function setRootFromProjectNode(node: ProjectNode): Promise<void> {
     return;
   }
   const folders = workspaceFolderPaths();
-  let rel = node.fsPath;
-  if (folders[0] && rel.startsWith(folders[0] + path.sep)) {
-    rel = path.relative(folders[0], rel);
-  }
+  const rel = toWorkspaceRelativeRootFile(node.fsPath, folders);
   const cfg = vscode.workspace.getConfiguration('context');
   await cfg.update('rootFile', rel, vscode.ConfigurationTarget.Workspace);
   logUser(`[root] set context.rootFile=${rel} (from Project view)`);

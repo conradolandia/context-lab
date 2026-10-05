@@ -1,5 +1,5 @@
-import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { existsRegularFile } from './fsHelpers';
 
 export type RootRule =
   | 'setting:context.rootFile'
@@ -17,14 +17,6 @@ const MAGIC_ROOT =
 const START_COMPONENT = /\\startcomponent\b/;
 const PRODUCT_CMD = /\\product\s+\{?([^\s\}%]+)\}?/;
 
-function existsTex(p: string): boolean {
-  try {
-    return fs.existsSync(p) && fs.statSync(p).isFile();
-  } catch {
-    return false;
-  }
-}
-
 function withTexExt(name: string): string[] {
   if (/\.(tex|ctx|mkiv|mkxl)$/i.test(name)) {
     return [name];
@@ -35,11 +27,26 @@ function withTexExt(name: string): string[] {
 function resolveCandidate(baseDir: string, name: string): string | undefined {
   for (const n of withTexExt(name.trim())) {
     const abs = path.resolve(baseDir, n);
-    if (existsTex(abs)) {
+    if (existsRegularFile(abs)) {
       return abs;
     }
   }
   return undefined;
+}
+
+/**
+ * Store `context.rootFile` as workspace-relative when `absPath` is under the
+ * first workspace folder; otherwise keep the absolute path.
+ */
+export function toWorkspaceRelativeRootFile(
+  absPath: string,
+  workspaceFolders: string[],
+): string {
+  const root = workspaceFolders[0];
+  if (root && absPath.startsWith(root + path.sep)) {
+    return path.relative(root, absPath);
+  }
+  return absPath;
 }
 
 /** Parse `% !TEX root = …` from the first `maxLines` of text. */
@@ -59,7 +66,7 @@ export function parseMagicRoot(
       const abs = path.isAbsolute(raw)
         ? raw
         : path.resolve(path.dirname(activeFile), raw);
-      if (existsTex(abs)) {
+      if (existsRegularFile(abs)) {
         return abs;
       }
       // Still return resolved path even if missing — caller may warn

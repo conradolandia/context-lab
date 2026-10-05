@@ -1,5 +1,5 @@
-import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { existsRegularFile, readUtf8File } from './fsHelpers';
 import {
   resolveRootFile,
   resolveComponentProduct,
@@ -32,22 +32,6 @@ export interface ProjectAnchorResult {
    * kept from the last good model (do not wipe the tree).
    */
   outsideGraph: boolean;
-}
-
-function defaultRead(p: string): string | undefined {
-  try {
-    return fs.readFileSync(p, 'utf8');
-  } catch {
-    return undefined;
-  }
-}
-
-function defaultExists(p: string): boolean {
-  try {
-    return fs.existsSync(p) && fs.statSync(p).isFile();
-  } catch {
-    return false;
-  }
 }
 
 /** True when a scan looks like a product/project graph root (not a lone component). */
@@ -94,8 +78,8 @@ export function collectGraphPaths(
  */
 export function resolveProjectAnchor(opts: ProjectAnchorOptions): ProjectAnchorResult | undefined {
   const folders = opts.workspaceFolders ?? [];
-  const readFile = opts.readFile ?? defaultRead;
-  const existsFile = opts.existsFile ?? defaultExists;
+  const readFile = opts.readFile ?? readUtf8File;
+  const existsFile = opts.existsFile ?? existsRegularFile;
   const active = opts.activeFile ? path.resolve(opts.activeFile) : undefined;
   const lastEntry = opts.lastEntryFile ? path.resolve(opts.lastEntryFile) : undefined;
   const graph = opts.lastGraphPaths;

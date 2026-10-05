@@ -1,5 +1,5 @@
-import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { existsRegularFile } from './fsHelpers';
 
 /** Extensions tried when a ConTeXt include name has no suffix. */
 export const TEX_INCLUDE_EXTENSIONS = [
@@ -38,16 +38,8 @@ export interface ResolveIncludeOptions {
   searchDirs?: string[];
   /** Extensions to try when `name` has no suffix. */
   extensions?: readonly string[];
-  /** Optional existence check (defaults to fs.existsSync file). */
+  /** Optional existence check (defaults to `existsRegularFile`). */
   existsFile?: (absolutePath: string) => boolean;
-}
-
-function defaultExistsFile(p: string): boolean {
-  try {
-    return fs.existsSync(p) && fs.statSync(p).isFile();
-  } catch {
-    return false;
-  }
 }
 
 function hasKnownSuffix(name: string, extensions: readonly string[]): boolean {
@@ -77,7 +69,7 @@ function candidateNames(name: string, extensions: readonly string[]): string[] {
  * 4. Extra `searchDirs` (parents, workspace folders, …)
  */
 export function resolveIncludePath(opts: ResolveIncludeOptions): string | undefined {
-  const exists = opts.existsFile ?? defaultExistsFile;
+  const exists = opts.existsFile ?? existsRegularFile;
   const extensions = opts.extensions ?? TEX_INCLUDE_EXTENSIONS;
   const fromDir = path.dirname(opts.fromFile);
   const useDirs = (opts.usePaths ?? []).map((d) =>
