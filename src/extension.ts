@@ -24,6 +24,10 @@ import {
 import { PdfPanel, type PdfPanelState } from './viewer/pdfPanel';
 import { resolveRootFile, toWorkspaceRelativeRootFile, type RootResolution } from './project/rootFile';
 import { openTextFromDocuments, readTexSource } from './project/readSource';
+import {
+  contextDocumentSelector,
+  isContextLikeDocument,
+} from './project/documentFilter';
 import { createDigestifClient, type DigestifClientHandle } from './lsp/digestifClient';
 import { maybeOfferTexContextAssociation } from './project/texAssociation';
 import {
@@ -623,14 +627,6 @@ async function handlePdfClick(
   }
 }
 
-function isContextLike(doc: vscode.TextDocument): boolean {
-  return (
-    doc.languageId === 'context' ||
-    doc.languageId === 'tex' ||
-    doc.languageId === 'latex' ||
-    /\.(tex|mkiv|mkxl|mkvi|mklx|mkii|ctx)$/i.test(doc.uri.fsPath)
-  );
-}
 
 export function activate(context: vscode.ExtensionContext): void {
   extensionContext = context;
@@ -701,11 +697,6 @@ export function activate(context: vscode.ExtensionContext): void {
   const foldProvider = new ContextFoldingRangeProvider(foldDiagnostics);
   const linkProvider = new ContextDocumentLinkProvider();
   const figureHover = new ContextFigureHoverProvider();
-  const contextSelector: vscode.DocumentSelector = [
-    { language: 'context' },
-    { language: 'tex' },
-    { pattern: '**/*.{mkiv,mkxl,mkvi,mklx,mkii,tex,ctx}' },
-  ];
 
   context.subscriptions.push(
     digestifOutput,
@@ -737,14 +728,14 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('context.refreshKeywords', () => {
       void refreshCommandKeywords(context.extensionPath, output);
     }),
-    vscode.languages.registerFoldingRangeProvider(contextSelector, foldProvider),
-    vscode.languages.registerDocumentLinkProvider(contextSelector, linkProvider),
-    vscode.languages.registerHoverProvider(contextSelector, figureHover),
+    vscode.languages.registerFoldingRangeProvider(contextDocumentSelector, foldProvider),
+    vscode.languages.registerDocumentLinkProvider(contextDocumentSelector, linkProvider),
+    vscode.languages.registerHoverProvider(contextDocumentSelector, figureHover),
     vscode.window.onDidChangeActiveTextEditor(() => {
       updateRootStatus();
     }),
     vscode.workspace.onDidSaveTextDocument((doc) => {
-      if (!isContextLike(doc)) {
+      if (!isContextLikeDocument(doc)) {
         return;
       }
       const onSave = vscode.workspace.getConfiguration('context').get<boolean>('build.onSave', false);
@@ -753,7 +744,7 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }),
     vscode.workspace.onDidChangeTextDocument((e) => {
-      if (!isContextLike(e.document)) {
+      if (!isContextLikeDocument(e.document)) {
         return;
       }
       publishFoldDiagnostics(e.document, foldDiagnostics);
@@ -773,7 +764,7 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }),
     vscode.workspace.onDidOpenTextDocument((doc) => {
-      if (!isContextLike(doc)) {
+      if (!isContextLikeDocument(doc)) {
         return;
       }
       void maybeWarnLatexWorkshopConflict(context, logUser);

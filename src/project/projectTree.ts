@@ -11,6 +11,7 @@ import {
   resolveProjectAnchor,
 } from './projectAnchor';
 import { PROJECT_NO_STRUCTURE_MESSAGE } from './messages';
+import { isContextSourcePath } from './documentFilter';
 import { readUtf8File } from './fsHelpers';
 import { openTextFromDocuments, readTexSource } from './readSource';
 import { treeId } from './projectTreeIds';
@@ -548,12 +549,12 @@ export function registerProjectView(
       provider.onActiveEditorChanged();
     }),
     vscode.workspace.onDidSaveTextDocument((doc) => {
-      if (/\.(tex|mkiv|mkxl|mkvi|mklx|mkii|ctx)$/i.test(doc.uri.fsPath)) {
+      if (isContextSourcePath(doc.uri.fsPath)) {
         provider.scheduleRefresh();
       }
     }),
     vscode.workspace.onDidChangeTextDocument((e) => {
-      if (/\.(tex|mkiv|mkxl|mkvi|mklx|mkii|ctx)$/i.test(e.document.uri.fsPath)) {
+      if (isContextSourcePath(e.document.uri.fsPath)) {
         provider.scheduleRefresh();
       }
     }),
