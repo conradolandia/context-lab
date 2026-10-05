@@ -2,13 +2,13 @@ import * as vscode from 'vscode';
 import {
   LanguageClient,
   type LanguageClientOptions,
-  type DocumentSelector,
   RevealOutputChannelOn,
   type ServerOptions,
   State,
   ErrorAction,
   CloseAction,
 } from 'vscode-languageclient/node';
+import { digestifDocumentSelector } from '../project/documentFilter';
 import { resolveToolchain, ToolchainError } from '../toolchain/discover';
 import { buildDigestifEnv, type DigestifEnvOk } from './digestifEnv';
 import { resolveDigestifLaunch } from './digestifLaunch';
@@ -27,15 +27,6 @@ import { normalizeOutlineSymbols } from './normalizeOutlineTitle';
 
 export const DIGESTIF_CLIENT_ID = 'contextTools.digestif';
 export const DIGESTIF_CLIENT_NAME = 'ConTeXt Tools DigestiF';
-
-export const DIGESTIF_DOCUMENT_SELECTOR: DocumentSelector = [
-  { scheme: 'file', language: 'context' },
-  { scheme: 'file', language: 'tex' },
-  { scheme: 'file', language: 'latex' },
-  { scheme: 'untitled', language: 'context' },
-  { scheme: 'untitled', language: 'tex' },
-  { scheme: 'untitled', language: 'latex' },
-];
 
 export interface DigestifClientHandle {
   scheduleStart(): void;
@@ -200,7 +191,7 @@ export function createDigestifClient(options: {
       };
 
       const clientOptions: LanguageClientOptions = {
-        documentSelector: DIGESTIF_DOCUMENT_SELECTOR,
+        documentSelector: digestifDocumentSelector,
         outputChannel: output,
         revealOutputChannelOn: RevealOutputChannelOn.Never,
         errorHandler: {

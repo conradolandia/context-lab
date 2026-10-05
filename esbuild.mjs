@@ -36,6 +36,7 @@ const testOptions = {
     join(__dirname, 'src/test/buildDigestifIsolation.test.ts'),
     join(__dirname, 'src/test/digestifContextMode.test.ts'),
     join(__dirname, 'src/test/execPath.test.ts'),
+    join(__dirname, 'src/test/documentFilter.test.ts'),
     join(__dirname, 'src/test/lineMap.test.ts'),
     join(__dirname, 'src/test/foldingMarkers.test.ts'),
     join(__dirname, 'src/test/fsHelpers.test.ts'),

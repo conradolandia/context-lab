@@ -1,13 +1,10 @@
 import * as vscode from 'vscode';
+import { isContextLikeDocument } from '../project/documentFilter';
 import { analyzeStartStop, type FoldAnalysis } from './startStopAnalyze';
 
 export { analyzeStartStop, type FoldAnalysis } from './startStopAnalyze';
 
 export const FOLD_DIAG_COLLECTION = 'context.folding';
-
-function isContextDoc(doc: vscode.TextDocument): boolean {
-  return doc.languageId === 'context' || doc.languageId === 'tex';
-}
 
 export function publishFoldDiagnostics(
   document: vscode.TextDocument,
@@ -82,7 +79,7 @@ export class ContextFoldingRangeProvider implements vscode.FoldingRangeProvider 
     _context: vscode.FoldingContext,
     _token: vscode.CancellationToken,
   ): vscode.FoldingRange[] {
-    if (!isContextDoc(document)) {
+    if (!isContextLikeDocument(document)) {
       return [];
     }
     const analysis = analyzeStartStop(document.getText());

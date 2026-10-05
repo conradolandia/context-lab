@@ -1,5 +1,6 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { isContextLikeDocument } from '../project/documentFilter';
 import {
   FIGURE_EXTENSIONS,
   parentSearchDirs,
@@ -12,10 +13,6 @@ import {
   figureHoverImgHtml,
 } from './figureHoverMarkdown';
 import { readImageSize } from './imageSize';
-
-function isContextDoc(doc: vscode.TextDocument): boolean {
-  return doc.languageId === 'context' || doc.languageId === 'tex' || doc.languageId === 'latex';
-}
 
 function extensionsFor(kind: IncludeKind): readonly string[] {
   if (kind === 'externalfigure') {
@@ -40,7 +37,7 @@ export class ContextDocumentLinkProvider implements vscode.DocumentLinkProvider 
     document: vscode.TextDocument,
     _token: vscode.CancellationToken,
   ): vscode.DocumentLink[] {
-    if (!isContextDoc(document)) {
+    if (!isContextLikeDocument(document)) {
       return [];
     }
     const text = document.getText();
@@ -84,7 +81,7 @@ export class ContextFigureHoverProvider implements vscode.HoverProvider {
     position: vscode.Position,
     _token: vscode.CancellationToken,
   ): vscode.Hover | undefined {
-    if (!isContextDoc(document)) {
+    if (!isContextLikeDocument(document)) {
       return undefined;
     }
     const text = document.getText();
