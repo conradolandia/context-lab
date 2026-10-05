@@ -1,6 +1,6 @@
-import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { isExecutable } from '../toolchain/execPath';
 
 export type DigestifLaunchMethod = 'direct';
 
@@ -19,15 +19,6 @@ export interface DigestifLaunch {
 export interface ResolveDigestifLaunchOptions {
   digestifPath: string;
   source: DigestifResolveSource;
-}
-
-function isExecutable(filePath: string): boolean {
-  try {
-    fs.accessSync(filePath, fs.constants.X_OK);
-    return fs.statSync(filePath).isFile();
-  } catch {
-    return false;
-  }
 }
 
 /**

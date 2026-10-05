@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { isExecutable, whichOnPath } from '../toolchain/execPath';
 import {
   CONTEXT_INTERFACE_REL,
   resolveInstallRoot,
@@ -42,29 +42,6 @@ export interface BuildDigestifEnvOptions {
   findLuarocks?: () => string | undefined;
 }
 
-function isExecutable(filePath: string): boolean {
-  try {
-    fs.accessSync(filePath, fs.constants.X_OK);
-    return fs.statSync(filePath).isFile();
-  } catch {
-    return false;
-  }
-}
-
-function which(binary: string): string | undefined {
-  try {
-    const cmd = process.platform === 'win32' ? 'where' : 'which';
-    const out = execFileSync(cmd, [binary], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
-    const first = out.split(/\r?\n/).map((l) => l.trim()).find(Boolean);
-    return first && isExecutable(first) ? first : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 export type ResolvedDigestifExecutable = {
   path: string;
   source: DigestifResolveSource;
@@ -78,7 +55,7 @@ export type ResolvedDigestifExecutable = {
  */
 export function resolveDigestifExecutable(
   digestifPathSetting?: string,
-  whichDigestif: () => string | undefined = () => which('digestif'),
+  whichDigestif: () => string | undefined = () => whichOnPath('digestif'),
   options?: {
     homedir?: string;
     findLuarocks?: () => string | undefined;
@@ -227,7 +204,7 @@ export function createDigestifSpawnEnv(options: {
 export function buildDigestifEnv(options: BuildDigestifEnvOptions): DigestifEnvResult {
   const resolvedExe = resolveDigestifExecutable(
     options.digestifPath,
-    options.whichDigestif ?? (() => which('digestif')),
+    options.whichDigestif ?? (() => whichOnPath('digestif')),
     {
       homedir: options.homedir,
       findLuarocks: options.findLuarocks,

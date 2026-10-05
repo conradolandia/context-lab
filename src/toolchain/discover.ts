@@ -1,6 +1,5 @@
-import * as fs from 'node:fs';
-import { execFileSync } from 'node:child_process';
 import * as vscode from 'vscode';
+import { isExecutable, whichOnPath } from './execPath';
 import {
   findBinaryUnderRoot,
   inferRootFromBinary,
@@ -34,29 +33,6 @@ function readSetting(key: string): string {
   const cfg = vscode.workspace.getConfiguration('context');
   const value = cfg.get<string>(key, '');
   return typeof value === 'string' ? value.trim() : '';
-}
-
-function isExecutable(filePath: string): boolean {
-  try {
-    fs.accessSync(filePath, fs.constants.X_OK);
-    return fs.statSync(filePath).isFile();
-  } catch {
-    return false;
-  }
-}
-
-function which(binary: string): string | undefined {
-  try {
-    const cmd = process.platform === 'win32' ? 'where' : 'which';
-    const out = execFileSync(cmd, [binary], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
-    const first = out.split(/\r?\n/).map((l) => l.trim()).find(Boolean);
-    return first && isExecutable(first) ? first : undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 export function resolveToolchain(
@@ -104,10 +80,10 @@ export function resolveToolchain(
   }
 
   if (!contextPath) {
-    contextPath = which('context');
+    contextPath = whichOnPath('context');
   }
   if (!mtxrunPath) {
-    mtxrunPath = which('mtxrun');
+    mtxrunPath = whichOnPath('mtxrun');
   }
 
   if (!root) {
