@@ -4,6 +4,7 @@ import {
   offsetInRanges,
   stripLineComment,
 } from '../project/verbatimRegions';
+import { buildLineStarts, lineAtOffset, lineTextAtOffset } from '../project/lineMap';
 
 interface StartStopHit {
   kind: 'start' | 'stop';
@@ -19,31 +20,7 @@ const START_STOP = /\\(start|stop)([A-Za-z]+)\b/g;
 function collectHits(text: string): StartStopHit[] {
   const verbatim = findVerbatimRanges(text);
   const hits: StartStopHit[] = [];
-  const lineStarts: number[] = [0];
-  for (let i = 0; i < text.length; i++) {
-    if (text[i] === '\n') {
-      lineStarts.push(i + 1);
-    }
-  }
-  function lineAt(offset: number): number {
-    let lo = 0;
-    let hi = lineStarts.length - 1;
-    while (lo < hi) {
-      const mid = (lo + hi + 1) >> 1;
-      if (lineStarts[mid] <= offset) {
-        lo = mid;
-      } else {
-        hi = mid - 1;
-      }
-    }
-    return lo;
-  }
-  function lineText(offset: number): string {
-    const li = lineAt(offset);
-    const start = lineStarts[li];
-    const end = li + 1 < lineStarts.length ? lineStarts[li + 1] - 1 : text.length;
-    return text.slice(start, end);
-  }
+  const lineStarts = buildLineStarts(text);
 
   START_STOP.lastIndex = 0;
   let m: RegExpExecArray | null;
@@ -51,11 +28,12 @@ function collectHits(text: string): StartStopHit[] {
     if (offsetInRanges(m.index, verbatim)) {
       continue;
     }
-    const lt = lineText(m.index);
+    const lt = lineTextAtOffset(text, lineStarts, m.index);
     if (isCommentLine(lt)) {
       continue;
     }
-    const lineStart = lineStarts[lineAt(m.index)];
+    const line = lineAtOffset(lineStarts, m.index);
+    const lineStart = lineStarts[line];
     const prefix = text.slice(lineStart, m.index);
     if (stripLineComment(prefix).length !== prefix.length) {
       continue;
@@ -63,7 +41,7 @@ function collectHits(text: string): StartStopHit[] {
     hits.push({
       kind: m[1] as 'start' | 'stop',
       name: m[2],
-      line: lineAt(m.index),
+      line,
       offset: m.index,
       endOffset: m.index + m[0].length,
     });
