@@ -5,7 +5,8 @@ Coding-agent notes for this repo. Setup: [`CONTRIBUTING.md`](CONTRIBUTING.md). U
 ## Architecture map
 
 ```text
-src/extension.ts              Activation, commands, wiring
+src/extension.ts              Activation wiring (commands live under src/extension/)
+src/extension/                Root / PDF / SyncTeX command modules + shared state
 src/toolchain/                Discover context/mtxrun from context.root / PATH
 src/build/                    Spawn build, queue, log parse, diagnostics, PDF gate
 src/viewer/                   PDF webview panel, range server, PDF.js worker

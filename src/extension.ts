@@ -1,34 +1,13 @@
 import * as vscode from 'vscode';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
-import { resolveToolchain, ToolchainError, type Toolchain } from './toolchain/discover';
-import type { BuildResult } from './build/compiler';
-import {
-  findSynctexSibling,
-  gateJobArtifacts,
-  isConTeXtPreviewPdf,
-  type JobSnapshot,
-} from './build/artifactGate';
-import {
-  BuildController,
-  preserveFocusForBuildTrigger,
-  type BuildTrigger,
-} from './build/buildController';
-import {
-  forwardSync,
-  backwardSync,
-  SynctexError,
-  EMPTY_BACKWARD_USER_MESSAGE,
-  COARSE_FLOAT_LINE_USER_MESSAGE,
-} from './synctex/mtxSynctex';
-import { PdfPanel, type PdfPanelState } from './viewer/pdfPanel';
-import { resolveRootFile, toWorkspaceRelativeRootFile, type RootResolution } from './project/rootFile';
-import { openTextFromDocuments, readTexSource } from './project/readSource';
+import { BuildController } from './build/buildController';
+import { PdfPanel } from './viewer/pdfPanel';
 import {
   contextDocumentSelector,
   isContextLikeDocument,
 } from './project/documentFilter';
-import { createDigestifClient, type DigestifClientHandle } from './lsp/digestifClient';
+import { createDigestifClient } from './lsp/digestifClient';
 import { maybeOfferTexContextAssociation } from './project/texAssociation';
 import {
   ContextDocumentLinkProvider,
@@ -39,611 +18,53 @@ import {
   publishFoldDiagnostics,
 } from './folding/startStopFolding';
 import { registerProjectView } from './project/projectTree';
-import type { ProjectNode } from './project/projectModel';
 import { registerProjectManager } from './projectManager/projectManagerPanel';
 import { refreshCommandKeywords } from './syntax/refreshKeywords';
 import { maybeWarnLatexWorkshopConflict } from './compat/latexWorkshopConflict';
 import { initOutputLog, logDebug, logUser } from './outputLog';
+import { runtime } from './extension/state';
+import {
+  activeTexPath,
+  buildFromProjectNode,
+  getToolchain,
+  pickRootFile,
+  resolveCurrentRoot,
+  setRootFromProjectNode,
+  updateRootStatus,
+  workspaceFolderPaths,
+} from './extension/rootCommands';
+import {
+  afterSuccessfulBuild,
+  maybeOpenExistingOnActivate,
+  openPdfFromExplorer,
+  revivePdfPanel,
+  showPdf,
+} from './extension/pdfCommands';
+import {
+  doForwardSync,
+  forwardSyncFromProjectNode,
+  handlePdfClick,
+} from './extension/synctexCommands';
 
 /** Bump when shipping a SyncTeX/viewer/LSP/diagnostics/project-view behavior change users must verify in Output. */
 export const BUILD_ID = 'pdf-open-singleton';
 
-const LAST_GATED_PDF_STATE_KEY = 'context.lastGatedPdf';
-
-let output: vscode.OutputChannel;
-let digestifOutput: vscode.OutputChannel;
-let pdfPanel: PdfPanel;
-let rootStatus: vscode.StatusBarItem;
-let buildStatus: vscode.StatusBarItem;
-let snapshot: JobSnapshot | undefined;
-let generation = 0;
-let lastRootResolution: RootResolution | undefined;
-let backwardInFlight = false;
-let digestif: DigestifClientHandle | undefined;
-let extensionContext: vscode.ExtensionContext | undefined;
-let buildController: BuildController | undefined;
-let buildDiagnostics: vscode.DiagnosticCollection;
-let foldDiagnostics: vscode.DiagnosticCollection;
-
-function getToolchain(): Toolchain {
-  return resolveToolchain();
-}
-
-function workspaceFolderPaths(): string[] {
-  return (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath);
-}
-
-function activeTexPath(): string | undefined {
-  const ed = vscode.window.activeTextEditor;
-  if (!ed) {
-    return undefined;
-  }
-  return ed.document.uri.fsPath;
-}
-
-function resolveCurrentRoot(activePath?: string): RootResolution | undefined {
-  const active = activePath ?? activeTexPath() ?? lastRootResolution?.rootFile;
-  if (!active) {
-    return undefined;
-  }
-  const text = readTexSource(active, {
-    getOpenText: openTextFromDocuments(vscode.workspace.textDocuments),
-  });
-  const cfg = vscode.workspace.getConfiguration('context');
-  const setting = cfg.get<string>('rootFile', '') ?? '';
-  const resolved = resolveRootFile({
-    activeFile: active,
-    activeText: text,
-    rootFileSetting: setting,
-    workspaceFolders: workspaceFolderPaths(),
-  });
-  lastRootResolution = resolved;
-  return resolved;
-}
-
-function updateRootStatus(): void {
-  const r = resolveCurrentRoot();
-  if (!r) {
-    rootStatus.text = 'ConTeXt: (no root)';
-    rootStatus.tooltip = 'Click to set context.rootFile';
-    return;
-  }
-  const name = path.basename(r.rootFile);
-  rootStatus.text = `ConTeXt: ${name}`;
-  rootStatus.tooltip = `${r.rootFile}\nrule: ${r.rule}\nClick to change context.rootFile`;
-}
-
-async function pickRootFile(): Promise<void> {
-  const current = resolveCurrentRoot();
-  const pick = await vscode.window.showQuickPick(
-    [
-      {
-        label: '$(file) Use active editor / auto-detect',
-        description: 'Clear context.rootFile',
-        value: '',
-      },
-      {
-        label: '$(folder-opened) Choose main .tex…',
-        description: 'Set context.rootFile for this workspace',
-        value: '__browse__',
-      },
-      ...(current
-        ? [
-            {
-              label: `$(check) Current: ${path.basename(current.rootFile)}`,
-              description: current.rule,
-              detail: current.rootFile,
-              value: '__keep__',
-            },
-          ]
-        : []),
-    ],
-    { title: 'ConTeXt main (root) file' },
-  );
-  if (!pick || pick.value === '__keep__') {
-    return;
-  }
-  const cfg = vscode.workspace.getConfiguration('context');
-  if (pick.value === '') {
-    await cfg.update('rootFile', '', vscode.ConfigurationTarget.Workspace);
-    logUser('[root] cleared context.rootFile (auto-detect)');
-  } else {
-    const uris = await vscode.window.showOpenDialog({
-      canSelectMany: false,
-      filters: { TeX: ['tex', 'ctx', 'mkiv', 'mkxl'] },
-      defaultUri: current
-        ? vscode.Uri.file(path.dirname(current.rootFile))
-        : vscode.workspace.workspaceFolders?.[0]?.uri,
-    });
-    if (!uris?.[0]) {
-      return;
-    }
-    const folders = workspaceFolderPaths();
-    const rel = toWorkspaceRelativeRootFile(uris[0].fsPath, folders);
-    await cfg.update('rootFile', rel, vscode.ConfigurationTarget.Workspace);
-    logUser(`[root] set context.rootFile=${rel}`);
-  }
-  updateRootStatus();
-}
-
-async function afterSuccessfulBuild(
-  result: BuildResult,
-  trigger: BuildTrigger,
-): Promise<void> {
-  generation += 1;
-  try {
-    snapshot = await gateJobArtifacts(result.pdfPath, generation);
-  } catch (gateErr) {
-    const msg = gateErr instanceof Error ? gateErr.message : String(gateErr);
-    logUser(`[artifact gate] ${msg}`);
-    void vscode.window.showErrorMessage(`Build succeeded but PDF gate failed: ${msg}`);
-    return;
-  }
-
-  logDebug(
-    `[gate] PDF → ${snapshot.pdfPath}` +
-      (snapshot.synctexPath ? `; synctex → ${snapshot.synctexPath}` : '') +
-      `; jobDir=${snapshot.jobDir}`,
-  );
-  await rememberGatedPdf(snapshot);
-  // onSave / queued: always preserve editor focus. Manual command: omit opts so
-  // showJobPdf preserves focus only when refreshing an already-open panel.
-  await pdfPanel.showJobPdf(
-    snapshot.pdfPath,
-    snapshot.jobDir,
-    preserveFocusForBuildTrigger(trigger) ? { preserveFocus: true } : undefined,
-  );
-}
-
-function rootPdfPath(rootFile: string): string {
-  return rootFile.replace(/\.[^.]+$/, '.pdf');
-}
-
-function relatedJobPdfPaths(): Array<string | undefined> {
-  const root = resolveCurrentRoot();
-  return [snapshot?.pdfPath, root ? rootPdfPath(root.rootFile) : undefined];
-}
-
-async function rememberGatedPdf(snap: JobSnapshot): Promise<void> {
-  if (!extensionContext) {
-    return;
-  }
-  await extensionContext.workspaceState.update(LAST_GATED_PDF_STATE_KEY, {
-    pdfPath: snap.pdfPath,
-    jobDir: snap.jobDir,
-  } satisfies PdfPanelState);
-}
-
-async function openGatedPdf(
-  pdfPath: string,
-  opts?: { preserveFocus?: boolean },
-): Promise<boolean> {
-  generation += 1;
-  try {
-    snapshot = await gateJobArtifacts(pdfPath, generation);
-    await rememberGatedPdf(snapshot);
-    await pdfPanel.showJobPdf(snapshot.pdfPath, snapshot.jobDir, opts);
-    return true;
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    logUser(`[artifact gate] ${msg}`);
-    void vscode.window.showErrorMessage(msg);
-    return false;
-  }
-}
-
-/**
- * Open an existing job PDF in the ConTeXt viewer (no rebuild).
- * Uses the last gated snapshot when present; otherwise gates the root PDF.
- */
-async function showPdf(): Promise<void> {
-  if (snapshot?.pdfPath && fs.existsSync(snapshot.pdfPath)) {
-    await pdfPanel.showJobPdf(snapshot.pdfPath, snapshot.jobDir);
-    return;
-  }
-  const root = resolveCurrentRoot();
-  if (!root) {
-    void vscode.window.showErrorMessage(
-      'No ConTeXt root PDF yet. Set the main file or run ConTeXt: Build and Preview.',
-    );
-    return;
-  }
-  if (extensionContext) {
-    const openDoc = vscode.workspace.textDocuments.find((d) => d.uri.fsPath === root.rootFile);
-    void maybeOfferTexContextAssociation(
-      extensionContext,
-      root.rootFile,
-      openDoc?.languageId,
-      logUser,
-    );
-  }
-  const pdfPath = rootPdfPath(root.rootFile);
-  if (!fs.existsSync(pdfPath)) {
-    void vscode.window.showErrorMessage(
-      `No PDF at ${pdfPath}. Run ConTeXt: Build and Preview, or open an existing job PDF from the Explorer.`,
-    );
-    return;
-  }
-  await openGatedPdf(pdfPath);
-}
-
-/** Explorer: open a .pdf in the ConTeXt viewer when it looks like a job artifact. */
-async function openPdfFromExplorer(uri?: vscode.Uri): Promise<void> {
-  const target = uri ?? vscode.window.activeTextEditor?.document.uri;
-  if (!target || target.scheme !== 'file' || !/\.pdf$/i.test(target.fsPath)) {
-    void vscode.window.showErrorMessage('Select a PDF file in the Explorer.');
-    return;
-  }
-  const pdfPath = target.fsPath;
-  if (!isConTeXtPreviewPdf(pdfPath, relatedJobPdfPaths())) {
-    void vscode.window.showInformationMessage(
-      'Not a ConTeXt job PDF (no sibling .synctex and not the active root output). Use a default PDF editor, or build with SyncTeX first.',
-    );
-    return;
-  }
-  if (snapshot?.pdfPath && path.resolve(snapshot.pdfPath) === path.resolve(pdfPath)) {
-    await pdfPanel.showJobPdf(snapshot.pdfPath, snapshot.jobDir);
-    return;
-  }
-  await openGatedPdf(pdfPath);
-}
-
-/**
- * Optional one-shot open when artifacts already exist (setting default false).
- * Prefer command palette / Explorer menu when auto-open is undesirable.
- * Requires PDF + sibling SyncTeX so the artifact gate can pair them.
- */
-async function maybeOpenExistingOnActivate(): Promise<void> {
-  const cfg = vscode.workspace.getConfiguration('context');
-  if (!cfg.get<boolean>('viewer.openExistingOnActivate', false)) {
-    return;
-  }
-  if (snapshot?.pdfPath && fs.existsSync(snapshot.pdfPath)) {
-    await pdfPanel.showJobPdf(snapshot.pdfPath, snapshot.jobDir, { preserveFocus: true });
-    logUser('[viewer] openExistingOnActivate: reused gated snapshot');
-    return;
-  }
-  const root = resolveCurrentRoot();
-  if (!root) {
-    return;
-  }
-  const pdfPath = rootPdfPath(root.rootFile);
-  if (!fs.existsSync(pdfPath) || !findSynctexSibling(pdfPath)) {
-    return;
-  }
-  const ok = await openGatedPdf(pdfPath, { preserveFocus: true });
-  if (ok) {
-    logUser('[viewer] openExistingOnActivate: gated existing PDF');
-  }
-}
-
-async function revivePdfPanel(
-  panel: vscode.WebviewPanel,
-  state: unknown,
-): Promise<void> {
-  pdfPanel.adoptPanel(panel);
-  const fromState = (state ?? {}) as PdfPanelState;
-  const remembered =
-    extensionContext?.workspaceState.get<PdfPanelState>(LAST_GATED_PDF_STATE_KEY);
-  const candidates = [fromState.pdfPath, snapshot?.pdfPath, remembered?.pdfPath];
-  const pdfPath = candidates.find((p) => p && fs.existsSync(p));
-  if (!pdfPath) {
-    logDebug('[viewer] serializer adopted panel (no PDF path to restore)');
-    return;
-  }
-  if (snapshot?.pdfPath && path.resolve(snapshot.pdfPath) === path.resolve(pdfPath)) {
-    await pdfPanel.showJobPdf(snapshot.pdfPath, snapshot.jobDir, {
-      preserveFocus: true,
-    });
-    return;
-  }
-  await openGatedPdf(pdfPath, { preserveFocus: true });
-}
-
-async function doForwardSync(opts?: {
-  file?: string;
-  line?: number;
-}): Promise<void> {
-  const cfg = vscode.workspace.getConfiguration('context');
-  if (!cfg.get<boolean>('synctex.enabled', true)) {
-    void vscode.window.showInformationMessage('SyncTeX is disabled (context.synctex.enabled).');
-    return;
-  }
-
-  const editor = vscode.window.activeTextEditor;
-  const file = opts?.file ?? editor?.document.uri.fsPath;
-  if (!file) {
-    void vscode.window.showErrorMessage('No active editor for Forward SyncTeX.');
-    return;
-  }
-
-  let line = opts?.line;
-  if (line == null) {
-    if (editor && editor.document.uri.fsPath === file) {
-      line = editor.selection.active.line + 1;
-    } else {
-      line = 1;
-    }
-  }
-
-  if (!snapshot?.synctexPath || !snapshot.pdfPath || !snapshot.jobDir) {
-    void vscode.window.showErrorMessage(
-      'No SyncTeX data yet. Run ConTeXt: Build and Preview first.',
-    );
-    return;
-  }
-
-  let toolchain: Toolchain;
-  try {
-    toolchain = getToolchain();
-  } catch (err) {
-    void vscode.window.showErrorMessage(err instanceof Error ? err.message : String(err));
-    return;
-  }
-
-  logDebug(
-    `[synctex find] file=${file} line=${line} synctex=${snapshot.synctexPath} jobDir=${snapshot.jobDir}`,
-  );
-
-  try {
-    const {
-      result: hit,
-      raw,
-      diag,
-      extraHits,
-      argv,
-      cwd,
-      stdout,
-      stderr,
-      note,
-    } = await forwardSync(
-      toolchain,
-      snapshot.synctexPath,
-      file,
-      line,
-      snapshot.jobDir,
-    );
-    logDebug(`[synctex find] cwd=${cwd} argv=${JSON.stringify(argv)}`);
-    const mtxOut = `${stdout}\n${stderr}`.trim();
-    if (mtxOut) {
-      logDebug(`[synctex find] mtx stdout/stderr:\n${mtxOut}`);
-    }
-    logDebug(
-      `[synctex find] raw mtx page=${raw.page} llx=${raw.llx} lly=${raw.lly} urx=${raw.urx} ury=${raw.ury}` +
-        ` w=${(raw.urx - raw.llx).toFixed(2)} h=${Math.abs(raw.ury - raw.lly).toFixed(2)}` +
-        ` cyTopDown=${((raw.lly + raw.ury) / 2).toFixed(2)} (mtx --find y is SyncTeX top-down)`,
-    );
-    if (extraHits.length > 0) {
-      logDebug(
-        `[synctex find] extra mtx hits (${extraHits.length}): ` +
-          extraHits
-            .map(
-              (h) =>
-                `page=${h.page} llx=${h.llx} lly=${h.lly} urx=${h.urx} ury=${h.ury}`,
-            )
-            .join(' | '),
-      );
-    }
-    logDebug(
-      `[synctex find] refine action=${diag.action} hitInEdge=${diag.hitInEdge}` +
-        ` skipHighlight=${diag.skipHighlight}` +
-        ` unitScale=${diag.unitScale ?? 'null'}` +
-        ` pageH=${diag.pageHeight.toFixed(1)} pageW=${diag.pageWidth.toFixed(1)}` +
-        ` band=${diag.band.toFixed(1)} sameLine=${diag.sameLineCount}` +
-        ` hitCyTopDown=${diag.hitCy.toFixed(2)}`,
-    );
-    if (diag.sameLineBoxes.length > 0) {
-      const maxDump = 12;
-      const dump = diag.sameLineBoxes.slice(0, maxDump).map((b) => {
-        const flags =
-          (b.inEdge ? 'E' : '-') + (b.oversized ? 'O' : '-');
-        return (
-          `[${flags}] x=${b.x.toFixed(1)} y=${b.y.toFixed(1)}` +
-          ` w=${b.w.toFixed(1)} h=${b.h.toFixed(1)} d=${b.d.toFixed(1)}` +
-          ` cy=${b.cy.toFixed(1)} area=${b.area.toFixed(0)}`
-        );
-      });
-      logDebug(
-        `[synctex find] same-line boxes (E=edge O=oversized` +
-          (diag.sameLineBoxes.length > maxDump
-            ? `; showing ${maxDump}/${diag.sameLineBoxes.length}`
-            : '') +
-          `):\n  ${dump.join('\n  ')}`,
-      );
-    }
-    logDebug(
-      `[synctex find] chosen page=${hit.page} llx=${hit.llx} lly=${hit.lly} urx=${hit.urx} ury=${hit.ury}` +
-        ` w=${(hit.urx - hit.llx).toFixed(2)} h=${Math.abs(hit.ury - hit.lly).toFixed(2)}` +
-        (diag.skipHighlight ? ' (skip paint)' : ''),
-    );
-    if (note) {
-      logDebug(`[synctex find] ${note}`);
-    }
-    await pdfPanel.forwardSync({
-      ...hit,
-      synctexPageH: diag.pageHeight > 0 ? diag.pageHeight : undefined,
-      synctexPageW: diag.pageWidth > 0 ? diag.pageWidth : undefined,
-      skipHighlight: diag.skipHighlight,
-    });
-  } catch (err) {
-    const msg = err instanceof SynctexError || err instanceof Error ? err.message : String(err);
-    logDebug(`[synctex find] ${msg}`);
-    void vscode.window.showWarningMessage(msg);
-  }
-}
-
-function buildFromProjectNode(node: ProjectNode): void {
-  if (node.kind === 'project') {
-    const firstProduct = node.children.find((c) => c.kind === 'product' && c.fsPath && !c.missing);
-    void vscode.window
-      .showInformationMessage(
-        'Project files are not compile targets (compiling a project can loop). Build a product instead.',
-        firstProduct ? `Build ${firstProduct.label}` : 'OK',
-      )
-      .then((choice) => {
-        if (firstProduct?.fsPath && choice?.startsWith('Build ')) {
-          buildController?.requestCommandBuild(firstProduct.fsPath);
-        }
-      });
-    return;
-  }
-  if (node.kind === 'environment') {
-    void vscode.window.showInformationMessage(
-      'Environment files are not compile targets. Build a product or component instead.',
-    );
-    return;
-  }
-  if (node.missing || !node.fsPath) {
-    void vscode.window.showErrorMessage('Cannot build: file is missing or unresolved.');
-    return;
-  }
-
-  if (node.kind === 'product' || node.kind === 'document') {
-    buildController?.requestCommandBuild(node.fsPath);
-    return;
-  }
-
-  // Component (and input): compile via resolveRootFile (product preferred).
-  const text = readTexSource(node.fsPath, {
-    getOpenText: openTextFromDocuments(vscode.workspace.textDocuments),
-  });
-  const cfg = vscode.workspace.getConfiguration('context');
-  const resolved = resolveRootFile({
-    activeFile: node.fsPath,
-    activeText: text,
-    rootFileSetting: cfg.get<string>('rootFile', '') ?? '',
-    workspaceFolders: workspaceFolderPaths(),
-  });
-  buildController?.requestCommandBuild(resolved.rootFile);
-}
-
-async function forwardSyncFromProjectNode(node: ProjectNode): Promise<void> {
-  if (!node.fsPath || node.missing) {
-    void vscode.window.showErrorMessage('Cannot SyncTeX: file is missing or unresolved.');
-    return;
-  }
-  const openEditor = vscode.window.visibleTextEditors.find(
-    (e) => e.document.uri.fsPath === node.fsPath,
-  );
-  const line = openEditor ? openEditor.selection.active.line + 1 : 1;
-  await doForwardSync({ file: node.fsPath, line });
-}
-
-async function setRootFromProjectNode(node: ProjectNode): Promise<void> {
-  if (!node.fsPath || node.missing) {
-    void vscode.window.showErrorMessage('Cannot set root: file is missing or unresolved.');
-    return;
-  }
-  const folders = workspaceFolderPaths();
-  const rel = toWorkspaceRelativeRootFile(node.fsPath, folders);
-  const cfg = vscode.workspace.getConfiguration('context');
-  await cfg.update('rootFile', rel, vscode.ConfigurationTarget.Workspace);
-  logUser(`[root] set context.rootFile=${rel} (from Project view)`);
-  updateRootStatus();
-}
-
-async function handlePdfClick(
-  page: number,
-  x: number,
-  y: number,
-  meta?: { pdfY?: number; pageHeight?: number },
-): Promise<void> {
-  if (backwardInFlight) {
-    logDebug('[synctex report] ignored duplicate click (in flight)');
-    return;
-  }
-  const cfg = vscode.workspace.getConfiguration('context');
-  if (!cfg.get<boolean>('synctex.enabled', true)) {
-    return;
-  }
-  if (!snapshot?.synctexPath || !snapshot.jobDir) {
-    void vscode.window.showWarningMessage('No SyncTeX data for backward search.');
-    return;
-  }
-
-  let toolchain: Toolchain;
-  try {
-    toolchain = getToolchain();
-  } catch (err) {
-    void vscode.window.showErrorMessage(err instanceof Error ? err.message : String(err));
-    return;
-  }
-
-  backwardInFlight = true;
-  logDebug(
-    `[synctex report] page=${page} x=${x} y=${y}` +
-      (meta?.pdfY != null ? ` pdfY=${meta.pdfY}` : '') +
-      (meta?.pageHeight != null ? ` pageHeight=${meta.pageHeight}` : '') +
-      ` synctex=${snapshot.synctexPath} jobDir=${snapshot.jobDir}`,
-  );
-
-  try {
-    const { result: hit, argv, cwd, note } = await backwardSync(
-      toolchain,
-      snapshot.synctexPath,
-      page,
-      x,
-      y,
-      snapshot.jobDir,
-    );
-    logDebug(`[synctex report] cwd=${cwd} argv=${JSON.stringify(argv)}`);
-    logDebug(
-      `[synctex report] file=${hit.filename} line=${hit.linenumber} tol=${hit.tolerance}` +
-        (hit.refined ? ' refined=1' : '') +
-        (hit.coarseFloatLine ? ' coarseFloatLine=1' : ''),
-    );
-    if (note) {
-      logDebug(`[synctex report] ${note}`);
-    }
-
-    // Coarse float/caption tags (line ≤ 1 mid-page) are not useful navigation
-    // targets — message only, same class of outcome as an empty image click.
-    if (hit.coarseFloatLine) {
-      void vscode.window.showInformationMessage(COARSE_FLOAT_LINE_USER_MESSAGE);
-      return;
-    }
-
-    let targetPath = hit.filename;
-    if (!path.isAbsolute(targetPath)) {
-      targetPath = path.resolve(snapshot.jobDir, targetPath);
-    }
-    const uri = vscode.Uri.file(targetPath);
-    const doc = await vscode.workspace.openTextDocument(uri);
-    const ed = await vscode.window.showTextDocument(doc, vscode.ViewColumn.One);
-    const line = Math.max(0, hit.linenumber - 1);
-    const range = new vscode.Range(line, 0, line, 0);
-    ed.selection = new vscode.Selection(range.start, range.start);
-    ed.revealRange(range, vscode.TextEditorRevealType.InCenter);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    logDebug(`[synctex report] ${msg}`);
-    if (err instanceof SynctexError && err.kind === 'empty') {
-      void vscode.window.showWarningMessage(EMPTY_BACKWARD_USER_MESSAGE);
-    } else {
-      void vscode.window.showWarningMessage(msg);
-    }
-  } finally {
-    backwardInFlight = false;
-  }
-}
-
-
 export function activate(context: vscode.ExtensionContext): void {
-  extensionContext = context;
-  output = initOutputLog(context.subscriptions).user;
-  digestifOutput = vscode.window.createOutputChannel('ConTeXt DigestiF');
+  runtime.extensionContext = context;
+  runtime.output = initOutputLog(context.subscriptions).user;
+  runtime.digestifOutput = vscode.window.createOutputChannel('ConTeXt DigestiF');
 
-  rootStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
-  rootStatus.command = 'context.pickRootFile';
-  rootStatus.show();
+  runtime.rootStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+  runtime.rootStatus.command = 'context.pickRootFile';
+  runtime.rootStatus.show();
 
-  buildStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 99);
-  buildStatus.show();
+  runtime.buildStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 99);
+  runtime.buildStatus.show();
 
-  buildDiagnostics = vscode.languages.createDiagnosticCollection('context.build');
-  foldDiagnostics = vscode.languages.createDiagnosticCollection('context.folding');
+  runtime.buildDiagnostics = vscode.languages.createDiagnosticCollection('context.build');
+  runtime.foldDiagnostics = vscode.languages.createDiagnosticCollection('context.folding');
 
-  pdfPanel = new PdfPanel(
+  runtime.pdfPanel = new PdfPanel(
     context.extensionUri,
     (page, x, y, meta) => {
       void handlePdfClick(page, x, y, meta);
@@ -661,27 +82,27 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
-  digestif = createDigestifClient({
-    output: digestifOutput,
+  runtime.digestif = createDigestifClient({
+    output: runtime.digestifOutput,
     buildId: BUILD_ID,
   });
 
-  buildController = new BuildController({
-    output,
-    buildDiagnostics,
+  runtime.buildController = new BuildController({
+    output: runtime.output,
+    buildDiagnostics: runtime.buildDiagnostics,
     resolveToolchain: getToolchain,
     resolveRoot: resolveCurrentRoot,
     activeTexPath,
     buildId: BUILD_ID,
-    buildStatus,
+    buildStatus: runtime.buildStatus,
     onBuildStart: () => {
-      pdfPanel.setBuilding(true, 'Building…');
+      runtime.pdfPanel.setBuilding(true, 'Building…');
       updateRootStatus();
-      const root = lastRootResolution;
-      if (extensionContext && root) {
+      const root = runtime.lastRootResolution;
+      if (runtime.extensionContext && root) {
         const openDoc = vscode.workspace.textDocuments.find((d) => d.uri.fsPath === root.rootFile);
         void maybeOfferTexContextAssociation(
-          extensionContext,
+          runtime.extensionContext,
           root.rootFile,
           openDoc?.languageId,
           logUser,
@@ -689,29 +110,29 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     },
     onBuildEnd: () => {
-      pdfPanel.setBuilding(false);
+      runtime.pdfPanel.setBuilding(false);
     },
     onBuildSuccess: afterSuccessfulBuild,
   });
 
-  const foldProvider = new ContextFoldingRangeProvider(foldDiagnostics);
+  const foldProvider = new ContextFoldingRangeProvider(runtime.foldDiagnostics);
   const linkProvider = new ContextDocumentLinkProvider();
   const figureHover = new ContextFigureHoverProvider();
 
   context.subscriptions.push(
-    digestifOutput,
-    rootStatus,
-    buildStatus,
-    buildDiagnostics,
-    foldDiagnostics,
-    { dispose: () => pdfPanel.dispose() },
-    { dispose: () => digestif?.dispose() },
-    { dispose: () => buildController?.dispose() },
+    runtime.digestifOutput,
+    runtime.rootStatus,
+    runtime.buildStatus,
+    runtime.buildDiagnostics,
+    runtime.foldDiagnostics,
+    { dispose: () => runtime.pdfPanel.dispose() },
+    { dispose: () => runtime.digestif?.dispose() },
+    { dispose: () => runtime.buildController?.dispose() },
     vscode.commands.registerCommand('context.buildAndPreview', () => {
-      buildController?.requestCommandBuild();
+      runtime.buildController?.requestCommandBuild();
     }),
     vscode.commands.registerCommand('context.cancelBuild', () => {
-      buildController?.cancelBuild();
+      runtime.buildController?.cancelBuild();
     }),
     vscode.commands.registerCommand('context.forwardSyncTeX', () => {
       void doForwardSync();
@@ -726,7 +147,7 @@ export function activate(context: vscode.ExtensionContext): void {
       void pickRootFile();
     }),
     vscode.commands.registerCommand('context.refreshKeywords', () => {
-      void refreshCommandKeywords(context.extensionPath, output);
+      void refreshCommandKeywords(context.extensionPath, runtime.output);
     }),
     vscode.languages.registerFoldingRangeProvider(contextDocumentSelector, foldProvider),
     vscode.languages.registerDocumentLinkProvider(contextDocumentSelector, linkProvider),
@@ -740,14 +161,14 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       const onSave = vscode.workspace.getConfiguration('context').get<boolean>('build.onSave', false);
       if (onSave) {
-        buildController?.requestSaveBuild();
+        runtime.buildController?.requestSaveBuild();
       }
     }),
     vscode.workspace.onDidChangeTextDocument((e) => {
       if (!isContextLikeDocument(e.document)) {
         return;
       }
-      publishFoldDiagnostics(e.document, foldDiagnostics);
+      publishFoldDiagnostics(e.document, runtime.foldDiagnostics);
     }),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('context.rootFile')) {
@@ -760,7 +181,7 @@ export function activate(context: vscode.ExtensionContext): void {
         e.affectsConfiguration('context.digestif.enabled') ||
         e.affectsConfiguration('context.digestifPath')
       ) {
-        digestif?.onSettingsChanged();
+        runtime.digestif?.onSettingsChanged();
       }
     }),
     vscode.workspace.onDidOpenTextDocument((doc) => {
@@ -784,7 +205,7 @@ export function activate(context: vscode.ExtensionContext): void {
   });
 
   registerProjectManager(context, {
-    output,
+    output: runtime.output,
     refreshProjectView: () => projectView.refresh(),
   });
 
@@ -798,22 +219,22 @@ export function activate(context: vscode.ExtensionContext): void {
   }
   logUser(`ConTeXt Tools activated  version=${version}  BUILD_ID=${BUILD_ID}`);
   logDebug(`extensionPath=${context.extensionPath}`);
-  digestifOutput.appendLine(
+  runtime.digestifOutput.appendLine(
     `ConTeXt DigestiF channel  BUILD_ID=${BUILD_ID} (build uses the ConTeXt channel only)`,
   );
   updateRootStatus();
-  const r = lastRootResolution;
+  const r = runtime.lastRootResolution;
   if (r) {
     logUser(`[root] ${r.rootFile} (rule=${r.rule})`);
   }
-  digestif.scheduleStart();
+  runtime.digestif.scheduleStart();
   void maybeWarnLatexWorkshopConflict(context, logUser);
   void maybeOpenExistingOnActivate();
-  output.show(true);
+  runtime.output.show(true);
 }
 
 export function deactivate(): void {
-  void digestif?.stop();
-  pdfPanel?.dispose();
-  buildController?.dispose();
+  void runtime.digestif?.stop();
+  runtime.pdfPanel?.dispose();
+  runtime.buildController?.dispose();
 }
