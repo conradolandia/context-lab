@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { isExecutable } from './execPath';
 
 /** Relative path to the core ConTeXt interface XML under a typical LMTX tree. */
 export const CONTEXT_INTERFACE_REL = path.join(
@@ -138,15 +139,6 @@ export function candidateBinDirs(root: string): string[] {
   // Flat installs sometimes put binaries directly under root
   push(root);
   return dirs;
-}
-
-function isExecutable(filePath: string): boolean {
-  try {
-    fs.accessSync(filePath, fs.constants.X_OK);
-    return fs.statSync(filePath).isFile();
-  } catch {
-    return false;
-  }
 }
 
 export function findBinaryUnderRoot(root: string, name: string): string | undefined {
