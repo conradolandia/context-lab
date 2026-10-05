@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { PROJECT_NO_STRUCTURE_MESSAGE } from './messages';
 import { parentSearchDirs, resolveIncludePath } from './pathResolve';
 import {
   scanStructure,
@@ -629,8 +630,7 @@ export function buildProjectModel(opts: ProjectModelOptions): ProjectModelResult
       unresolvedCount: 0,
       fileCount: 1,
       timingsMs: { total: Date.now() - started },
-      emptyMessage:
-        'No ConTeXt product or project found. Open a .tex / .mkiv file with \\startproduct / \\startproject, set context.rootFile, or run ConTeXt: New Project Structure…',
+      emptyMessage: PROJECT_NO_STRUCTURE_MESSAGE,
     };
   }
 

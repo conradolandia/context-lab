@@ -16,7 +16,6 @@ const MAGIC_ROOT =
   /^\s*%\s*!TEX\s+root\s*=\s*(.+?)\s*$/i;
 const START_COMPONENT = /\\startcomponent\b/;
 const PRODUCT_CMD = /\\product\s+\{?([^\s\}%]+)\}?/;
-const PROJECT_CMD = /\\project\s+\{?([^\s\}%]+)\}?/;
 
 function existsTex(p: string): boolean {
   try {
@@ -103,8 +102,7 @@ export function resolveComponentProduct(
     seen.add(key);
     const hit = resolveCandidate(d, productName);
     if (hit) {
-      // Confirm product file; project directive does not change the compile root.
-      void PROJECT_CMD;
+      // Product file is the compile root; a \\project directive does not change it.
       return hit;
     }
   }
@@ -123,23 +121,44 @@ export interface ResolveRootOptions {
 }
 
 /**
+ * Resolve `context.rootFile` (relative or absolute) to an absolute path.
+ * Relative paths use the first workspace folder, else the active file's directory.
+ */
+export function resolveRootFileSetting(
+  setting: string,
+  workspaceFolders: string[],
+  activeFile?: string,
+): string | undefined {
+  const s = setting.trim();
+  if (!s) {
+    return undefined;
+  }
+  if (path.isAbsolute(s)) {
+    return path.resolve(s);
+  }
+  if (workspaceFolders.length > 0) {
+    return path.resolve(workspaceFolders[0], s);
+  }
+  if (activeFile) {
+    return path.resolve(path.dirname(activeFile), s);
+  }
+  return path.resolve(s);
+}
+
+/**
  * Resolve the ConTeXt main/root file to compile.
  * Order: setting → magic comment → component→product → active file.
  */
 export function resolveRootFile(opts: ResolveRootOptions): RootResolution {
   const folders = opts.workspaceFolders ?? [];
-  const setting = (opts.rootFileSetting ?? '').trim();
+  const settingAbs = resolveRootFileSetting(
+    opts.rootFileSetting ?? '',
+    folders,
+    opts.activeFile,
+  );
 
-  if (setting) {
-    let abs: string;
-    if (path.isAbsolute(setting)) {
-      abs = setting;
-    } else if (folders.length > 0) {
-      abs = path.resolve(folders[0], setting);
-    } else {
-      abs = path.resolve(path.dirname(opts.activeFile), setting);
-    }
-    return { rootFile: abs, rule: 'setting:context.rootFile' };
+  if (settingAbs) {
+    return { rootFile: settingAbs, rule: 'setting:context.rootFile' };
   }
 
   const magic = parseMagicRoot(opts.activeText, opts.activeFile);

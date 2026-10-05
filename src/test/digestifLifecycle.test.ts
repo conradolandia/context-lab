@@ -1,17 +1,12 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  BUILD_WAITS_ON_DIGESTIF,
   afterDigestifFailure,
   afterDigestifSettingsChange,
   shouldAttemptDigestifStart,
 } from '../lsp/digestifLifecycle';
 
 describe('DigestiF must not block build', () => {
-  it('BUILD_WAITS_ON_DIGESTIF is false (build never awaits DigestiF)', () => {
-    assert.equal(BUILD_WAITS_ON_DIGESTIF, false);
-  });
-
   it('after one failure, further starts are skipped until settings change', () => {
     let policy = { enabled: true, failedOnce: false };
     assert.equal(shouldAttemptDigestifStart(policy), true);

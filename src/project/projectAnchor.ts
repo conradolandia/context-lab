@@ -1,6 +1,10 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { resolveRootFile, resolveComponentProduct } from './rootFile';
+import {
+  resolveRootFile,
+  resolveComponentProduct,
+  resolveRootFileSetting,
+} from './rootFile';
 import { scanStructure, type StructureScanResult } from './structureScan';
 
 export interface ProjectAnchorOptions {
@@ -44,27 +48,6 @@ function defaultExists(p: string): boolean {
   } catch {
     return false;
   }
-}
-
-function resolveSetting(
-  setting: string,
-  folders: string[],
-  activeFile: string | undefined,
-): string | undefined {
-  const s = setting.trim();
-  if (!s) {
-    return undefined;
-  }
-  if (path.isAbsolute(s)) {
-    return path.resolve(s);
-  }
-  if (folders[0]) {
-    return path.resolve(folders[0], s);
-  }
-  if (activeFile) {
-    return path.resolve(path.dirname(activeFile), s);
-  }
-  return path.resolve(s);
 }
 
 /** True when a scan looks like a product/project graph root (not a lone component). */
@@ -117,7 +100,11 @@ export function resolveProjectAnchor(opts: ProjectAnchorOptions): ProjectAnchorR
   const lastEntry = opts.lastEntryFile ? path.resolve(opts.lastEntryFile) : undefined;
   const graph = opts.lastGraphPaths;
 
-  const settingAbs = resolveSetting(opts.rootFileSetting ?? '', folders, active);
+  const settingAbs = resolveRootFileSetting(
+    opts.rootFileSetting ?? '',
+    folders,
+    active,
+  );
   if (settingAbs) {
     const outside =
       active != null && graph != null && graph.size > 0 && !graph.has(active);

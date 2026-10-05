@@ -336,4 +336,23 @@ describe('resolveProjectAnchor', () => {
     assert.equal(anchor!.entryFile, product);
     assert.equal(anchor!.reason, 'setting:context.rootFile');
   });
+
+  it('resolves relative context.rootFile via shared setting helper', async () => {
+    const dir = await tempDir();
+    const product = write(
+      dir,
+      'book.tex',
+      '\\startproduct book\n\\stopproduct\n',
+    );
+    const chap = write(dir, 'c.tex', '\\startcomponent\n\\stopcomponent\n');
+    const anchor = resolveProjectAnchor({
+      activeFile: chap,
+      activeText: fs.readFileSync(chap, 'utf8'),
+      rootFileSetting: 'book.tex',
+      workspaceFolders: [dir],
+    });
+    assert.ok(anchor);
+    assert.equal(anchor!.entryFile, product);
+    assert.equal(anchor!.reason, 'setting:context.rootFile');
+  });
 });
