@@ -10,6 +10,7 @@ import {
   isStrongStructureRoot,
   resolveProjectAnchor,
 } from './projectAnchor';
+import { PROJECT_NO_STRUCTURE_MESSAGE } from './messages';
 import { treeId } from './projectTreeIds';
 import { scanStructure } from './structureScan';
 import { logDebug } from '../outputLog';
@@ -439,8 +440,7 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<ProjectTreeI
         unresolvedCount: 0,
         fileCount: 0,
         timingsMs: { total: 0 },
-        emptyMessage:
-          'No ConTeXt product or project found. Open a .tex / .mkiv file, set context.rootFile, or run ConTeXt: New Project Structure…',
+        emptyMessage: PROJECT_NO_STRUCTURE_MESSAGE,
       };
       this.applyOutsideMessage(false, undefined);
       return this.model;

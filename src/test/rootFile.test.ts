@@ -8,6 +8,7 @@ import {
   parseMagicRoot,
   resolveComponentProduct,
   resolveRootFile,
+  resolveRootFileSetting,
 } from '../project/rootFile';
 
 async function makeTempDir(): Promise<string> {
@@ -43,6 +44,41 @@ describe('rootFile component→product', () => {
     fs.writeFileSync(comp, compText);
     const hit = resolveComponentProduct(comp, compText, [dir]);
     assert.equal(hit, product);
+  });
+});
+
+describe('resolveRootFileSetting', () => {
+  it('returns undefined for empty / whitespace setting', () => {
+    assert.equal(resolveRootFileSetting('', ['/ws']), undefined);
+    assert.equal(resolveRootFileSetting('   ', ['/ws']), undefined);
+  });
+
+  it('keeps absolute paths', () => {
+    const abs = path.resolve('/tmp/main.tex');
+    assert.equal(resolveRootFileSetting(abs, ['/ws']), abs);
+  });
+
+  it('resolves relative to the first workspace folder', () => {
+    const folders = ['/ws/a', '/ws/b'];
+    assert.equal(
+      resolveRootFileSetting('docs/main.tex', folders),
+      path.resolve('/ws/a', 'docs/main.tex'),
+    );
+  });
+
+  it('resolves relative to the active file when no workspace folders', () => {
+    const active = '/home/user/proj/chap/a.tex';
+    assert.equal(
+      resolveRootFileSetting('../main.tex', [], active),
+      path.resolve('/home/user/proj/chap', '../main.tex'),
+    );
+  });
+
+  it('falls back to cwd resolve when no folders and no active file', () => {
+    assert.equal(
+      resolveRootFileSetting('main.tex', []),
+      path.resolve('main.tex'),
+    );
   });
 });
 
