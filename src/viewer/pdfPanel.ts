@@ -5,6 +5,7 @@ import * as fsp from 'node:fs/promises';
 import { PdfRangeServer } from './pdfServer';
 import { pdfPanelTitle } from './pdfPanelTitle';
 
+/** Webview → host messages (click coords are reverse SyncTeX, not forward boxes). */
 export type ViewerMessage =
   | { type: 'ready' }
   | {
@@ -33,6 +34,7 @@ export type ViewerMessage =
       w: number;
       h: number;
       scale: number;
+      /** Forward SyncTeX box in SyncTeX top-down pt (llx/lly/urx/ury only). */
       llx?: number;
       lly?: number;
       urx?: number;
@@ -110,6 +112,10 @@ export type ViewerMessage =
       } | null;
     };
 
+/**
+ * Host → webview forward SyncTeX payload.
+ * Boxes use llx/lly/urx/ury only (legacy x/y/width/height dropped).
+ */
 export interface ForwardSyncPayload {
   page: number;
   llx: number;
@@ -123,6 +129,11 @@ export interface ForwardSyncPayload {
   /** When true, scroll to the page but do not paint an edge-band highlight. */
   skipHighlight?: boolean;
 }
+
+/** Host → webview forwardSync message (matches viewer normalizeHighlight schema). */
+export type ForwardSyncMessage = {
+  type: 'forwardSync';
+} & ForwardSyncPayload;
 
 export type PdfPanelState = {
   pdfPath?: string;
@@ -438,21 +449,18 @@ export class PdfPanel {
 
   public async forwardSync(payload: ForwardSyncPayload): Promise<void> {
     this.revealOrCreate();
-    await this.panel!.webview.postMessage({
+    const msg: ForwardSyncMessage = {
       type: 'forwardSync',
       page: payload.page,
       llx: payload.llx,
       lly: payload.lly,
       urx: payload.urx,
       ury: payload.ury,
-      x: payload.llx,
-      y: payload.lly,
-      width: payload.urx - payload.llx,
-      height: payload.ury - payload.lly,
       synctexPageH: payload.synctexPageH,
       synctexPageW: payload.synctexPageW,
       skipHighlight: payload.skipHighlight === true,
-    });
+    };
+    await this.panel!.webview.postMessage(msg);
   }
 
   public getCurrentPdfPath(): string | undefined {

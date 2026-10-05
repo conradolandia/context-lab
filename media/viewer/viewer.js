@@ -279,6 +279,9 @@ function pdfBoxToViewport(pageViewport, llx, lly, urx, ury) {
  * `.synctex` h/r after sp→pt). Map into PDF.js bottom-up via page.view using
  * SyncTeX pt × viewport scale (crop origin only — no pageViewH/synctexPageH
  * stretch). Reverse SyncTeX still converts clicks with pageHeight - pdfY.
+ *
+ * PDF-space step must stay equivalent to src/synctex/coords.ts findBoxToPdfBox.
+ * Shared contract vectors: src/synctex/coordsVectors.ts (viewerFindBoxMirror.test).
  */
 function mtxFindBoxToViewport(
   page,
@@ -304,17 +307,18 @@ function mtxFindBoxToViewport(
   return pdfBoxToViewport(pageViewport, pdfLlx, pdfBottom, pdfUrx, pdfTop);
 }
 
+/** Forward SyncTeX host payload: llx/lly/urx/ury only (no legacy x/y/width/height). */
 function normalizeHighlight(msg) {
-  const llx = msg.llx ?? msg.x ?? 0;
-  const lly = msg.lly ?? msg.y ?? 0;
-  const urx = msg.urx ?? (msg.width != null ? llx + msg.width : llx + 40);
-  const ury = msg.ury ?? (msg.height != null ? lly + msg.height : lly + 12);
+  const llx = Number(msg.llx);
+  const lly = Number(msg.lly);
+  const urx = Number(msg.urx);
+  const ury = Number(msg.ury);
   return {
     page: Number(msg.page) || 1,
-    llx,
-    lly,
-    urx,
-    ury,
+    llx: Number.isFinite(llx) ? llx : 0,
+    lly: Number.isFinite(lly) ? lly : 0,
+    urx: Number.isFinite(urx) ? urx : 0,
+    ury: Number.isFinite(ury) ? ury : 0,
     synctexPageH:
       msg.synctexPageH != null && Number(msg.synctexPageH) > 0
         ? Number(msg.synctexPageH)

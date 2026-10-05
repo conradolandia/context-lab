@@ -28,6 +28,7 @@ const testOptions = {
     join(__dirname, 'src/test/mtxSynctex.test.ts'),
     join(__dirname, 'src/test/pdfServer.test.ts'),
     join(__dirname, 'src/test/coords.test.ts'),
+    join(__dirname, 'src/test/viewerFindBoxMirror.test.ts'),
     join(__dirname, 'src/test/rootFile.test.ts'),
     join(__dirname, 'src/test/digestifEnv.test.ts'),
     join(__dirname, 'src/test/digestifProbe.test.ts'),

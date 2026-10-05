@@ -9,9 +9,9 @@ import {
   mtxBoxToPdfBox,
   type PageBox,
 } from '../synctex/coords';
+import { FIND_BOX_VECTORS, PAGE_680 } from '../synctex/coordsVectors';
 
-/** ~680pt page (view box origin at 0). */
-const page680: PageBox = { xMin: 0, yMin: 0, xMax: 595, yMax: 680 };
+const page680: PageBox = PAGE_680;
 
 describe('mtx-synctex y-axis', () => {
   it('maps a PDF click near the top to a small --report (top-down) y', () => {
@@ -28,58 +28,36 @@ describe('mtx-synctex y-axis', () => {
     assert.ok(mtxY > 600, `expected large top-down y, got ${mtxY}`);
   });
 
-  it('treats --find boxes as SyncTeX top-down (small lly → CSS near top)', () => {
-    // Retest: --find aligns with same-line synctex y (top-down), not PDF bottom-up.
-    const topHit = { llx: 74, lly: 20, urx: 274, ury: 35 };
-    const css = findBoxToCss(topHit, page680, 1);
-    assert.ok(css.top < 40, `expected near CSS top, got ${css.top}`);
-    assert.ok(css.top + css.height < 55);
-
-    const pdf = findBoxToPdfBox(topHit, page680);
-    // PDF bottom-up: near top → high y
-    assert.ok(pdf.ury > 640, `expected PDF-near-top ury, got ${pdf.ury}`);
-    assert.deepEqual(mtxBoxToPdfBox(topHit, page680), pdf);
-  });
-
-  it('maps synctex pt to CSS without pageViewH/synctexPageH stretch', () => {
-    // Retest v3: stretch pushed middle/bottom slightly too low; use synctex pt × scale.
-    const synctex = { width: 595, height: 651.4 };
-    const mid = { llx: 74, lly: 318, urx: 274, ury: 333 };
-    const css = findBoxToCss(mid, page680, 1, synctex);
-    assert.ok(
-      Math.abs(css.top - 318) < 0.5,
-      `expected css.top≈318 (no stretch), got ${css.top}`,
-    );
-    const pdf = findBoxToPdfBox(mid, page680, synctex);
-    assert.ok(
-      Math.abs(pdf.ury - (680 - 318)) < 0.5,
-      `expected PDF ury≈${680 - 318}, got ${pdf.ury}`,
-    );
-  });
-
-  it('places a lower-on-page --find box below a higher one in CSS', () => {
-    // Top-down: larger lly is lower on the page
-    const higher = { llx: 304, lly: 509, urx: 344, ury: 524 };
-    const lower = { llx: 304, lly: 538, urx: 344, ury: 553 };
-    const cssHigh = findBoxToCss(higher, page680, 1);
-    const cssLow = findBoxToCss(lower, page680, 1);
-    assert.ok(
-      cssLow.top > cssHigh.top,
-      `lower box top ${cssLow.top} should be below higher ${cssHigh.top}`,
-    );
-  });
-
-  it('does not invert bottom hits into middle-top (classic wrong flip)', () => {
-    // Bottom lly=513 must not become cssTop≈190 via (pageH-ury).
-    const bottom = { llx: 74, lly: 513, urx: 274, ury: 528 };
-    const css = findBoxToCss(bottom, page680, 1);
-    assert.ok(css.top > 480, `expected near bottom, got css.top=${css.top}`);
-    assert.ok(findBoxNormalize(bottom).lly === 513);
-  });
-
   it('round-trips pdfY ↔ --report mtxY', () => {
     for (const y of [0, 100, 340, 680]) {
       assert.equal(mtxYToPdfY(pdfYToMtxY(y, page680), page680), y);
     }
+  });
+});
+
+describe('find-box contract vectors (shared with viewer mirror)', () => {
+  for (const v of FIND_BOX_VECTORS) {
+    it(`${v.id}: findBoxToPdfBox / findBoxToCss match shared vectors`, () => {
+      const pdf = findBoxToPdfBox(v.box, v.page);
+      const css = findBoxToCss(v.box, v.page, v.scale);
+      assert.deepEqual(pdf, v.pdf);
+      assert.deepEqual(css, v.css);
+      assert.deepEqual(mtxBoxToPdfBox(v.box, v.page), pdf);
+    });
+  }
+
+  it('does not invert bottom hits into middle-top (classic wrong flip)', () => {
+    const bottom = FIND_BOX_VECTORS.find((v) => v.id === 'bottom-hit')!;
+    assert.ok(bottom.css.top > 480, `expected near bottom, got css.top=${bottom.css.top}`);
+    assert.equal(findBoxNormalize(bottom.box).lly, 513);
+  });
+
+  it('maps synctex pt to CSS without pageViewH/synctexPageH stretch', () => {
+    const mid = FIND_BOX_VECTORS.find((v) => v.id === 'mid-no-stretch')!;
+    const synctex = { width: 595, height: 651.4 };
+    const css = findBoxToCss(mid.box, mid.page, 1, synctex);
+    assert.deepEqual(css, mid.css);
+    const pdf = findBoxToPdfBox(mid.box, mid.page, synctex);
+    assert.deepEqual(pdf, mid.pdf);
   });
 });
