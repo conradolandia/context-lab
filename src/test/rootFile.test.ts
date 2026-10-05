@@ -1,10 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as fsp from 'node:fs/promises';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import {
+import { makeTempDir } from './helpers/tmpDir';
   parseMagicRoot,
   resolveComponentProduct,
   resolveRootFile,
@@ -12,13 +11,9 @@ import {
   toWorkspaceRelativeRootFile,
 } from '../project/rootFile';
 
-async function makeTempDir(): Promise<string> {
-  return fsp.mkdtemp(path.join(os.tmpdir(), 'context-root-'));
-}
-
 describe('rootFile magic comment', () => {
   it('parses % !TEX root relative to the active file', async () => {
-    const dir = await makeTempDir();
+    const dir = await makeTempDir('context-root-');
     const main = path.join(dir, 'main.tex');
     const chap = path.join(dir, 'chap', 'a.tex');
     fs.mkdirSync(path.dirname(chap), { recursive: true });
@@ -32,7 +27,7 @@ describe('rootFile magic comment', () => {
 
 describe('rootFile component→product', () => {
   it('resolves \\product next to a \\startcomponent file', async () => {
-    const dir = await makeTempDir();
+    const dir = await makeTempDir('context-root-');
     const product = path.join(dir, 'book.tex');
     const comp = path.join(dir, 'include', 'chap.tex');
     fs.mkdirSync(path.dirname(comp), { recursive: true });
@@ -85,7 +80,7 @@ describe('resolveRootFileSetting', () => {
 
 describe('resolveRootFile order', () => {
   it('prefers setting, then magic, then product, then active', async () => {
-    const dir = await makeTempDir();
+    const dir = await makeTempDir('context-root-');
     const settingMain = path.join(dir, 'setting.tex');
     const magicMain = path.join(dir, 'magic.tex');
     const product = path.join(dir, 'prod.tex');

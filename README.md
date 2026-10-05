@@ -46,7 +46,6 @@ Resolution: absolute `context.contextPath` / `context.mtxrunPath` overrides, the
 | `context.projectManager.setRootFileOnCreate` | `true` | Set `context.rootFile` after create |
 | `context.projectView.enabled` | `true` | ConTeXt activity-bar Project TreeView |
 | `context.projectView.includeInputs` | `false` | Show `\input` children under products |
-| `context.projectView.includeModules` | `false` | Reserved |
 | `context.projectView.maxFiles` | `500` | Cap on files visited while expanding the graph |
 | `context.projectView.refreshDebounceMs` | `300` | Debounce before rescan after edits/saves |
 | `context.build.args` | `[]` | Extra args after `--synctex=repeat` |

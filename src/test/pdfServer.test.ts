@@ -2,13 +2,13 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { PdfRangeServer } from '../viewer/pdfServer';
+import { makeTempDir } from './helpers/tmpDir';
 
 describe('PdfRangeServer', () => {
   it('serves Accept-Ranges, CORS, and 206 partial content', async () => {
-    const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'pdf-range-'));
+    const dir = await makeTempDir('pdf-range-');
     const pdfPath = path.join(dir, 't.pdf');
     const body = Buffer.from('%PDF-1.4\n' + 'x'.repeat(2000) + '\n%%EOF\n');
     await fsp.writeFile(pdfPath, body);

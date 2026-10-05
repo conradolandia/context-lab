@@ -1,8 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as fsp from 'node:fs/promises';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { buildProjectModel, type ProjectNode } from '../project/projectModel';
 import {
@@ -10,10 +8,7 @@ import {
   resolveProjectAnchor,
 } from '../project/projectAnchor';
 import { scanStructure } from '../project/structureScan';
-
-async function tempDir(): Promise<string> {
-  return fsp.mkdtemp(path.join(os.tmpdir(), 'context-project-'));
-}
+import { makeTempDir } from './helpers/tmpDir';
 
 function write(dir: string, rel: string, body: string): string {
   const abs = path.join(dir, rel);
@@ -49,7 +44,7 @@ describe('scanStructure fileRole', () => {
 
 describe('buildProjectModel', () => {
   it('builds a product + environment + components; dedupes repeated component', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-project-');
     const env = write(dir, 'env.tex', '\\startenvironment\n\\stopenvironment\n');
     const chap = write(dir, 'chapters/intro.tex', '\\startcomponent\n\\stopcomponent\n');
     const product = write(
@@ -86,7 +81,7 @@ describe('buildProjectModel', () => {
   });
 
   it('does not show \\usemodule or \\externalfigure nodes', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-project-');
     const product = write(
       dir,
       'book.tex',
@@ -99,7 +94,7 @@ describe('buildProjectModel', () => {
   });
 
   it('respects \\usepath relative to declaring file', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-project-');
     write(dir, 'lib/shared.tex', '\\startcomponent\n\\stopcomponent\n');
     const product = write(
       dir,
@@ -113,7 +108,7 @@ describe('buildProjectModel', () => {
   });
 
   it('project + two products: expands preferred product only', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-project-');
     write(dir, 'env.tex', '\\startenvironment\n\\stopenvironment\n');
     write(dir, 'a-chap.tex', '\\startcomponent\n\\stopcomponent\n');
     write(dir, 'b-chap.tex', '\\startcomponent\n\\stopcomponent\n');
@@ -153,7 +148,7 @@ describe('buildProjectModel', () => {
   });
 
   it('does not expand entry product twice via project mutual reference', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-project-');
     write(dir, 'c.tex', '\\startcomponent\n\\stopcomponent\n');
     const book = write(
       dir,
@@ -170,7 +165,7 @@ describe('buildProjectModel', () => {
   });
 
   it('skips \\component inside environment files when collecting product children', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-project-');
     write(
       dir,
       'env.tex',
@@ -192,7 +187,7 @@ describe('buildProjectModel', () => {
   });
 
   it('honours maxFiles budget', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-project-');
     const lines = ['\\startproduct book'];
     for (let i = 0; i < 20; i++) {
       write(dir, `c${i}.tex`, '\\startcomponent\n\\stopcomponent\n');
@@ -212,7 +207,7 @@ describe('buildProjectModel', () => {
   });
 
   it('includeInputs=false hides \\input; true shows them', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-project-');
     write(dir, 'pre.tex', '% preamble\n');
     const product = write(
       dir,
@@ -228,7 +223,7 @@ describe('buildProjectModel', () => {
   it('active editor = component still returns full product tree (no re-root stub)', async () => {
     // Mirrors ConTeXt test layout: product lists components; component files
     // are plain \\startcomponent without \\product / \\project (common in the wild).
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-project-');
     write(dir, 'env.tex', '\\startenvironment\n\\stopenvironment\n');
     const chap1 = write(
       dir,
@@ -293,7 +288,7 @@ describe('buildProjectModel', () => {
 
 describe('resolveProjectAnchor', () => {
   it('keeps last product when active is an unrelated file', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-project-');
     const chap = write(dir, 'c.tex', '\\startcomponent\n\\stopcomponent\n');
     const product = write(
       dir,
@@ -318,7 +313,7 @@ describe('resolveProjectAnchor', () => {
   });
 
   it('prefers context.rootFile over active component', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-project-');
     write(dir, 'c.tex', '\\startcomponent\n\\stopcomponent\n');
     const product = write(
       dir,
@@ -338,7 +333,7 @@ describe('resolveProjectAnchor', () => {
   });
 
   it('resolves relative context.rootFile via shared setting helper', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-project-');
     const product = write(
       dir,
       'book.tex',

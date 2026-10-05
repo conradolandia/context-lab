@@ -1,15 +1,10 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as fsp from 'node:fs/promises';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { parseUsePathBody, resolveIncludePath } from '../project/pathResolve';
 import { scanStructure } from '../project/structureScan';
-
-async function tempDir(): Promise<string> {
-  return fsp.mkdtemp(path.join(os.tmpdir(), 'context-path-'));
-}
+import { makeTempDir } from './helpers/tmpDir';
 
 describe('pathResolve', () => {
   it('parses usepath body', () => {
@@ -21,7 +16,7 @@ describe('pathResolve', () => {
   });
 
   it('resolves \\component name with usepath and extension', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-path-');
     const main = path.join(dir, 'main.tex');
     const chapDir = path.join(dir, 'chapters');
     fs.mkdirSync(chapDir, { recursive: true });
@@ -38,7 +33,7 @@ describe('pathResolve', () => {
   });
 
   it('resolves bracket form and figure extensions', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-path-');
     const main = path.join(dir, 'main.tex');
     const fig = path.join(dir, 'plot.png');
     fs.writeFileSync(fig, 'fake');
@@ -51,7 +46,7 @@ describe('pathResolve', () => {
     assert.equal(hit, fig);
   });
   it('resolves wiki §5 product subdirectory layout', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-path-');
     const project = path.join(dir, 'project_series.tex');
     const bookDir = path.join(dir, 'book-one');
     fs.mkdirSync(bookDir, { recursive: true });

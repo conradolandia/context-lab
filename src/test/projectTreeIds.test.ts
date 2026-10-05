@@ -1,15 +1,10 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as fsp from 'node:fs/promises';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { buildProjectModel } from '../project/projectModel';
 import { collectTreeIds, treeId } from '../project/projectTreeIds';
-
-async function tempDir(): Promise<string> {
-  return fsp.mkdtemp(path.join(os.tmpdir(), 'context-tree-ids-'));
-}
+import { makeTempDir } from './helpers/tmpDir';
 
 function write(dir: string, rel: string, body: string): string {
   const abs = path.join(dir, rel);
@@ -50,7 +45,7 @@ describe('projectTreeIds', () => {
   });
 
   it('keeps unique ids when product and components both load the same env', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-tree-ids-');
     const env = write(
       dir,
       'env_book.tex',
@@ -105,7 +100,7 @@ describe('projectTreeIds', () => {
   });
 
   it('keeps unique ids for unresolved env under multiple parents', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-tree-ids-');
     write(
       dir,
       'chapters/one.tex',

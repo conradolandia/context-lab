@@ -1,18 +1,13 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as fsp from 'node:fs/promises';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { openTextFromDocuments, readTexSource } from '../project/readSource';
-
-async function tempDir(): Promise<string> {
-  return fsp.mkdtemp(path.join(os.tmpdir(), 'context-read-'));
-}
+import { makeTempDir } from './helpers/tmpDir';
 
 describe('readTexSource', () => {
   it('prefers open buffer over disk', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-read-');
     const file = path.join(dir, 'main.tex');
     fs.writeFileSync(file, 'disk');
     const text = readTexSource(file, {
@@ -24,7 +19,7 @@ describe('readTexSource', () => {
   });
 
   it('reads from disk when no open buffer', async () => {
-    const dir = await tempDir();
+    const dir = await makeTempDir('context-read-');
     const file = path.join(dir, 'main.tex');
     fs.writeFileSync(file, 'from-disk');
     const text = readTexSource(file, {

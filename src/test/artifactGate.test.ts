@@ -2,7 +2,6 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   hasPdfHeader,
@@ -12,14 +11,11 @@ import {
   isConTeXtPreviewPdf,
   ArtifactGateError,
 } from '../build/artifactGate';
-
-async function makeTempDir(): Promise<string> {
-  return fsp.mkdtemp(path.join(os.tmpdir(), 'context-gate-'));
-}
+import { makeTempDir } from './helpers/tmpDir';
 
 describe('artifactGate', () => {
   it('rejects truncated / non-PDF header', async () => {
-    const dir = await makeTempDir();
+    const dir = await makeTempDir('context-gate-');
     const pdf = path.join(dir, 'bad.pdf');
     await fsp.writeFile(pdf, 'NOTAPDF');
     await assert.rejects(
@@ -30,7 +26,7 @@ describe('artifactGate', () => {
   });
 
   it('waits while size is still growing', async () => {
-    const dir = await makeTempDir();
+    const dir = await makeTempDir('context-gate-');
     const pdf = path.join(dir, 'growing.pdf');
     await fsp.writeFile(pdf, '%PDF-1.4\n');
 
@@ -51,7 +47,7 @@ describe('artifactGate', () => {
   });
 
   it('gates the real job PDF + synctex without copying to a cache', async () => {
-    const dir = await makeTempDir();
+    const dir = await makeTempDir('context-gate-');
     const jobPdf = path.join(dir, 'job.pdf');
     const jobSyn = path.join(dir, 'job.synctex');
 
@@ -80,7 +76,7 @@ describe('artifactGate', () => {
   });
 
   it('isConTeXtPreviewPdf requires synctex sibling or related job path', async () => {
-    const dir = await makeTempDir();
+    const dir = await makeTempDir('context-gate-');
     const jobPdf = path.join(dir, 'job.pdf');
     const otherPdf = path.join(dir, 'other.pdf');
     const jobSyn = path.join(dir, 'job.synctex');

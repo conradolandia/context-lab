@@ -1,18 +1,11 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { hasErrorDiagnostics, parseContextLog } from '../build/parseLog';
-
-const fixtures = path.join(__dirname, 'fixtures', 'diagnostics');
-
-function readFixture(...parts: string[]): string {
-  return fs.readFileSync(path.join(fixtures, ...parts), 'utf8');
-}
+import { readFixture } from './helpers/fixtures';
 
 describe('parseContextLog LMTX fixtures', () => {
   it('parses tex error on line N in file X (undefined csname)', () => {
-    const text = readFixture('undef.stdout.txt');
+    const text = readFixture('diagnostics', 'undef.stdout.txt');
     const diags = parseContextLog(text);
     const err = diags.find((d) => d.severity === 'error' && /Undefined/i.test(d.message));
     assert.ok(err, 'expected undefined control sequence error');
@@ -21,7 +14,7 @@ describe('parseContextLog LMTX fixtures', () => {
   });
 
   it('parses missing input file', () => {
-    const text = readFixture('missing-input.log.txt');
+    const text = readFixture('diagnostics', 'missing-input.log.txt');
     const diags = parseContextLog(text);
     const err = diags.find((d) => /not found/i.test(d.message));
     assert.ok(err);
@@ -30,7 +23,7 @@ describe('parseContextLog LMTX fixtures', () => {
   });
 
   it('parses overfull box as warning with file:line', () => {
-    const text = readFixture('overfull.stdout.txt');
+    const text = readFixture('diagnostics', 'overfull.stdout.txt');
     const diags = parseContextLog(text);
     const w = diags.find((d) => /overfull/i.test(d.message));
     assert.ok(w);
@@ -40,7 +33,7 @@ describe('parseContextLog LMTX fixtures', () => {
   });
 
   it('parses LMTX loose hbox (underfull) as warning', () => {
-    const text = readFixture('underfull.stdout.txt');
+    const text = readFixture('diagnostics', 'underfull.stdout.txt');
     const diags = parseContextLog(text);
     const w = diags.find((d) => /loose|underfull/i.test(d.message));
     assert.ok(w);
@@ -49,9 +42,10 @@ describe('parseContextLog LMTX fixtures', () => {
   });
 
   it('parses missing module', () => {
-    const text = [readFixture('missing-mod.stdout.txt'), readFixture('missing-mod.log.txt')].join(
-      '\n',
-    );
+    const text = [
+      readFixture('diagnostics', 'missing-mod.stdout.txt'),
+      readFixture('diagnostics', 'missing-mod.log.txt'),
+    ].join('\n');
     const diags = parseContextLog(text);
     const err = diags.find((d) => /module/i.test(d.message) && /not found/i.test(d.message));
     assert.ok(err);
@@ -59,7 +53,7 @@ describe('parseContextLog LMTX fixtures', () => {
   });
 
   it('clean compile produces zero error diagnostics', () => {
-    const text = readFixture('clean.full-stdout.txt');
+    const text = readFixture('diagnostics', 'clean.full-stdout.txt');
     const diags = parseContextLog(text);
     assert.equal(hasErrorDiagnostics(diags), false);
     assert.equal(
@@ -70,7 +64,7 @@ describe('parseContextLog LMTX fixtures', () => {
   });
 
   it('dedupes multi-pass duplicate messages', () => {
-    const text = readFixture('overfull.stdout.txt');
+    const text = readFixture('diagnostics', 'overfull.stdout.txt');
     const diags = parseContextLog(text);
     const overfulls = diags.filter((d) => /overfull/i.test(d.message));
     assert.equal(overfulls.length, 1);

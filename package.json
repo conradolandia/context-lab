@@ -267,11 +267,6 @@
           "default": false,
           "description": "When true, show \\input children under products in the Project view."
         },
-        "context.projectView.includeModules": {
-          "type": "boolean",
-          "default": false,
-          "description": "Reserved. \\usemodule / \\externalfigure are not shown in the Project tree (document links cover them)."
-        },
         "context.projectView.maxFiles": {
           "type": "number",
           "default": 500,
