@@ -1,4 +1,5 @@
 import { findVerbatimRanges, isCommentLine, offsetInRanges, stripLineComment } from './verbatimRegions';
+import { buildLineStarts, lineAtOffset, lineTextAtOffset } from './lineMap';
 import { parseUsePathBody } from './pathResolve';
 
 /** Load / structure commands that refer to another file. */
@@ -68,43 +69,17 @@ export function scanStructure(text: string): StructureScanResult {
   let fileRole: FileRoleInfo | undefined;
 
   // Line map for comment checks
-  const lineStarts: number[] = [0];
-  for (let i = 0; i < text.length; i++) {
-    if (text[i] === '\n') {
-      lineStarts.push(i + 1);
-    }
-  }
-
-  function lineIndexAt(offset: number): number {
-    let lo = 0;
-    let hi = lineStarts.length - 1;
-    while (lo < hi) {
-      const mid = (lo + hi + 1) >> 1;
-      if (lineStarts[mid] <= offset) {
-        lo = mid;
-      } else {
-        hi = mid - 1;
-      }
-    }
-    return lo;
-  }
-
-  function lineTextAt(offset: number): string {
-    const li = lineIndexAt(offset);
-    const start = lineStarts[li];
-    const end = li + 1 < lineStarts.length ? lineStarts[li + 1] - 1 : text.length;
-    return text.slice(start, end);
-  }
+  const lineStarts = buildLineStarts(text);
 
   function isSkipped(offset: number): boolean {
     if (offsetInRanges(offset, verbatim)) {
       return true;
     }
-    const line = lineTextAt(offset);
+    const line = lineTextAtOffset(text, lineStarts, offset);
     if (isCommentLine(line)) {
       return true;
     }
-    const lineStart = lineStarts[lineIndexAt(offset)];
+    const lineStart = lineStarts[lineAtOffset(lineStarts, offset)];
     const prefix = text.slice(lineStart, offset);
     return stripLineComment(prefix).length !== prefix.length;
   }
