@@ -211,11 +211,10 @@ export async function handlePdfClick(
       logDebug(`[synctex report] ${note}`);
     }
 
-    // Coarse float/caption tags (line ≤ 1 mid-page) are not useful navigation
-    // targets — message only, same class of outcome as an empty image click.
+    // Coarse float/caption tags (line ≤ 1 mid-page after aggressive refine):
+    // still open the editor at the reported line; soft info once.
     if (hit.coarseFloatLine) {
       void vscode.window.showInformationMessage(COARSE_FLOAT_LINE_USER_MESSAGE);
-      return;
     }
 
     let targetPath = hit.filename;

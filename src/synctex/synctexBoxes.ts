@@ -198,6 +198,12 @@ export function distanceToBox(box: SynctexBox, x: number, y: number): number {
   return Math.hypot(dx, dy);
 }
 
+/** Mid-page click with a file-start line is a common float/caption tag artifact. */
+export const SUSPICIOUS_TOP_LINE_MAX = 1;
+
+/** mtx y (top-down): clicks below this are treated as mid-page / not file-header. */
+export const MID_PAGE_MTX_Y_MIN = 72;
+
 /**
  * Nearest box within `tolerance` of (x, y). Prefer smaller area on ties so a
  * caption/word box beats a large float wrapper tagged at line 1.
@@ -229,11 +235,27 @@ export function nearestSynctexBox(
   return best;
 }
 
-/** Mid-page click with a file-start line is a common float/caption tag artifact. */
-export const SUSPICIOUS_TOP_LINE_MAX = 1;
-
-/** mtx y (top-down): clicks below this are treated as mid-page / not file-header. */
-export const MID_PAGE_MTX_Y_MIN = 72;
+/**
+ * Nearest box with `linenumber > minLine` within `tolerance`.
+ *
+ * Used for aggressive float/caption refine: a large line-1 wrapper that
+ * contains the click must not beat a nearby useful-line box outside it.
+ * Default `minLine` is {@link SUSPICIOUS_TOP_LINE_MAX} (exclude file-start).
+ */
+export function nearestSynctexBoxAboveLine(
+  boxes: SynctexBox[],
+  x: number,
+  y: number,
+  tolerance: number,
+  minLine: number = SUSPICIOUS_TOP_LINE_MAX,
+): SynctexBox | undefined {
+  return nearestSynctexBox(
+    boxes.filter((b) => b.linenumber > minLine),
+    x,
+    y,
+    tolerance,
+  );
+}
 
 export function isSuspiciousFileStartHit(
   linenumber: number,
@@ -242,9 +264,12 @@ export function isSuspiciousFileStartHit(
   return linenumber <= SUSPICIOUS_TOP_LINE_MAX && mtxY >= MID_PAGE_MTX_Y_MIN;
 }
 
+/**
+ * Soft info when backward SyncTeX still lands on a coarse mid-page file-start
+ * line after aggressive refine. Navigation still proceeds to that line.
+ */
 export const COARSE_FLOAT_LINE_USER_MESSAGE =
-  'No useful SyncTeX match here — ConTeXt often tags float/caption boxes with a coarse line (file start). Click nearby body text for a precise jump.';
-
+  'Opened a coarse SyncTeX line (often file start for floats/captions). Click nearby body text for a more precise jump.';
 /**
  * Fraction of estimated page height treated as a thin header/footer band when
  * picking among forward SyncTeX boxes for the same source line. Not a real
