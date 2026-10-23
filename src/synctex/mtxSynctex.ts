@@ -64,7 +64,7 @@ export interface BackwardSyncResult {
   refined?: boolean;
   /**
    * True when the hit still looks like a float/caption coarse tag (line ≤ 1
-   * mid-page) after aggressive refine. UI still navigates; may show a soft info.
+   * mid-page) after aggressive refine. UI refuses the jump (message only).
    */
   coarseFloatLine?: boolean;
 }
@@ -809,10 +809,10 @@ export function refineSuspiciousBackwardHit(
       note: `refined coarse line ${hit.linenumber} → ${better.linenumber} (${better.filename})`,
     };
   }
-  // Fallback: keep the mtx hit so the UI can still open the editor.
+  // No useful-line box nearby — flag for toast-only UI (do not jump to line 1).
   return {
     hit: { ...hit, coarseFloatLine: true },
-    note: 'coarse float/caption line tag; navigating to reported line',
+    note: 'coarse float/caption line tag (engine limitation)',
   };
 }
 
@@ -847,9 +847,8 @@ function maybeRefineHit(
  *
  * When mtx returns line ≤ 1 for a mid-page click (common float/caption tag),
  * aggressively searches for a nearby useful-line box (ignoring containment in
- * large line-1 wrappers). If none is found within the snap radius, keeps the
- * mtx hit and sets `coarseFloatLine` so the UI can soft-warn while still
- * opening the editor.
+ * large line-1 wrappers). If none is found within the snap radius, sets
+ * `coarseFloatLine` so the UI can refuse the jump (message only).
  */
 export async function backwardSync(
   toolchain: Toolchain,

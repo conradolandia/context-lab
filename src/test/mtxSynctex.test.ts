@@ -158,8 +158,8 @@ describe('mtxSynctex empty report UX', () => {
     assert.match(EMPTY_BACKWARD_USER_MESSAGE, /graphics/i);
     assert.ok(!EMPTY_BACKWARD_USER_MESSAGE.includes('argv='));
     assert.match(COARSE_FLOAT_LINE_USER_MESSAGE, /float|caption/i);
-    assert.match(COARSE_FLOAT_LINE_USER_MESSAGE, /Opened a coarse SyncTeX line/i);
-    assert.ok(!/No useful SyncTeX match/i.test(COARSE_FLOAT_LINE_USER_MESSAGE));
+    assert.match(COARSE_FLOAT_LINE_USER_MESSAGE, /No useful SyncTeX match/i);
+    assert.ok(!/jumped|Opened a coarse/i.test(COARSE_FLOAT_LINE_USER_MESSAGE));
     assert.notEqual(EMPTY_BACKWARD_USER_MESSAGE, COARSE_FLOAT_LINE_USER_MESSAGE);
   });
 
@@ -291,7 +291,7 @@ describe('aggressive coarse-line refine (float / caption)', () => {
     assert.ok(refined.note?.includes('230'));
   });
 
-  it('falls back to a navigable mtx hit when only line=1 boxes are nearby', () => {
+  it('flags coarse-only nearby boxes so UI can block navigation', () => {
     const onlyCoarse: SynctexBox[] = [
       {
         fileId: '20',
@@ -324,19 +324,20 @@ describe('aggressive coarse-line refine (float / caption)', () => {
       linenumber: 1,
       tolerance: 50,
     };
-    const fallback = refineSuspiciousBackwardHit(
+    const blocked = refineSuspiciousBackwardHit(
       onlyCoarse,
       200,
       410,
       mtxHit,
       SNAP_REPORT_TOLERANCE,
     );
-    // Still navigable — not a coarse-block / empty outcome.
-    assert.equal(fallback.hit.filename, 'chapter.tex');
-    assert.equal(fallback.hit.linenumber, 1);
-    assert.equal(fallback.hit.coarseFloatLine, true);
-    assert.equal(fallback.hit.refined, undefined);
-    assert.ok(fallback.note);
+    // coarseFloatLine → toast-only / early return in synctexCommands (no jump).
+    assert.equal(blocked.hit.filename, 'chapter.tex');
+    assert.equal(blocked.hit.linenumber, 1);
+    assert.equal(blocked.hit.coarseFloatLine, true);
+    assert.equal(blocked.hit.refined, undefined);
+    assert.ok(blocked.note);
+    assert.ok(!/navigat/i.test(blocked.note ?? ''));
   });
 });
 

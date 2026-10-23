@@ -265,11 +265,11 @@ export function isSuspiciousFileStartHit(
 }
 
 /**
- * Soft info when backward SyncTeX still lands on a coarse mid-page file-start
- * line after aggressive refine. Navigation still proceeds to that line.
+ * Info when backward SyncTeX still lands on a coarse mid-page file-start line
+ * after aggressive refine. UI shows this message and does not open the editor.
  */
 export const COARSE_FLOAT_LINE_USER_MESSAGE =
-  'Opened a coarse SyncTeX line (often file start for floats/captions). Click nearby body text for a more precise jump.';
+  'No useful SyncTeX match here — ConTeXt often tags float/caption boxes with a coarse line (file start). Click nearby body text for a precise jump.';
 /**
  * Fraction of estimated page height treated as a thin header/footer band when
  * picking among forward SyncTeX boxes for the same source line. Not a real
