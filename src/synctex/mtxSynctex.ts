@@ -12,6 +12,7 @@ import {
   isOversizedForwardBox,
   isSuspiciousFileStartHit,
   nearestSynctexBox,
+  nearestSynctexBoxAboveLine,
   pickForwardNonEdgeFallbackBox,
   pickForwardSameLineBox,
   readSynctexPageBoxes,
@@ -33,6 +34,7 @@ export {
   isOversizedForwardBox,
   isSuspiciousFileStartHit,
   nearestSynctexBox,
+  nearestSynctexBoxAboveLine,
   parseSynctexPageBoxes,
   pickForwardNonEdgeFallbackBox,
   pickForwardSameLineBox,
@@ -60,7 +62,10 @@ export interface BackwardSyncResult {
   tolerance: number;
   /** True when we replaced a suspicious file-start hit with a nearer box. */
   refined?: boolean;
-  /** True when the hit still looks like a float/caption coarse tag (line ≤ 1 mid-page). */
+  /**
+   * True when the hit still looks like a float/caption coarse tag (line ≤ 1
+   * mid-page) after aggressive refine. UI refuses the jump (message only).
+   */
   coarseFloatLine?: boolean;
 }
 
@@ -779,6 +784,38 @@ function boxToResult(box: SynctexBox, toleranceUsed: number): BackwardSyncResult
   };
 }
 
+/**
+ * Aggressive refine for a suspicious mid-page file-start hit: search for the
+ * nearest box with a useful line (`linenumber > hit.linenumber`), ignoring
+ * containment in large line-1 wrappers. Pure helper for unit tests.
+ */
+export function refineSuspiciousBackwardHit(
+  boxes: SynctexBox[],
+  x: number,
+  y: number,
+  hit: BackwardSyncResult,
+  searchRadius: number,
+): { hit: BackwardSyncResult; note?: string } {
+  const better = nearestSynctexBoxAboveLine(
+    boxes,
+    x,
+    y,
+    searchRadius,
+    hit.linenumber,
+  );
+  if (better && better.linenumber > hit.linenumber) {
+    return {
+      hit: boxToResult(better, hit.tolerance),
+      note: `refined coarse line ${hit.linenumber} → ${better.linenumber} (${better.filename})`,
+    };
+  }
+  // No useful-line box nearby — flag for toast-only UI (do not jump to line 1).
+  return {
+    hit: { ...hit, coarseFloatLine: true },
+    note: 'coarse float/caption line tag (engine limitation)',
+  };
+}
+
 function maybeRefineHit(
   synctexPath: string,
   page: number,
@@ -791,18 +828,11 @@ function maybeRefineHit(
   if (!refineCoarseLines || !isSuspiciousFileStartHit(hit.linenumber, y)) {
     return { hit };
   }
-  const boxes = readSynctexPageBoxes(synctexPath, page);
-  const better = nearestSynctexBox(boxes, x, y, Math.max(snapTolerance, DEFAULT_REPORT_TOLERANCE));
-  if (better && better.linenumber > hit.linenumber) {
-    return {
-      hit: boxToResult(better, hit.tolerance),
-      note: `refined coarse line ${hit.linenumber} → ${better.linenumber} (${better.filename})`,
-    };
-  }
-  return {
-    hit: { ...hit, coarseFloatLine: true },
-    note: 'coarse float/caption line tag (engine limitation)',
-  };
+  const boxesRaw = readSynctexPageBoxes(synctexPath, page);
+  const unitScale = synctexUnitScaleToPt(boxesRaw) ?? 1;
+  const boxes = boxesRaw.map((b) => scaleSynctexBox(b, unitScale));
+  const radius = Math.max(snapTolerance, DEFAULT_REPORT_TOLERANCE);
+  return refineSuspiciousBackwardHit(boxes, x, y, hit, radius);
 }
 
 /**
@@ -816,8 +846,9 @@ function maybeRefineHit(
  * source line for image-only hits.
  *
  * When mtx returns line ≤ 1 for a mid-page click (common float/caption tag),
- * tries a nearer/smaller box from the same page; if nothing better exists,
- * sets `coarseFloatLine` so the UI can refuse the jump (message only).
+ * aggressively searches for a nearby useful-line box (ignoring containment in
+ * large line-1 wrappers). If none is found within the snap radius, sets
+ * `coarseFloatLine` so the UI can refuse the jump (message only).
  */
 export async function backwardSync(
   toolchain: Toolchain,

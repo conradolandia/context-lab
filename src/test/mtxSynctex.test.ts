@@ -19,6 +19,8 @@ import {
   SynctexError,
   parseSynctexPageBoxes,
   nearestSynctexBox,
+  nearestSynctexBoxAboveLine,
+  refineSuspiciousBackwardHit,
   pickForwardSameLineBox,
   synctexFilenamesMatch,
   isSuspiciousFileStartHit,
@@ -29,6 +31,7 @@ import {
   synctexUnitScaleToPt,
   pickForwardNonEdgeFallbackBox,
   SYNCTEX_SP_PER_PT,
+  type SynctexBox,
 } from '../synctex/mtxSynctex';
 
 describe('mtxSynctex parseFindOutput', () => {
@@ -156,7 +159,7 @@ describe('mtxSynctex empty report UX', () => {
     assert.ok(!EMPTY_BACKWARD_USER_MESSAGE.includes('argv='));
     assert.match(COARSE_FLOAT_LINE_USER_MESSAGE, /float|caption/i);
     assert.match(COARSE_FLOAT_LINE_USER_MESSAGE, /No useful SyncTeX match/i);
-    assert.ok(!/jumped/i.test(COARSE_FLOAT_LINE_USER_MESSAGE));
+    assert.ok(!/jumped|Opened a coarse/i.test(COARSE_FLOAT_LINE_USER_MESSAGE));
     assert.notEqual(EMPTY_BACKWARD_USER_MESSAGE, COARSE_FLOAT_LINE_USER_MESSAGE);
   });
 
@@ -210,6 +213,131 @@ describe('synctex page boxes (caption / float refine)', () => {
     assert.equal(isSuspiciousFileStartHit(1, 343), true);
     assert.equal(isSuspiciousFileStartHit(1, 10), false);
     assert.equal(isSuspiciousFileStartHit(88, 343), false);
+  });
+});
+
+describe('aggressive coarse-line refine (float / caption)', () => {
+  /**
+   * Page-40 style caption geometry (pt): click sits inside a wide line=1
+   * wrapper at y≈470 while a small line=230 box sits nearby on the same row.
+   * Plain nearestSynctexBox would keep line=1 (distance 0 / containment);
+   * aggressive refine must prefer line=230.
+   */
+  const captionBoxes: SynctexBox[] = [
+    {
+      fileId: '20',
+      filename: 'include/contenido/02-Centro-de-Investigaciones.tex',
+      linenumber: 230,
+      x: 126.3,
+      y: 470.1,
+      w: 24.4,
+      h: 10,
+      d: 0,
+    },
+    {
+      fileId: '20',
+      filename: 'include/contenido/02-Centro-de-Investigaciones.tex',
+      linenumber: 1,
+      x: 168.2,
+      y: 470.1,
+      w: 291.3,
+      h: 10,
+      d: 0,
+    },
+    {
+      fileId: '20',
+      filename: 'include/contenido/02-Centro-de-Investigaciones.tex',
+      linenumber: 1,
+      x: 137.2,
+      y: 481.7,
+      w: 311.5,
+      h: 10,
+      d: 0,
+    },
+  ];
+
+  it('prefers nearby line>1 over containment in a large line=1 wrapper', () => {
+    const clickX = 300;
+    const clickY = 470;
+    // Baseline: containment still picks the wide line=1 box.
+    const plain = nearestSynctexBox(captionBoxes, clickX, clickY, SNAP_REPORT_TOLERANCE);
+    assert.ok(plain);
+    assert.equal(plain!.linenumber, 1);
+
+    const useful = nearestSynctexBoxAboveLine(
+      captionBoxes,
+      clickX,
+      clickY,
+      SNAP_REPORT_TOLERANCE,
+    );
+    assert.ok(useful);
+    assert.equal(useful!.linenumber, 230);
+
+    const mtxHit = {
+      filename: 'include/contenido/02-Centro-de-Investigaciones.tex',
+      linenumber: 1,
+      tolerance: 50,
+    };
+    const refined = refineSuspiciousBackwardHit(
+      captionBoxes,
+      clickX,
+      clickY,
+      mtxHit,
+      SNAP_REPORT_TOLERANCE,
+    );
+    assert.equal(refined.hit.linenumber, 230);
+    assert.equal(refined.hit.refined, true);
+    assert.equal(refined.hit.coarseFloatLine, undefined);
+    assert.ok(refined.note?.includes('230'));
+  });
+
+  it('flags coarse-only nearby boxes so UI can block navigation', () => {
+    const onlyCoarse: SynctexBox[] = [
+      {
+        fileId: '20',
+        filename: 'chapter.tex',
+        linenumber: 1,
+        x: 100,
+        y: 400,
+        w: 300,
+        h: 20,
+        d: 0,
+      },
+      {
+        fileId: '20',
+        filename: 'chapter.tex',
+        linenumber: 1,
+        x: 120,
+        y: 430,
+        w: 280,
+        h: 14,
+        d: 0,
+      },
+    ];
+    assert.equal(
+      nearestSynctexBoxAboveLine(onlyCoarse, 200, 410, SNAP_REPORT_TOLERANCE),
+      undefined,
+    );
+
+    const mtxHit = {
+      filename: 'chapter.tex',
+      linenumber: 1,
+      tolerance: 50,
+    };
+    const blocked = refineSuspiciousBackwardHit(
+      onlyCoarse,
+      200,
+      410,
+      mtxHit,
+      SNAP_REPORT_TOLERANCE,
+    );
+    // coarseFloatLine → toast-only / early return in synctexCommands (no jump).
+    assert.equal(blocked.hit.filename, 'chapter.tex');
+    assert.equal(blocked.hit.linenumber, 1);
+    assert.equal(blocked.hit.coarseFloatLine, true);
+    assert.equal(blocked.hit.refined, undefined);
+    assert.ok(blocked.note);
+    assert.ok(!/navigat/i.test(blocked.note ?? ''));
   });
 });
 
