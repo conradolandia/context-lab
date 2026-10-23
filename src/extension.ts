@@ -48,7 +48,7 @@ import {
 import { registerBuildModesUi } from './extension/buildModesCommands';
 
 /** Bump when shipping a SyncTeX/viewer/LSP/diagnostics/project-view behavior change users must verify in Output. */
-export const BUILD_ID = 'pdf-open-singleton';
+export const BUILD_ID = 'synctex-refine-a';
 
 export function activate(context: vscode.ExtensionContext): void {
   runtime.extensionContext = context;
