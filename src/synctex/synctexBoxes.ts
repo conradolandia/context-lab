@@ -269,7 +269,7 @@ export function isSuspiciousFileStartHit(
  * after aggressive refine. UI shows this message and does not open the editor.
  */
 export const COARSE_FLOAT_LINE_USER_MESSAGE =
-  'No useful SyncTeX match here — ConTeXt often tags float/caption boxes with a coarse line (file start). Click nearby body text for a precise jump.';
+  'No useful SyncTeX match here — coarse file-start tag. Newer ConTeXt start/stop floats improve line tags; older ConTeXt or one-shot \\placefigure may still be coarse. Click nearby body text.';
 /**
  * Fraction of estimated page height treated as a thin header/footer band when
  * picking among forward SyncTeX boxes for the same source line. Not a real
