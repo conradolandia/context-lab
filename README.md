@@ -93,7 +93,7 @@ Status bar shows `ConTeXt: <rootname>` (click to set or clear). Build / Show PDF
 
 Build uses `context --synctex=repeat`, then `context.build.args`, then `--mode=a,b` when `context.build.activeModes` is non-empty. Prefer **Select Build Modes** (or the Modes status bar) over putting `--mode` in `build.args`; if both are set, active modes win and the build logs a warning. Clearing the multi-select removes the `--mode` flag. The viewer keeps the last good PDF while a build runs, then reloads after a stability gate and preserves the current scroll position and zoom (it does not replay the last Forward SyncTeX jump).
 
-SyncTeX marks text, not pure image areas; clicks on figures with no text usually show a short toast. Caption clicks may resolve coarsely. When Forward SyncTeX lands in a thin header/footer band, it prefers a same-line (then nearby-line) box outside that band closest to the mtx hit; it does not paint an unreplaced edge-band box or a page-sized vbox.
+SyncTeX marks text, not pure image areas; clicks on figures with no text usually show a short toast. Caption clicks can still resolve coarsely on ConTeXt before the start/stop float SyncTeX wrap, and with one-shot `\placefigure`; that is not the default expectation on current LMTX. When Forward SyncTeX lands in a thin header/footer band, it prefers a same-line (then nearby-line) box outside that band closest to the mtx hit; it does not paint an unreplaced edge-band box or a page-sized vbox.
 
 ## DigestiF
 
