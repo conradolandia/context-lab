@@ -408,20 +408,22 @@ describe('forward SyncTeX edge-band refine', () => {
     );
     assert.ok(Math.abs(refined.result.ury - refined.result.lly) < 100);
 
+    // Single exact mid-page box for line 99 → keep raw when geometry matches.
     const midHit = {
       page: 10,
-      llx: 80,
-      lly: 380,
-      urx: 200,
-      ury: 400,
+      llx: 90,
+      lly: 450,
+      urx: 290,
+      ury: 462,
     };
-    const kept = refineForwardHit(fixturePath, 'chapter.tex', 42, midHit);
+    const kept = refineForwardHit(fixturePath, 'chapter.tex', 99, midHit);
     assert.equal(kept.result, midHit);
     assert.equal(kept.note, undefined);
     assert.equal(kept.diag.action, 'keep-raw');
     assert.equal(kept.diag.hitInEdge, false);
     assert.equal(kept.diag.skipHighlight, false);
     assert.equal(kept.diag.unitScale, 1);
+    assert.equal(kept.diag.sameLineCount, 1);
   });
 
   it('refineForwardHit scales TeX sp synctex boxes to --find points', () => {
@@ -564,6 +566,107 @@ describe('forward SyncTeX edge-band refine', () => {
       }),
       SYNCTEX_SP_PER_PT,
     );
+  });
+});
+
+describe('forward SyncTeX mid-page same-line re-pick (A+B)', () => {
+  const multiPath = resolveFixturePath('page-forward-multiline.synctex.txt');
+  const boundaryFixturePath = resolveFixturePath('page-boundary-forward.synctex.txt');
+
+  it('re-picks among ≥2 exact same-line boxes (skips oversized)', () => {
+    // mtx `--find` first hit for line 5 can be the page-fill vbox; prefer a
+    // compact row near that hit among the four exact line-5 boxes.
+    const oversizedHit = {
+      page: 1,
+      llx: 40,
+      lly: 180,
+      urx: 560,
+      ury: 680,
+    };
+    const refined = refineForwardHit(multiPath, 'fwd.tex', 5, oversizedHit);
+    assert.equal(refined.diag.hitInEdge, false);
+    assert.equal(refined.diag.sameLineCount, 5); // 4 rows + oversized
+    assert.equal(refined.diag.action, 'refined-same-line');
+    assert.equal(refined.diag.skipHighlight, false);
+    assert.ok(
+      refined.result.lly >= 195 && refined.result.lly <= 275,
+      `expected a compact line-5 row, got lly=${refined.result.lly}`,
+    );
+    assert.ok(
+      Math.abs(refined.result.urx - refined.result.llx) < 400,
+      'must not keep the page-fill vbox',
+    );
+    assert.ok(refined.note?.includes('same-line re-pick'));
+  });
+
+  it('prefers exact line boxes when --find hit matches another line', () => {
+    // Float line-9 boxes appear before paragraph line-5 in the file, so a naive
+    // `l >= 5` can land on line 9. Prefer exact line-5 boxes instead.
+    const otherLineHit = {
+      page: 1,
+      llx: 100,
+      lly: 120,
+      urx: 180,
+      ury: 132,
+    };
+    const refined = refineForwardHit(multiPath, 'fwd.tex', 5, otherLineHit);
+    assert.equal(refined.diag.hitInEdge, false);
+    assert.ok(refined.diag.sameLineCount >= 2);
+    assert.equal(refined.diag.action, 'prefer-exact-line');
+    assert.equal(refined.diag.skipHighlight, false);
+    assert.ok(
+      refined.result.lly >= 195 && refined.result.lly <= 220,
+      `expected first line-5 row near float, got lly=${refined.result.lly}`,
+    );
+    assert.ok(refined.note?.includes('prefer exact line'));
+  });
+
+  it('keeps raw mid-page hit when no exact line boxes exist (l >=)', () => {
+    // Line 8 has no boxes; hit is the first line-9 box (`l >= 8`).
+    const lGeHit = {
+      page: 1,
+      llx: 100,
+      lly: 120,
+      urx: 180,
+      ury: 132,
+    };
+    const kept = refineForwardHit(multiPath, 'fwd.tex', 8, lGeHit);
+    assert.equal(kept.diag.sameLineCount, 0);
+    assert.equal(kept.diag.action, 'keep-raw');
+    assert.equal(kept.result, lGeHit);
+    assert.equal(kept.diag.skipHighlight, false);
+  });
+
+  it('keeps raw when a single exact mid-page box already matches', () => {
+    const exactHit = {
+      page: 1,
+      llx: 50,
+      lly: 300,
+      urx: 170,
+      ury: 312,
+    };
+    const kept = refineForwardHit(multiPath, 'fwd.tex', 7, exactHit);
+    assert.equal(kept.diag.sameLineCount, 1);
+    assert.equal(kept.diag.action, 'keep-raw');
+    assert.equal(kept.result, exactHit);
+  });
+
+  it('does not regress edge-band page N±1 refine', () => {
+    const bottomEdgeHit = {
+      page: 72,
+      llx: 80,
+      lly: 620,
+      urx: 180,
+      ury: 632,
+    };
+    const refined = refineForwardHit(
+      boundaryFixturePath,
+      'chapter.tex',
+      10,
+      bottomEdgeHit,
+    );
+    assert.equal(refined.diag.action, 'refined-next-page');
+    assert.equal(refined.result.page, 73);
   });
 });
 

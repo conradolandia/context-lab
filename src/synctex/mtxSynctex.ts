@@ -375,7 +375,38 @@ export interface ForwardRefineDiag {
     | 'refined'
     | 'refined-nearby'
     | 'refined-next-page'
-    | 'refined-prev-page';
+    | 'refined-prev-page'
+    /** Mid-page: re-picked among ≥2 exact file+line boxes. */
+    | 'refined-same-line'
+    /** Mid-page: mtx `--find` matched another line; preferred exact line. */
+    | 'prefer-exact-line';
+}
+
+/** True when a `--find` hit matches a synctex box in top-down pt space. */
+function hitMatchesSynctexBox(
+  hit: ForwardSyncResult,
+  box: SynctexBox,
+  tol = 0.75,
+): boolean {
+  const mapped = synctexBoxToFindResult(box, hit.page);
+  return (
+    Math.abs(mapped.llx - hit.llx) <= tol &&
+    Math.abs(mapped.lly - hit.lly) <= tol &&
+    Math.abs(mapped.urx - hit.urx) <= tol &&
+    Math.abs(mapped.ury - hit.ury) <= tol
+  );
+}
+
+function findBoxMatchingHit(
+  boxes: SynctexBox[],
+  hit: ForwardSyncResult,
+  sourceFile: string,
+): SynctexBox | undefined {
+  return boxes.find(
+    (b) =>
+      synctexFilenamesMatch(b.filename, sourceFile) &&
+      hitMatchesSynctexBox(hit, b),
+  );
 }
 
 function summarizeSameLineBoxes(
@@ -408,9 +439,99 @@ function summarizeSameLineBoxes(
 }
 
 /**
+ * Mid-page forward refine (options A+B):
+ * - A: ≥2 exact file+line boxes → re-pick with {@link pickForwardSameLineBox}
+ *   (`near` = mtx hit center; compact over oversized).
+ * - B: exact boxes exist but the `--find` hit matches another line → prefer
+ *   an exact-line box instead of the first `l >=` geometry.
+ * - Otherwise keep the raw mid-page hit (no exact boxes / single matching exact).
+ */
+function refineForwardMidPageHit(
+  boxes: SynctexBox[],
+  sourceFile: string,
+  line: number,
+  hit: ForwardSyncResult,
+  pageHeight: number,
+  pageWidth: number,
+  baseDiag: Omit<ForwardRefineDiag, 'chosen' | 'action'>,
+): { result: ForwardSyncResult; note?: string; diag: ForwardRefineDiag } {
+  const exactCount = baseDiag.sameLineCount;
+  const matched = findBoxMatchingHit(boxes, hit, sourceFile);
+  const hitMatchesExact = matched?.linenumber === line;
+
+  // A: ≥2 exact boxes. B: at least one exact box but hit is not that line.
+  const shouldRepick =
+    exactCount >= 2 || (exactCount >= 1 && !hitMatchesExact);
+
+  if (!shouldRepick) {
+    return {
+      result: hit,
+      diag: { ...baseDiag, chosen: hit, action: 'keep-raw' },
+    };
+  }
+
+  const near = {
+    x: (hit.llx + hit.urx) / 2,
+    y: hitVerticalCenter(hit),
+  };
+  const preferred = pickForwardSameLineBox(
+    boxes,
+    sourceFile,
+    line,
+    near,
+    pageHeight,
+  );
+  if (!preferred) {
+    return {
+      result: hit,
+      diag: { ...baseDiag, chosen: hit, action: 'keep-raw' },
+    };
+  }
+
+  const next = synctexBoxToFindResult(preferred, hit.page);
+  const maxArea = pageHeight * pageWidth * FORWARD_MAX_BOX_PAGE_FRAC;
+  if (hitArea(next) > maxArea && hitArea(next) > hitArea(hit) * 4) {
+    // Do not expand a compact mid-page `--find` into a page-fill vbox.
+    return {
+      result: hit,
+      diag: { ...baseDiag, chosen: hit, action: 'keep-raw' },
+    };
+  }
+
+  const same =
+    Math.abs(next.llx - hit.llx) < 0.5 &&
+    Math.abs(next.lly - hit.lly) < 0.5 &&
+    Math.abs(next.urx - hit.urx) < 0.5 &&
+    Math.abs(next.ury - hit.ury) < 0.5;
+  if (same) {
+    return {
+      result: hit,
+      diag: { ...baseDiag, chosen: hit, action: 'keep-raw' },
+    };
+  }
+
+  // B: raw hit was not an exact file+line box. A: already exact, re-picked.
+  const action: ForwardRefineDiag['action'] = hitMatchesExact
+    ? 'refined-same-line'
+    : 'prefer-exact-line';
+  const how =
+    action === 'prefer-exact-line' ? 'prefer exact line' : 'same-line re-pick';
+  return {
+    result: next,
+    note: `forward mid-page ${how} (mtx page=${hit.page} llx=${hit.llx} lly=${hit.lly} → ${next.llx},${next.lly}; exact=${exactCount})`,
+    diag: { ...baseDiag, chosen: next, action },
+  };
+}
+
+/**
  * When mtx `--find` lands in a thin header/footer band, replace with a
  * same-line (then nearby-line / same-file) box outside that band closest to
  * the mtx hit. Never paint an unreplaced edge-band `--find` box.
+ *
+ * Mid-page: if the `.synctex` page has exact file+line boxes, re-pick with
+ * {@link pickForwardSameLineBox} when there are ≥2 candidates, or when the
+ * raw `--find` hit matches a different line (`l >=` / float order). Otherwise
+ * keep the raw mid-page hit.
  *
  * Same-line candidates come from parsing the `.synctex` file (not mtx API).
  * Raw records are often TeX sp; convert to `--find` points before compare.
@@ -493,11 +614,15 @@ export function refineForwardHit(
   };
 
   if (!hitInEdge) {
-    // mtx already landed mid-page; keep its box (avoids expanding to a vbox).
-    return {
-      result: hit,
-      diag: { ...baseDiag, chosen: hit, action: 'keep-raw' },
-    };
+    return refineForwardMidPageHit(
+      boxes,
+      sourceFile,
+      line,
+      hit,
+      pageHeight,
+      pageWidth,
+      baseDiag,
+    );
   }
   const near = {
     x: (hit.llx + hit.urx) / 2,
